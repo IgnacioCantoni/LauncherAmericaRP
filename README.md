@@ -49,16 +49,14 @@ Todos los jugadores reciben CLEO 5.5.0 (licencia MIT, de github.com/cleolibrary/
 
 Scripts del server, en `actualizaciones/archivos/cleo/`:
 
-- `fps_sin_limite.cs`: cada medio segundo apaga la opción "Frame limiter" del menú (`0xBA6794`) y la espera mínima entre cuadros que el GTA tiene en su código (el `14` de `cmp eax, 14` en `0x53E94C`, que igual dejaba un tope de unos 97 FPS). Está armado a mano en bytes; el código es:
+- `fps_sin_limite.cs`: cada medio segundo saca los tres topes de FPS que hay:
+  - la opción "Frame limiter" del menú (`0xBA6794`);
+  - la espera mínima entre cuadros del GTA (el `cmp eax, 14` de `0x53E94C`; el SA-MP lo pone en 2);
+  - el limitador del propio SA-MP, que con el "Frame limiter" apagado duerme hasta completar 10 ms por cuadro (tope de unos 97 a 99 FPS): el `cmp esi, 11` de `samp.dll + 0xA1D86` pasa a `cmp esi, 0`. Solo lo toca si el SA-MP está cargado y esos bytes son los de la 0.3.7-R5 (`83 FE 0B 7D`); con otra versión no hace nada.
 
-  ```
-  0000:                                  // 00 00
-  :loop                                  // (posición 2)
-  0001: wait 500                         // 01 00 05 F4 01
-  0A8C: write_memory 0xBA6794 size 1 value 0 virtual_protect 0   // 8C 0A 01 94 67 BA 00 04 01 04 00 04 00
-  0A8C: write_memory 0x53E94C size 1 value 0 virtual_protect 1   // 8C 0A 01 4C E9 53 00 04 01 04 00 04 01
-  0002: jump @loop                       // 02 00 01 FE FF FF FF
-  ``` Los FPS quedan atados solo a tu PC (o al V-Sync de la placa de video). Con FPS muy altos el GTA tiene fallas conocidas (nadar o trepar cuesta más, algunas animaciones van más rápido).
+  Lo arma `cleo/armar_fps.py` (el código, comentado, está ahí): `python cleo/armar_fps.py actualizaciones/archivos/cleo/fps_sin_limite.cs`.
+
+  Los FPS quedan atados solo a tu PC (o al V-Sync de la placa de video). Con FPS muy altos el GTA tiene fallas conocidas (nadar o trepar cuesta más, algunas animaciones van más rápido).
 
 Para sumar otro CLEO, poné su `.cs` (y sus archivos) en `actualizaciones/archivos/cleo/`, corré `generar-manifiesto.bat` y hacé commit y push. Ojo: con CLEO instalado cualquier jugador puede sumar sus propios scripts, incluidos trucos, así que lo que importa (dinero, armas, vida) se controla en el server.
 
