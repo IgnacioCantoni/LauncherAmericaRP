@@ -49,13 +49,14 @@ Todos los jugadores reciben CLEO 5.5.0 (licencia MIT, de github.com/cleolibrary/
 
 Scripts del server, en `actualizaciones/archivos/cleo/`:
 
-- `fps_sin_limite.cs`: apaga el limitador de cuadros del GTA cada medio segundo (escribe 0 en `0xBA6794`, la opción "Frame limiter" del menú, por si el juego la vuelve a prender). Está armado a mano en bytes; el código es:
+- `fps_sin_limite.cs`: cada medio segundo apaga la opción "Frame limiter" del menú (`0xBA6794`) y la espera mínima entre cuadros que el GTA tiene en su código (el `14` de `cmp eax, 14` en `0x53E94C`, que igual dejaba un tope de unos 97 FPS). Está armado a mano en bytes; el código es:
 
   ```
   0000:                                  // 00 00
   :loop                                  // (posición 2)
   0001: wait 500                         // 01 00 05 F4 01
   0A8C: write_memory 0xBA6794 size 1 value 0 virtual_protect 0   // 8C 0A 01 94 67 BA 00 04 01 04 00 04 00
+  0A8C: write_memory 0x53E94C size 1 value 0 virtual_protect 1   // 8C 0A 01 4C E9 53 00 04 01 04 00 04 01
   0002: jump @loop                       // 02 00 01 FE FF FF FF
   ``` Los FPS quedan atados solo a tu PC (o al V-Sync de la placa de video). Con FPS muy altos el GTA tiene fallas conocidas (nadar o trepar cuesta más, algunas animaciones van más rápido).
 
