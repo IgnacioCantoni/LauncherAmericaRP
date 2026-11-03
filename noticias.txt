@@ -2,4 +2,4 @@
 
 Elegí tu nick, tocá JUGAR y te conectás directo al server.
 
-Si es tu primera vez, tocá "Revisar instalación": el launcher se fija que tengas el GTA San Andreas 1.0 y el SA-MP 0.3.7, y baja solo los archivos del server que te falten.
+Si es tu primera vez, tocá "Actualizar" (arriba a la derecha): el launcher se fija que tengas el GTA San Andreas 1.0 y el SA-MP 0.3.7, y baja solo los archivos del server que te falten.

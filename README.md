@@ -6,9 +6,11 @@ Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe
 
 - **Jugar**: guarda tu nick y abre el GTA conectado directo al server. Usa los mismos datos que el cliente SA-MP (nick y carpeta del GTA en el registro, `HKCU\Software\SAMP`).
 - **Estado del server**: cada 15 segundos muestra si está en línea, los jugadores y el ping.
-- **Revisar instalación**: avisa si falta `gta_sa.exe` o el SA-MP 0.3.7 (`samp.exe` y `samp.dll`), y si el GTA no parece la versión 1.0.
+- **Tu juego**: la tarjeta del lateral muestra la carpeta del GTA y si están bien la versión 1.0, el SA-MP 0.3.7 (`samp.exe` y `samp.dll`) y los archivos del server.
 - **Noticias**: muestra `noticias.txt` de este repo.
-- **Actualizaciones**: antes de jugar baja los archivos de `actualizaciones/archivos/` que el jugador no tenga o tenga distintos.
+- **Mods**: lista los archivos de `actualizaciones/archivos/` y cuáles le faltan al jugador. Antes de jugar (o con "Actualizar") baja los que no tenga o tenga distintos.
+- **Fondo**: si en este repo hay un `fondo.jpg` (ideal 1100x640), se usa de fondo; si no, uno dibujado por el launcher.
+- **Redes y soporte**: botones de Discord, YouTube, TikTok, Instagram y Soporte; aparecen los que tengan link en `Config`.
 
 ## Compilar
 
@@ -21,7 +23,8 @@ Para probar la lógica sin abrir la ventana: `AmericaRP.exe --prueba` (en Linux,
 Arriba de `src/Launcher.cs`, en `Config`:
 
 - `Host` y `Puerto`: la IP pública (o dominio) y el puerto del server. Hoy está en `127.0.0.1:7777`, que solo sirve en la PC donde corre el server.
-- `NoticiasUrl` y `ManifiestoUrl`: apuntan a este repo. Si se dejan vacías, esa función se apaga.
+- `Redes` y `Soporte`: los links de los botones.
+- `NoticiasUrl`, `ManifiestoUrl` y `FondoUrl`: apuntan a este repo. Si se dejan vacías, esa función se apaga.
 
 Después de cambiarlos, volvé a compilar y repartí el `.exe` nuevo.
 
