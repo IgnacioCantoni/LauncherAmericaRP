@@ -37,13 +37,11 @@ Editá `noticias.txt`, commit y push. Los launchers la leen al abrirse.
 
 El ENB (ENBSeries v0.430 para GTA SA) es opcional: cada jugador lo activa o lo desactiva en MI JUEGO.
 
-La licencia de ENBSeries prohíbe repartir sus archivos a través de un launcher o gestor de descargas. Por eso, al activarlo, el launcher abre la página oficial (enbdev.com), el jugador baja `enbseries_gtasa_v0430.zip` y lo elige. El launcher revisa que sea esa versión (por la huella del `d3d9.dll`, en `Config.EnbDllSha`), que no pise archivos de otro mod, e instala la carpeta `WrapperVersion` del zip. Al desactivarlo saca esos archivos, solo los que siguen iguales a como se instalaron.
+Con SA-MP 0.3.7 se usa la **versión ASI** del ENB. La versión `d3d9.dll` hace cerrar SA-MP al entrar ("An exception occurred"), y la v0.076 entra pero se ve mal (probado el 3/11/2026 con GTA 1.0 US y SA-MP 0.3.7-R5). El `.asi` lo carga el Ultimate ASI Loader (`dinput8.dll`, licencia MIT), que va en `paquetes/enb/archivos/` con su licencia.
 
-Lo que sí se reparte desde acá es el preset del server (los `.ini` y `.fx`):
+La licencia de ENBSeries prohíbe repartir sus archivos a través de un launcher o gestor de descargas. Por eso, al activarlo, el launcher abre la página oficial (enbdev.com), el jugador baja `enbseries_gtasa_v0430.zip` y lo elige. El launcher revisa que sea esa versión (por la huella del `.asi`, en `Config.EnbAsiSha`) y que no pise archivos de otro mod (incluido otro `dinput8.dll`). Después instala `AsiVersion/enbseries.asi` y los ajustes y shaders de `WrapperVersion` (sin su `d3d9.dll`), y le suma el cargador. Al desactivarlo saca todo eso, solo los archivos que siguen iguales a como se instalaron.
 
-1. Copiá los archivos del preset en `paquetes/enb/archivos/` (por ejemplo `enbseries.ini`). Nunca `.dll` ni `.exe` del ENB.
-2. Doble clic en `generar-manifiesto.bat`.
-3. Commit y push. Se instala encima del ENB de cada jugador que lo tenga activado.
+Para cambiar cómo se ve (el preset del server), poné los `.ini` o `.fx` modificados en `paquetes/enb/archivos/` (nunca `.dll` ni `.asi` del ENB), corré `generar-manifiesto.bat` y hacé commit y push. Se instalan encima del ENB de cada jugador que lo tenga activado.
 
 ## Cambiar el video de fondo
 

@@ -1,1 +1,3 @@
 # Generado por AmericaRP.exe --manifiesto. No editar a mano.
+ceca73c504e39084b0b80d2a437aea9988313d1915418d3c629c3e4a8313f5a1 UltimateASILoader-LICENSE.txt
+63b465dbc1bf9c5ab4e33c3ccad099d9edb702f2c51587ac8d4f196497396437 dinput8.dll

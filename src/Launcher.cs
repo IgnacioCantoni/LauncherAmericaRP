@@ -31,7 +31,10 @@ static class Config
     public const string EnbUrl = Repo + "paquetes/enb/manifiesto.txt";
     public const string EnbDescargaUrl = "http://enbdev.com/download_mod_gtasa.htm";
     public const string EnbZip = "enbseries_gtasa_v0430.zip";
-    public const string EnbDllSha = "ee323eae134d2cdddbd7b3c57956e66766a84ce7c7ac7faef5afde336bfd73e8"; // d3d9.dll de la v0.430
+    // Con SA-MP 0.3.7 la versión d3d9.dll del ENB cierra el juego: se usa la versión ASI (AsiVersion/enbseries.asi),
+    // que carga el Ultimate ASI Loader (dinput8.dll, licencia MIT) que sí se reparte en paquetes/enb.
+    public const string EnbAsiSha = "a166b48a3eec747a38ac512b23003cb244134aacb9c18ace67baaca7188c64b1"; // enbseries.asi de la v0.430
+    public const string AsiLoaderSha = "63b465dbc1bf9c5ab4e33c3ccad099d9edb702f2c51587ac8d4f196497396437"; // dinput8.dll que va en paquetes/enb
     public const string DescargaSampUrl = "https://www.sa-mp.mp/downloads/";
     // Links del pie de la ventana, en este orden. Los que tengan el link vacío no aparecen.
     public static readonly KeyValuePair<string, string>[] Redes =
@@ -271,33 +274,42 @@ static class Actualizador
         using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(s)).Replace("-", "").ToLowerInvariant();
     }
 
-    // Instala la carpeta WrapperVersion del zip oficial de ENBSeries que bajó el jugador. Antes de copiar nada revisa
-    // que sea la versión esperada y que no pise archivos de otro mod. Devuelve las rutas instaladas.
-    public static List<string> InstalarZipEnb(string carpetaGta, string zip, string dllSha)
+    // Instala la versión ASI del zip oficial de ENBSeries que bajó el jugador: AsiVersion/enbseries.asi más los ajustes y
+    // shaders de WrapperVersion, menos su d3d9.dll. Antes de copiar nada revisa que sea la versión esperada y que no pise
+    // archivos de otro mod. Devuelve las rutas instaladas.
+    public static List<string> InstalarZipEnb(string carpetaGta, string zip, string asiSha)
     {
-        const string Raiz = "WrapperVersion/";
         using (ZipArchive z = ZipFile.OpenRead(zip))
         {
-            var archivos = z.Entries.Where(e => e.FullName.Replace('\\', '/').StartsWith(Raiz) && e.Name.Length > 0).ToList();
-            ZipArchiveEntry dll = archivos.FirstOrDefault(e => e.FullName.Replace('\\', '/') == Raiz + "d3d9.dll");
-            if (dll == null) throw new InvalidDataException("Ese zip no es el ENBSeries para GTA San Andreas.");
-            using (Stream s = dll.Open())
-                if (Sha256(s) != dllSha) throw new InvalidDataException("Ese zip es otra versión del ENB. El server usa la del archivo " + Config.EnbZip + ".");
-            var rutas = new List<string>();
-            foreach (ZipArchiveEntry e in archivos)
+            var archivos = new List<KeyValuePair<string, ZipArchiveEntry>>();
+            foreach (ZipArchiveEntry e in z.Entries)
             {
-                string ruta = e.FullName.Replace('\\', '/').Substring(Raiz.Length), destino = RutaSegura(carpetaGta, ruta);
-                if (File.Exists(destino)) using (Stream s = e.Open()) if (Sha256(destino) != Sha256(s))
-                    throw new InvalidDataException("Tu GTA ya tiene un " + ruta + " de otro mod. Sacalo antes de activar el ENB.");
-                rutas.Add(ruta);
+                string nombre = e.FullName.Replace('\\', '/');
+                if (e.Name.Length == 0) continue;
+                if (nombre == "AsiVersion/enbseries.asi") archivos.Add(new KeyValuePair<string, ZipArchiveEntry>("enbseries.asi", e));
+                else if (nombre.StartsWith("WrapperVersion/") && nombre != "WrapperVersion/d3d9.dll")
+                    archivos.Add(new KeyValuePair<string, ZipArchiveEntry>(nombre.Substring("WrapperVersion/".Length), e));
             }
-            foreach (ZipArchiveEntry e in archivos)
+            ZipArchiveEntry asi = archivos.Where(a => a.Key == "enbseries.asi").Select(a => a.Value).FirstOrDefault();
+            if (asi == null) throw new InvalidDataException("Ese zip no es el ENBSeries para GTA San Andreas.");
+            using (Stream s = asi.Open())
+                if (Sha256(s) != asiSha) throw new InvalidDataException("Ese zip es otra versión del ENB. El server usa la del archivo " + Config.EnbZip + ".");
+            string loader = RutaSegura(carpetaGta, "dinput8.dll");
+            if (File.Exists(loader) && Sha256(loader) != Config.AsiLoaderSha)
+                throw new InvalidDataException("Tu GTA ya tiene un dinput8.dll de otro mod. Sacalo antes de activar el ENB.");
+            foreach (KeyValuePair<string, ZipArchiveEntry> a in archivos)
             {
-                string destino = RutaSegura(carpetaGta, e.FullName.Replace('\\', '/').Substring(Raiz.Length));
+                string destino = RutaSegura(carpetaGta, a.Key);
+                if (File.Exists(destino)) using (Stream s = a.Value.Open()) if (Sha256(destino) != Sha256(s))
+                    throw new InvalidDataException("Tu GTA ya tiene un " + a.Key + " de otro mod. Sacalo antes de activar el ENB.");
+            }
+            foreach (KeyValuePair<string, ZipArchiveEntry> a in archivos)
+            {
+                string destino = RutaSegura(carpetaGta, a.Key);
                 Directory.CreateDirectory(Path.GetDirectoryName(destino));
-                e.ExtractToFile(destino, true);
+                a.Value.ExtractToFile(destino, true);
             }
-            return rutas;
+            return archivos.Select(a => a.Key).ToList();
         }
     }
 
@@ -604,7 +616,7 @@ class Ventana : Form
             Ocupar(true);
             try
             {
-                List<string> rutas = await Task.Run(() => Actualizador.InstalarZipEnb(carpeta, zip, Config.EnbDllSha));
+                List<string> rutas = await Task.Run(() => Actualizador.InstalarZipEnb(carpeta, zip, Config.EnbAsiSha));
                 Directory.CreateDirectory(Path.GetDirectoryName(EnbArchivo()));
                 File.WriteAllText(EnbArchivo(), Actualizador.Huellas(carpeta, rutas));
                 Avisar("ENB instalado. Shift+F12 lo prende y lo apaga en el juego.", 100);
@@ -1178,14 +1190,18 @@ static class Prueba
                 foreach (string[] f in new[] { new[] { "WrapperVersion/d3d9.dll", "dll" }, new[] { "WrapperVersion/enbseries/enbhelper.dll", "h" }, new[] { "AsiVersion/enbseries.asi", "asi" } })
                     using (var w = new StreamWriter(z.CreateEntry(f[0]).Open())) w.Write(f[1]);
             }
-            string shaDll;
-            using (var ms = new MemoryStream(Encoding.ASCII.GetBytes("dll"))) shaDll = Sha(ms);
+            string shaAsi;
+            using (var ms = new MemoryStream(Encoding.ASCII.GetBytes("asi"))) shaAsi = Sha(ms);
             Ver(Tira(() => Actualizador.InstalarZipEnb(gta, zip, "otro")), "zip ENB: rechaza otra versión");
-            Ver(Tira(() => Actualizador.InstalarZipEnb(gta, zip, shaDll)) && !File.Exists(Path.Combine(gta, "enbseries", "enbhelper.dll")), "zip ENB: no pisa el d3d9.dll de otro mod ni copia nada");
-            File.Delete(Path.Combine(gta, "d3d9.dll"));
-            List<string> inst = Actualizador.InstalarZipEnb(gta, zip, shaDll);
-            Ver(inst.Count == 2 && File.ReadAllText(Path.Combine(gta, "d3d9.dll")) == "dll" && !File.Exists(Path.Combine(gta, "enbseries.asi")), "zip ENB: instala solo WrapperVersion");
-            Ver(Actualizador.Quitar(gta, Actualizador.Huellas(gta, inst)) == 2 && !File.Exists(Path.Combine(gta, "d3d9.dll")), "zip ENB: se saca entero");
+            File.WriteAllText(Path.Combine(gta, "enbseries.asi"), "de otro");
+            Ver(Tira(() => Actualizador.InstalarZipEnb(gta, zip, shaAsi)) && !File.Exists(Path.Combine(gta, "enbseries", "enbhelper.dll")), "zip ENB: no pisa archivos de otro mod ni copia nada");
+            File.Delete(Path.Combine(gta, "enbseries.asi"));
+            File.WriteAllText(Path.Combine(gta, "dinput8.dll"), "otro loader");
+            Ver(Tira(() => Actualizador.InstalarZipEnb(gta, zip, shaAsi)), "zip ENB: no pisa el dinput8.dll de otro mod");
+            File.Delete(Path.Combine(gta, "dinput8.dll"));
+            List<string> inst = Actualizador.InstalarZipEnb(gta, zip, shaAsi);
+            Ver(inst.Count == 2 && File.ReadAllText(Path.Combine(gta, "enbseries.asi")) == "asi" && File.ReadAllText(Path.Combine(gta, "d3d9.dll")) == "mio", "zip ENB: instala el .asi y deja afuera su d3d9.dll");
+            Ver(Actualizador.Quitar(gta, Actualizador.Huellas(gta, inst)) == 2 && !File.Exists(Path.Combine(gta, "enbseries.asi")) && File.Exists(Path.Combine(gta, "d3d9.dll")), "zip ENB: se saca entero");
         }
         finally { Directory.Delete(carpeta, true); }
 
