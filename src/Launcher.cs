@@ -24,6 +24,8 @@ static class Config
     const string Repo = "https://raw.githubusercontent.com/IgnacioCantoni/LauncherAmericaRP/main/";
     public const string NoticiasUrl = Repo + "noticias.txt";
     public const string ManifiestoUrl = Repo + "actualizaciones/manifiesto.txt";
+    // Paquete opcional de GTA Full: gráficos ENB. Cada jugador lo activa o desactiva en MI JUEGO. Vacío = no aparece.
+    public const string EnbUrl = Repo + "paquetes/enb/manifiesto.txt";
     public const string DescargaSampUrl = "https://www.sa-mp.mp/downloads/";
     // Carpeta con las fotos del fondo animado (fondos/lista.txt + imágenes). Vacío = siempre la ciudad dibujada.
     public const string FondosUrl = Repo + "fondos/";
@@ -225,6 +227,7 @@ static class Actualizador
     {
         public List<KeyValuePair<string, string>> Entradas = new List<KeyValuePair<string, string>>();
         public HashSet<string> Pendientes = new HashSet<string>();
+        public string Texto = "";
     }
 
     // Baja el manifiesto y marca qué archivos el jugador no tiene o tiene distintos.
@@ -235,7 +238,8 @@ static class Actualizador
         using (var web = new WebClient())
         {
             web.Encoding = Encoding.UTF8;
-            r.Entradas = LeerManifiesto(web.DownloadString(manifiestoUrl));
+            r.Texto = web.DownloadString(manifiestoUrl);
+            r.Entradas = LeerManifiesto(r.Texto);
         }
         for (int i = 0; i < r.Entradas.Count; i++)
         {
@@ -246,8 +250,21 @@ static class Actualizador
         return r;
     }
 
-    // Devuelve cuántos archivos bajó. Si algo falla, tira la excepción y no deja archivos a medias.
-    public static int Aplicar(string carpetaGta, string manifiestoUrl, Action<string, int> progreso)
+    // Saca de la carpeta del GTA los archivos de un manifiesto que se instaló antes. Solo borra los que siguen
+    // idénticos a los instalados: si el jugador puso su propio archivo con el mismo nombre, no se toca.
+    public static int Quitar(string carpetaGta, string textoManifiesto)
+    {
+        int borrados = 0;
+        foreach (KeyValuePair<string, string> e in LeerManifiesto(textoManifiesto))
+        {
+            string destino = RutaSegura(carpetaGta, e.Value);
+            if (File.Exists(destino) && Sha256(destino) == e.Key) { File.Delete(destino); borrados++; }
+        }
+        return borrados;
+    }
+
+    // Devuelve lo que revisó; en Pendientes queda lo que bajó. Si algo falla, tira la excepción y no deja archivos a medias.
+    public static Revision Aplicar(string carpetaGta, string manifiestoUrl, Action<string, int> progreso)
     {
         Revision r = Revisar(carpetaGta, manifiestoUrl, progreso);
         var pendientes = r.Entradas.Where(e => r.Pendientes.Contains(e.Value)).ToList();
@@ -273,7 +290,7 @@ static class Actualizador
             }
         }
         progreso(pendientes.Count == 0 ? "Todo al día." : "Actualizado: " + pendientes.Count + " archivo(s).", 100);
-        return pendientes.Count;
+        return r;
     }
 }
 
@@ -491,6 +508,16 @@ class Ventana : Form
             }
             RevisarMods();
         }
+        if (EnbActivo() && Config.EnbUrl.Length > 0 && File.Exists(Path.Combine(carpeta, "gta_sa.exe")))
+        {
+            // El ENB es opcional: si falla se avisa y se juega igual.
+            try
+            {
+                Actualizador.Revision enb = await Task.Run(() => Actualizador.Aplicar(carpeta, Config.EnbUrl, Avisar));
+                File.WriteAllText(EnbArchivo(), enb.Texto);
+            }
+            catch (Exception ex) { Avisar("No se pudo instalar el ENB: " + ex.Message, 0); }
+        }
         RevisarInstalacion();
         if (faltantes.Count > 0)
         {
@@ -503,6 +530,36 @@ class Ventana : Form
         }
         if (!gta10) Avisar("Tu gta_sa.exe no parece la versión 1.0. Si el juego se cierra al conectar, instalá la 1.0.", 100);
         return true;
+    }
+
+    // Si el ENB está activo, este archivo existe y guarda el manifiesto que se instaló, para poder sacarlo después.
+    static string EnbArchivo()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "enb-instalado.txt");
+    }
+
+    static bool EnbActivo() { return File.Exists(EnbArchivo()); }
+
+    async void CambiarEnb()
+    {
+        if (ocupado) return;
+        if (!EnbActivo())
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(EnbArchivo()));
+            File.WriteAllText(EnbArchivo(), "");
+            Actualizar();
+            return;
+        }
+        Ocupar(true);
+        try
+        {
+            string carpeta = Carpeta(), texto = File.ReadAllText(EnbArchivo());
+            int n = carpeta.Length == 0 ? 0 : await Task.Run(() => Actualizador.Quitar(carpeta, texto));
+            File.Delete(EnbArchivo());
+            Avisar("ENB desactivado: se sacaron " + n + " archivo(s).", 100);
+        }
+        catch (Exception ex) { Avisar("No se pudo sacar el ENB: " + ex.Message + ". Cerrá el GTA y probá de nuevo.", 0); }
+        finally { Ocupar(false); }
     }
 
     async void Actualizar()
@@ -712,6 +769,15 @@ class Ventana : Form
             Escribir(g, fila[0], Fuentes.Negrita(13f), Texto, area.X, y + 10);
             Escribir(g, fila[1], Fuentes.Titulo(18f), c, area.Right - Medir(g, fila[1], Fuentes.Titulo(18f)), y + 9);
             y += 46;
+        }
+        if (Config.EnbUrl.Length > 0)
+        {
+            bool activo = EnbActivo();
+            Escribir(g, "GTA FULL · GRÁFICOS ENB", Fuentes.Negrita(13f), Texto, area.X, y + 10);
+            Escribir(g, activo ? "ACTIVADO" : "DESACTIVADO", Fuentes.Titulo(18f), activo ? Verde : Gris, area.Right - 300, y + 9);
+            Boton(g, new Rectangle(area.Right - 150, y + 4, 150, 34), activo ? "DESACTIVAR" : "ACTIVAR", false, CambiarEnb);
+            Escribir(g, "Luces y colores mejorados. Pide más PC: si el juego anda lento, desactivalo.", Fuentes.Texto(11f), Gris, area.X, y + 40);
+            y += 66;
         }
         Boton(g, new Rectangle(area.X, y + 24, 200, 40), "REVISAR Y ACTUALIZAR", true, Actualizar);
     }
@@ -1188,6 +1254,15 @@ static class Prueba
             var entradas = Actualizador.LeerManifiesto(m);
             Ver(entradas.Count == 1 && entradas[0].Key == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" && entradas[0].Value == "models/a.txt", "manifiesto generado y leído");
             Ver(Tira(() => Actualizador.LeerManifiesto("hola mundo")), "manifiesto inválido se rechaza");
+
+            // Quitar: borra lo instalado, pero no un archivo que el jugador cambió.
+            string gta = Path.Combine(carpeta, "gta");
+            Directory.CreateDirectory(Path.Combine(gta, "models"));
+            File.WriteAllText(Path.Combine(gta, "models", "a.txt"), "abc");
+            File.WriteAllText(Path.Combine(gta, "d3d9.dll"), "mio");
+            string m2 = m + "0000000000000000000000000000000000000000000000000000000000000000 d3d9.dll\n";
+            Ver(Actualizador.Quitar(gta, m2) == 1 && !File.Exists(Path.Combine(gta, "models", "a.txt")) && File.Exists(Path.Combine(gta, "d3d9.dll")), "quitar paquete respeta archivos propios");
+            Ver(Tira(() => Actualizador.Quitar(gta, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad ../afuera.txt")), "quitar rechaza rutas de afuera");
         }
         finally { Directory.Delete(carpeta, true); }
 

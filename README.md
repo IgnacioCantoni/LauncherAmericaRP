@@ -33,6 +33,16 @@ Después de cambiarlos, volvé a compilar y repartí el `.exe` nuevo.
 
 Editá `noticias.txt`, commit y push. Los launchers la leen al abrirse.
 
+## Modo GTA Full: ENB
+
+El ENB es un paquete opcional: cada jugador lo activa o lo desactiva en MI JUEGO. Al activarlo se baja e instala en su carpeta del GTA; al desactivarlo se sacan esos mismos archivos (solo los que siguen iguales a los instalados).
+
+1. Copiá los archivos del ENB en `paquetes/enb/archivos/`, con las mismas carpetas que van dentro del GTA (por ejemplo `d3d9.dll`, `enbseries.ini` y la carpeta `enbseries/`).
+2. Doble clic en `generar-manifiesto.bat`.
+3. Commit y push.
+
+Antes de repartirlo, revisá la licencia de ENBSeries en enbdev.com y la del preset que uses.
+
 ## Poner fotos de fondo
 
 1. Sacá capturas en el server con F8 (quedan en `Documentos\GTA San Andreas User Files\SAMP\screens`). Quedan mejor de noche, con poca interfaz en pantalla (sin chat ni HUD).
