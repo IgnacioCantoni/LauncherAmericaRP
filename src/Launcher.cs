@@ -25,17 +25,16 @@ static class Config
     public const string NoticiasUrl = Repo + "noticias.txt";
     public const string ManifiestoUrl = Repo + "actualizaciones/manifiesto.txt";
     public const string DescargaSampUrl = "https://www.sa-mp.mp/downloads/";
-    // Imagen de fondo (JPG o PNG, ideal 1100x640). Si no está en el repo, se usa un fondo dibujado.
-    public const string FondoUrl = Repo + "fondo.jpg";
-    // Botón "Soporte" arriba a la derecha. Vacío = no aparece.
-    public const string Soporte = "";
-    // Botones de redes en el lateral, en este orden. Los que tengan el link vacío no aparecen.
+    // Carpeta con las fotos del fondo animado (fondos/lista.txt + imágenes). Vacío = siempre la ciudad dibujada.
+    public const string FondosUrl = Repo + "fondos/";
+    // Links del pie de la ventana, en este orden. Los que tengan el link vacío no aparecen.
     public static readonly KeyValuePair<string, string>[] Redes =
     {
         new KeyValuePair<string, string>("Discord", ""),
         new KeyValuePair<string, string>("YouTube", ""),
         new KeyValuePair<string, string>("TikTok", ""),
         new KeyValuePair<string, string>("Instagram", ""),
+        new KeyValuePair<string, string>("Soporte", ""),
     };
 }
 
@@ -278,26 +277,82 @@ static class Actualizador
     }
 }
 
-// La ventana se dibuja entera a mano (sin bordes de Windows) para poder poner el fondo y los paneles translúcidos.
+// Tipografías propias (SIL OFL, ver fuentes/): Bebas Neue para títulos y Barlow para el resto.
+// Van dentro del .exe como recursos; si no cargan, se usa Segoe UI.
+static class Fuentes
+{
+    static readonly System.Drawing.Text.PrivateFontCollection coleccion = new System.Drawing.Text.PrivateFontCollection();
+    static readonly Dictionary<string, Font> cache = new Dictionary<string, Font>();
+    static FontFamily titulo, cuerpo;
+
+    static Fuentes()
+    {
+        foreach (string nombre in new[] { "BebasNeue.ttf", "Barlow-Regular.ttf", "Barlow-Bold.ttf" })
+        {
+            try
+            {
+                // Se copian a un archivo porque las fuentes cargadas desde memoria no se dibujan en todos lados (Mono, algunos Windows).
+                string destino = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "fuentes", nombre);
+                using (Stream s = typeof(Fuentes).Assembly.GetManifestResourceStream(nombre))
+                {
+                    if (s == null) continue;
+                    if (!File.Exists(destino) || new FileInfo(destino).Length != s.Length)
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(destino));
+                        using (FileStream f = File.Create(destino)) s.CopyTo(f);
+                    }
+                }
+                coleccion.AddFontFile(destino);
+            }
+            catch (Exception) { }
+        }
+        foreach (FontFamily f in coleccion.Families)
+        {
+            if (f.Name == "Bebas Neue") titulo = f;
+            if (f.Name == "Barlow") cuerpo = f;
+        }
+    }
+
+    static Font Pedir(FontFamily fam, float tam, FontStyle estilo)
+    {
+        string clave = (fam == null ? "segoe" : fam.Name) + tam + estilo;
+        Font f;
+        if (!cache.TryGetValue(clave, out f))
+        {
+            // En Mono las fuentes privadas salen como cuadrados: ahí se piden por nombre (tienen que estar instaladas).
+            if (fam != null && Type.GetType("Mono.Runtime") != null) f = new Font(fam.Name, tam, estilo);
+            else f = fam != null && fam.IsStyleAvailable(estilo) ? new Font(fam, tam, estilo, GraphicsUnit.Point) : new Font("Segoe UI", tam * (fam == titulo ? 0.8f : 1f), estilo | (fam == titulo ? FontStyle.Bold : 0));
+            cache[clave] = f;
+        }
+        return f;
+    }
+
+    public static Font Titulo(float tam) { return Pedir(titulo, tam, FontStyle.Regular); }
+    public static Font Texto(float tam) { return Pedir(cuerpo, tam, FontStyle.Regular); }
+    public static Font Negrita(float tam) { return Pedir(cuerpo, tam, FontStyle.Bold); }
+}
+
+// La ventana se dibuja entera a mano (sin bordes de Windows) y se repinta ~30 veces por segundo por el fondo animado.
 // Los botones son zonas: cada vez que se pinta se anotan su rectángulo y su acción.
 class Ventana : Form
 {
-    static readonly Color Acento = Color.FromArgb(242, 157, 56), Acento2 = Color.FromArgb(224, 83, 47),
-        Texto = Color.FromArgb(240, 242, 247), Gris = Color.FromArgb(160, 166, 182), Oscuro = Color.FromArgb(12, 14, 20),
-        Verde = Color.FromArgb(88, 214, 130), Rojo = Color.FromArgb(235, 92, 92), Ambar = Color.FromArgb(245, 196, 80);
-    const int Ancho = 1100, Alto = 640, Barra = 76;
+    static readonly Color Acento = Color.FromArgb(245, 166, 35), Texto = Color.FromArgb(244, 241, 234), Gris = Color.FromArgb(168, 172, 186),
+        Oscuro = Color.FromArgb(8, 10, 16), Verde = Color.FromArgb(110, 220, 140), Rojo = Color.FromArgb(240, 96, 96), Ambar = Color.FromArgb(245, 196, 80);
+    const int Ancho = 1100, Alto = 660;
+    static readonly Rectangle Tarjeta = new Rectangle(744, 92, 316, 520), Contenido = new Rectangle(40, 92, 672, 520);
 
     class Zona { public Rectangle R; public Action Click; }
     readonly List<Zona> zonas = new List<Zona>();
     readonly TextBox nick = new TextBox();
-    readonly Timer reloj = new Timer();
+    readonly Timer reloj = new Timer(), cuadros = new Timer();
+    readonly Stopwatch tiempo = Stopwatch.StartNew();
+    readonly Escena escena = new Escena(Ancho, Alto);
     Point mouse = new Point(-1, -1), arrastre;
     bool arrastrando, consultando, ocupado;
 
-    Image fondo;
     EstadoServidor server = new EstadoServidor();
     bool serverConsultado;
-    string pestana = "inicio", noticias = "Cargando noticias...", estado = "Listo.", mods = "";
+    string pestana = "inicio", noticias = "Cargando noticias...", estado = "Listo para jugar.", mods = "";
     int progreso, scroll;
     Actualizador.Revision revision;
     List<string> faltantes = new List<string>();
@@ -315,27 +370,29 @@ class Ventana : Form
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
 
         nick.BorderStyle = BorderStyle.None;
-        nick.BackColor = Color.FromArgb(24, 27, 36);
+        nick.BackColor = Color.FromArgb(20, 22, 30);
         nick.ForeColor = Texto;
-        nick.Font = new Font("Segoe UI", 12f, FontStyle.Bold);
+        nick.Font = new Font("Segoe UI", 13f, FontStyle.Bold);
         nick.MaxLength = 20;
-        nick.SetBounds(78, Alto - Barra + 26, 196, 24);
+        nick.SetBounds(Tarjeta.X + 36, Tarjeta.Y + 262, Tarjeta.Width - 72, 26);
         nick.Text = Registro.Nick;
         nick.TextChanged += delegate { Invalidate(); };
         Controls.Add(nick);
 
-        fondo = Fondo.Cargado() ?? Fondo.Generado(Ancho, Alto);
         RevisarInstalacion();
         reloj.Interval = 15000;
         reloj.Tick += delegate { RefrescarServer(); };
+        cuadros.Interval = 33;
+        cuadros.Tick += delegate { if (WindowState != FormWindowState.Minimized) Invalidate(); };
         Shown += delegate
         {
             ActiveControl = nick;
             nick.SelectionStart = nick.Text.Length;
             reloj.Start();
+            cuadros.Start();
             RefrescarServer();
             CargarNoticias();
-            CargarFondo();
+            CargarFotos();
             RevisarMods();
         };
     }
@@ -352,7 +409,6 @@ class Ventana : Form
     {
         faltantes = Instalacion.Faltantes(Carpeta());
         gta10 = File.Exists(Path.Combine(Carpeta(), "gta_sa.exe")) && Instalacion.PareceGta10(Carpeta());
-        Invalidate();
     }
 
     void Avisar(string texto, int porcentaje)
@@ -360,7 +416,6 @@ class Ventana : Form
         if (InvokeRequired) { BeginInvoke(new Action<string, int>(Avisar), texto, porcentaje); return; }
         estado = texto;
         progreso = Math.Max(0, Math.Min(100, porcentaje));
-        Invalidate();
     }
 
     async void RefrescarServer()
@@ -370,7 +425,6 @@ class Ventana : Form
         server = await Task.Run(() => Consulta.Pedir(Config.Host, Config.Puerto, 2500));
         serverConsultado = true;
         consultando = false;
-        Invalidate();
     }
 
     async void CargarNoticias()
@@ -378,19 +432,19 @@ class Ventana : Form
         if (Config.NoticiasUrl.Length == 0) { noticias = "Todavía no hay noticias."; return; }
         try { noticias = await Task.Run(() => Web.Texto(Config.NoticiasUrl)); }
         catch (Exception ex) { noticias = "No se pudieron cargar las noticias: " + ex.Message; }
-        Invalidate();
     }
 
-    async void CargarFondo()
+    async void CargarFotos()
     {
-        Image nuevo = await Task.Run(() => Fondo.Bajar());
-        if (nuevo != null) { fondo = nuevo; Invalidate(); }
+        escena.Fotos = Fotos.Guardadas(Ancho, Alto);
+        List<Image> nuevas = await Task.Run(() => Fotos.Bajar(Ancho, Alto));
+        if (nuevas.Count > 0) escena.Fotos = nuevas;
     }
 
     async void RevisarMods()
     {
         if (Config.ManifiestoUrl.Length == 0) { mods = "Este server no reparte archivos propios."; return; }
-        if (faltantes.Count > 0 && Carpeta().Length == 0) { mods = "Elegí la carpeta del GTA para ver tus archivos."; Invalidate(); return; }
+        if (Carpeta().Length == 0) { mods = "Elegí la carpeta del GTA para ver tus archivos."; return; }
         string carpeta = Carpeta();
         try
         {
@@ -398,7 +452,6 @@ class Ventana : Form
             mods = revision.Entradas.Count == 0 ? "Todavía no hay mods ni archivos del server." : "";
         }
         catch (Exception ex) { revision = null; mods = "No se pudieron revisar los archivos: " + ex.Message; }
-        Invalidate();
     }
 
     // ---------- acciones ----------
@@ -419,7 +472,6 @@ class Ventana : Form
     {
         ocupado = si;
         nick.Enabled = !si;
-        Invalidate();
     }
 
     // Baja lo que cambió (si hay manifiesto) y dice qué falta. Devuelve true si se puede jugar.
@@ -492,9 +544,8 @@ class Ventana : Form
 
     void Pestana(string p)
     {
-        pestana = pestana == p ? "inicio" : p;
+        pestana = p;
         scroll = 0;
-        Invalidate();
     }
 
     // ---------- mouse ----------
@@ -505,20 +556,18 @@ class Ventana : Form
         if (arrastrando) { Location = new Point(Location.X + e.X - arrastre.X, Location.Y + e.Y - arrastre.Y); return; }
         mouse = e.Location;
         Cursor = ZonaEn(e.Location) != null ? Cursors.Hand : Cursors.Default;
-        Invalidate();
     }
 
     protected override void OnMouseLeave(EventArgs e)
     {
         base.OnMouseLeave(e);
         mouse = new Point(-1, -1);
-        Invalidate();
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
-        if (e.Button == MouseButtons.Left && e.Y < 70 && ZonaEn(e.Location) == null) { arrastrando = true; arrastre = e.Location; }
+        if (e.Button == MouseButtons.Left && e.Y < 76 && ZonaEn(e.Location) == null) { arrastrando = true; arrastre = e.Location; }
     }
 
     protected override void OnMouseUp(MouseEventArgs e)
@@ -533,7 +582,6 @@ class Ventana : Form
     {
         base.OnMouseWheel(e);
         scroll = Math.Max(0, scroll - e.Delta / 3);
-        Invalidate();
     }
 
     Zona ZonaEn(Point p)
@@ -548,128 +596,68 @@ class Ventana : Form
     {
         Graphics g = e.Graphics;
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
         zonas.Clear();
 
-        DibujarFondo(g);
-        DibujarLateral(g);
+        escena.Dibujar(g, tiempo.Elapsed.TotalSeconds);
+        Sombra(g, new Rectangle(0, 0, Ancho, 140), 200, 0, 90f);
+        Sombra(g, new Rectangle(0, Alto - 300, 760, 300), 0, 235, 90f);
+        Sombra(g, new Rectangle(0, 0, 520, Alto), 150, 0, 0f);
+
         DibujarArriba(g);
         if (pestana == "noticias") DibujarNoticias(g);
         else if (pestana == "mods") DibujarMods(g);
+        else if (pestana == "juego") DibujarJuego(g);
         else DibujarInicio(g);
-        DibujarBarra(g);
-    }
-
-    void DibujarFondo(Graphics g)
-    {
-        float esc = Math.Max((float)Ancho / fondo.Width, (float)Alto / fondo.Height);
-        float w = fondo.Width * esc, h = fondo.Height * esc;
-        g.DrawImage(fondo, (Ancho - w) / 2, (Alto - h) / 2, w, h);
-        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, 0, 520, Alto), Color.FromArgb(240, Oscuro), Color.FromArgb(0, Oscuro), 0f))
-            g.FillRectangle(b, 0, 0, 520, Alto);
-        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, Alto - 260, Ancho, 260), Color.FromArgb(0, Oscuro), Color.FromArgb(230, Oscuro), 90f))
-            g.FillRectangle(b, 0, Alto - 260, Ancho, 260);
-    }
-
-    void DibujarLateral(Graphics g)
-    {
-        // Logo propio: estrella y nombre.
-        Estrella(g, 44, 46, 20, Acento);
-        Escribir(g, "AMERICA", 74, 22, 21f, FontStyle.Bold, Texto);
-        Escribir(g, "R O L E P L A Y", 77, 54, 8.5f, FontStyle.Bold, Acento);
-
-        int x = 28;
-        foreach (string p in new[] { "noticias", "mods" })
-        {
-            string t = p == "noticias" ? "NOTICIAS" : "MODS";
-            int w = Medir(g, t, 9.5f, FontStyle.Bold) + 36;
-            string cap = p;
-            Pildora(g, new Rectangle(x, 96, w, 36), t, pestana == p, delegate { Pestana(cap); });
-            x += w + 10;
-        }
-
-        Escribir(g, "Jugadores online", 30, 156, 11f, FontStyle.Regular, Gris);
-        string num = server.EnLinea ? server.Jugadores.ToString() : "0";
-        Escribir(g, num, 26, 176, 36f, FontStyle.Bold, Texto);
-        if (server.EnLinea) Escribir(g, "/ " + server.Maximo, 34 + Medir(g, num, 36f, FontStyle.Bold), 198, 13f, FontStyle.Regular, Gris);
-        string linea = !serverConsultado ? "Consultando el server..." : server.EnLinea ? "En línea · " + server.Ping + " ms" : "Server apagado o sin respuesta";
-        Punto(g, 36, 241, !serverConsultado ? Gris : server.EnLinea ? Verde : Rojo);
-        Escribir(g, linea, 46, 232, 10f, FontStyle.Regular, Gris);
-
-        int y = 270;
-        x = 28;
-        foreach (KeyValuePair<string, string> red in Config.Redes)
-        {
-            if (red.Value.Length == 0) continue;
-            int w = Medir(g, red.Key, 9.5f, FontStyle.Bold) + 30;
-            string url = red.Value;
-            Pildora(g, new Rectangle(x, y, w, 32), red.Key, false, delegate { Abrir(url); });
-            x += w + 8;
-        }
-
-        y = 326;
-        Escribir(g, "T U   J U E G O", 30, y, 8.5f, FontStyle.Bold, Gris);
-        var tarjeta = new Rectangle(28, y + 24, 300, 172);
-        Redondeado(g, tarjeta, 12, Color.FromArgb(200, 22, 25, 34), Color.FromArgb(60, 255, 255, 255));
-        Escribir(g, "GTA San Andreas", 46, y + 38, 12.5f, FontStyle.Bold, Texto);
-        string carpeta = Carpeta();
-        Escribir(g, carpeta.Length == 0 ? "Carpeta sin elegir" : Recortar(g, carpeta, 260, 8.5f), 46, y + 62, 8.5f, FontStyle.Regular, Gris);
-
-        bool hayGta = carpeta.Length > 0 && File.Exists(Path.Combine(carpeta, "gta_sa.exe"));
-        bool haySamp = hayGta && faltantes.Count == 0;
-        Estado(g, 46, y + 88, "Versión 1.0", !hayGta ? Rojo : gta10 ? Verde : Ambar, !hayGta ? "Falta" : gta10 ? "OK" : "Revisar");
-        Estado(g, 46, y + 108, "SA-MP 0.3.7", haySamp ? Verde : Rojo, haySamp ? "OK" : "Falta");
-        int pend = revision == null ? -1 : revision.Pendientes.Count;
-        Estado(g, 46, y + 128, "Archivos del server", pend < 0 ? Gris : pend == 0 ? Verde : Ambar, pend < 0 ? "-" : pend == 0 ? "Al día" : pend + " por bajar");
-        Pildora(g, new Rectangle(46, y + 156, 104, 28), "Cambiar", false, delegate { ElegirCarpeta(); });
+        DibujarTarjeta(g);
+        DibujarPie(g);
     }
 
     void DibujarArriba(Graphics g)
     {
-        int x = Ancho - 16;
-        x -= 40; Icono(g, new Rectangle(x, 16, 40, 34), "✕", delegate { Close(); });
-        x -= 46; Icono(g, new Rectangle(x, 16, 40, 34), "—", delegate { WindowState = FormWindowState.Minimized; });
-        foreach (string t in Config.Soporte.Length > 0 ? new[] { "Actualizar", "Soporte" } : new[] { "Actualizar" })
+        Estrella(g, 52, 38, 17, Acento);
+        Escribir(g, "AMERICA", Fuentes.Titulo(30f), Texto, 78, 16);
+        Escribir(g, "RP", Fuentes.Titulo(30f), Acento, 78 + Medir(g, "AMERICA", Fuentes.Titulo(30f)) + 9, 16);
+
+        int x = 300;
+        foreach (string[] p in new[] { new[] { "inicio", "INICIO" }, new[] { "noticias", "NOTICIAS" }, new[] { "mods", "MODS" }, new[] { "juego", "MI JUEGO" } })
         {
-            int w = Medir(g, t, 9.5f, FontStyle.Bold) + 32;
-            x -= w + 8;
-            string cap = t;
-            Pildora(g, new Rectangle(x, 16, w, 34), t, false, delegate { if (cap == "Soporte") Abrir(Config.Soporte); else Actualizar(); });
+            Font f = Fuentes.Titulo(19f);
+            int w = Medir(g, p[1], f);
+            var r = new Rectangle(x - 8, 20, w + 16, 40);
+            bool activa = pestana == p[0], sobre = r.Contains(mouse);
+            Escribir(g, p[1], f, activa || sobre ? Texto : Gris, x, 26);
+            if (activa) using (var b = new SolidBrush(Acento)) g.FillRectangle(b, x, 56, 22, 3);
+            string cap = p[0];
+            zonas.Add(new Zona { R = r, Click = delegate { Pestana(cap); } });
+            x += w + 30;
         }
-        if (Instalacion.NickValido.IsMatch(nick.Text.Trim()))
-        {
-            int w = Medir(g, nick.Text.Trim(), 9.5f, FontStyle.Bold) + 46;
-            x -= w + 8;
-            var r = new Rectangle(x, 16, w, 34);
-            Redondeado(g, r, 17, Color.FromArgb(170, 20, 60, 36), Color.FromArgb(160, Verde));
-            Punto(g, x + 18, 33, Verde);
-            Escribir(g, nick.Text.Trim(), x + 30, 23, 9.5f, FontStyle.Bold, Verde);
-        }
+
+        Linea(g, new Rectangle(Ancho - 56, 22, 36, 36), true, delegate { Close(); });
+        Linea(g, new Rectangle(Ancho - 96, 22, 36, 36), false, delegate { WindowState = FormWindowState.Minimized; });
     }
 
     void DibujarInicio(Graphics g)
     {
-        Escribir(g, "Bienvenido a AMERICA RP", 380, Alto - Barra - 118, 26f, FontStyle.Bold, Texto);
+        int y = Contenido.Bottom - 150;
+        Escribir(g, "SERVIDOR DE ROLEPLAY EN ESPAÑOL", Fuentes.Negrita(10f), Acento, 44, y);
+        Escribir(g, "BIENVENIDO A AMERICA RP", Fuentes.Titulo(58f), Texto, 40, y + 18);
         string primera = noticias.Replace("\r", "").Split('\n').FirstOrDefault(l => l.Trim().Length > 0 && !l.Contains("Bienvenido")) ?? "";
-        using (var f = new Font("Segoe UI", 11f))
-        using (var b = new SolidBrush(Gris))
-            g.DrawString(primera, f, b, new RectangleF(383, Alto - Barra - 70, 640, 48));
+        using (var b = new SolidBrush(Color.FromArgb(220, Texto)))
+            g.DrawString(primera, Fuentes.Texto(13f), b, new RectangleF(44, y + 104, 600, 50));
     }
 
-    Rectangle Panel(Graphics g, string titulo)
+    Rectangle Hoja(Graphics g, string titulo)
     {
-        var r = new Rectangle(370, 74, Ancho - 370 - 24, Alto - Barra - 74 - 18);
-        Redondeado(g, r, 14, Color.FromArgb(215, 16, 18, 26), Color.FromArgb(50, 255, 255, 255));
-        Escribir(g, titulo, r.X + 26, r.Y + 20, 16f, FontStyle.Bold, Texto);
-        Icono(g, new Rectangle(r.Right - 50, r.Y + 16, 34, 30), "✕", delegate { Pestana("inicio"); });
-        return r;
+        Vidrio(g, Contenido);
+        Escribir(g, titulo, Fuentes.Titulo(34f), Texto, Contenido.X + 28, Contenido.Y + 20);
+        return new Rectangle(Contenido.X + 28, Contenido.Y + 76, Contenido.Width - 56, Contenido.Height - 96);
     }
 
     void DibujarNoticias(Graphics g)
     {
-        Rectangle r = Panel(g, "Noticias");
-        var area = new Rectangle(r.X + 26, r.Y + 62, r.Width - 52, r.Height - 80);
-        using (var f = new Font("Segoe UI", 11f))
+        Rectangle area = Hoja(g, "NOTICIAS");
+        Font f = Fuentes.Texto(13f);
         using (var b = new SolidBrush(Texto))
         {
             int alto = (int)g.MeasureString(noticias, f, area.Width).Height;
@@ -682,96 +670,169 @@ class Ventana : Form
 
     void DibujarMods(Graphics g)
     {
-        Rectangle r = Panel(g, "Mods y archivos del server");
-        int y = r.Y + 62;
+        Rectangle area = Hoja(g, "MODS DEL SERVER");
         if (revision == null || revision.Entradas.Count == 0)
         {
-            Escribir(g, mods.Length == 0 ? "Revisando..." : mods, r.X + 26, y, 11f, FontStyle.Regular, Gris);
+            Escribir(g, mods.Length == 0 ? "Revisando..." : mods, Fuentes.Texto(13f), Gris, area.X, area.Y);
             return;
         }
         int pend = revision.Pendientes.Count;
-        Escribir(g, revision.Entradas.Count + " archivo(s) · " + (pend == 0 ? "todo al día" : pend + " por bajar"), r.X + 26, y, 10f, FontStyle.Regular, Gris);
-        if (pend > 0) Pildora(g, new Rectangle(r.Right - 200, r.Y + 16, 140, 30), "Bajar ahora", true, Actualizar);
-        var area = new Rectangle(r.X + 16, y + 30, r.Width - 32, r.Bottom - y - 46);
-        scroll = Math.Min(scroll, Math.Max(0, revision.Entradas.Count * 34 - area.Height));
-        g.SetClip(area);
+        Escribir(g, revision.Entradas.Count + " archivo(s) · " + (pend == 0 ? "todo al día" : pend + " por bajar"), Fuentes.Texto(12f), Gris, area.X, area.Y);
+        if (pend > 0) Boton(g, new Rectangle(Contenido.Right - 180, Contenido.Y + 28, 150, 36), "BAJAR AHORA", true, Actualizar);
+        var lista = new Rectangle(area.X - 10, area.Y + 32, area.Width + 20, area.Height - 32);
+        scroll = Math.Min(scroll, Math.Max(0, revision.Entradas.Count * 36 - lista.Height));
+        g.SetClip(lista);
         for (int i = 0; i < revision.Entradas.Count; i++)
         {
-            int fy = area.Y + i * 34 - scroll;
-            if (fy + 34 < area.Y || fy > area.Bottom) continue;
+            int fy = lista.Y + i * 36 - scroll;
+            if (fy + 36 < lista.Y || fy > lista.Bottom) continue;
             string ruta = revision.Entradas[i].Value;
             bool falta = revision.Pendientes.Contains(ruta);
-            if (i % 2 == 0) using (var b = new SolidBrush(Color.FromArgb(18, 255, 255, 255))) g.FillRectangle(b, area.X, fy, area.Width, 34);
-            Punto(g, area.X + 16, fy + 17, falta ? Ambar : Verde);
-            Escribir(g, Recortar(g, ruta, area.Width - 160, 10f), area.X + 30, fy + 7, 10f, FontStyle.Regular, Texto);
-            string t = falta ? "Por bajar" : "Instalado";
-            Escribir(g, t, area.Right - 16 - Medir(g, t, 9.5f, FontStyle.Bold), fy + 8, 9.5f, FontStyle.Bold, falta ? Ambar : Verde);
+            using (var p = new Pen(Color.FromArgb(28, 255, 255, 255))) g.DrawLine(p, lista.X, fy + 35, lista.Right, fy + 35);
+            Escribir(g, Recortar(g, ruta, lista.Width - 150, Fuentes.Texto(12.5f)), Fuentes.Texto(12.5f), Texto, lista.X + 10, fy + 8);
+            string t = falta ? "POR BAJAR" : "INSTALADO";
+            Escribir(g, t, Fuentes.Titulo(16f), falta ? Ambar : Verde, lista.Right - 10 - Medir(g, t, Fuentes.Titulo(16f)), fy + 8);
         }
         g.ResetClip();
     }
 
-    void DibujarBarra(Graphics g)
+    void DibujarJuego(Graphics g)
     {
-        int y = Alto - Barra;
-        using (var b = new SolidBrush(Color.FromArgb(250, 10, 11, 16))) g.FillRectangle(b, 0, y, Ancho, Barra);
-        using (var p = new Pen(Color.FromArgb(40, 255, 255, 255))) g.DrawLine(p, 0, y, Ancho, y);
+        Rectangle area = Hoja(g, "MI JUEGO");
+        string carpeta = Carpeta();
+        Escribir(g, "CARPETA DEL GTA SAN ANDREAS", Fuentes.Negrita(10f), Gris, area.X, area.Y);
+        Escribir(g, carpeta.Length == 0 ? "Sin elegir" : Recortar(g, carpeta, area.Width - 200, Fuentes.Texto(13f)), Fuentes.Texto(13f), Texto, area.X, area.Y + 20);
+        Boton(g, new Rectangle(area.Right - 170, area.Y + 6, 170, 38), "CAMBIAR CARPETA", false, delegate { ElegirCarpeta(); });
 
-        Redondeado(g, new Rectangle(24, y + 14, 266, 48), 10, Color.FromArgb(24, 27, 36), Color.FromArgb(50, 255, 255, 255));
-        using (var b = new SolidBrush(Gris))
+        int y = area.Y + 80;
+        foreach (string[] fila in Revisiones())
         {
-            g.FillEllipse(b, 44, y + 26, 12, 12);
-            g.FillPie(b, 38, y + 40, 24, 22, 180, 180);
+            Color c = fila[2] == "ok" ? Verde : fila[2] == "mal" ? Rojo : fila[2] == "ojo" ? Ambar : Gris;
+            using (var p = new Pen(Color.FromArgb(28, 255, 255, 255))) g.DrawLine(p, area.X, y + 44, area.Right, y + 44);
+            Escribir(g, fila[0], Fuentes.Negrita(13f), Texto, area.X, y + 10);
+            Escribir(g, fila[1], Fuentes.Titulo(18f), c, area.Right - Medir(g, fila[1], Fuentes.Titulo(18f)), y + 9);
+            y += 46;
+        }
+        Boton(g, new Rectangle(area.X, y + 24, 200, 40), "REVISAR Y ACTUALIZAR", true, Actualizar);
+    }
+
+    // [nombre, valor, ok|ojo|mal|nada]
+    List<string[]> Revisiones()
+    {
+        string carpeta = Carpeta();
+        bool hayGta = carpeta.Length > 0 && File.Exists(Path.Combine(carpeta, "gta_sa.exe"));
+        bool haySamp = hayGta && faltantes.Count == 0;
+        int pend = revision == null ? -1 : revision.Pendientes.Count;
+        return new List<string[]>
+        {
+            new[] { "GTA San Andreas 1.0", !hayGta ? "FALTA" : gta10 ? "OK" : "REVISAR", !hayGta ? "mal" : gta10 ? "ok" : "ojo" },
+            new[] { "SA-MP 0.3.7", haySamp ? "OK" : "FALTA", haySamp ? "ok" : "mal" },
+            new[] { "Archivos del server", pend < 0 ? "-" : pend == 0 ? "AL DÍA" : pend + " POR BAJAR", pend < 0 ? "nada" : pend == 0 ? "ok" : "ojo" },
+        };
+    }
+
+    void DibujarTarjeta(Graphics g)
+    {
+        Rectangle t = Tarjeta;
+        Vidrio(g, t);
+        using (var b = new SolidBrush(Acento)) g.FillRectangle(b, t.X, t.Y, t.Width, 3);
+        int x = t.X + 28;
+
+        Escribir(g, "SERVIDOR", Fuentes.Negrita(9.5f), Gris, x, t.Y + 24);
+        Escribir(g, Recortar(g, server.EnLinea && server.Nombre.Length > 0 ? server.Nombre.ToUpperInvariant() : "AMERICA RP", t.Width - 56, Fuentes.Titulo(28f)), Fuentes.Titulo(28f), Texto, x, t.Y + 40);
+        Color c = !serverConsultado ? Gris : server.EnLinea ? Verde : Rojo;
+        Punto(g, x + 4, t.Y + 88, c);
+        Escribir(g, !serverConsultado ? "CONSULTANDO..." : server.EnLinea ? "EN LÍNEA · " + server.Ping + " MS" : "APAGADO", Fuentes.Negrita(10f), c, x + 14, t.Y + 79);
+
+        string num = server.EnLinea ? server.Jugadores.ToString() : "0";
+        Escribir(g, num, Fuentes.Titulo(80f), Texto, x - 4, t.Y + 100);
+        int nx = x + Medir(g, num, Fuentes.Titulo(80f)) + 4;
+        Escribir(g, "/ " + (server.EnLinea ? server.Maximo : 0), Fuentes.Titulo(26f), Gris, nx, t.Y + 132);
+        Escribir(g, "JUGADORES", Fuentes.Negrita(9.5f), Gris, nx + 2, t.Y + 164);
+
+        using (var p = new Pen(Color.FromArgb(36, 255, 255, 255))) g.DrawLine(p, x, t.Y + 212, t.Right - 28, t.Y + 212);
+        Escribir(g, "TU NICK", Fuentes.Negrita(9.5f), Gris, x, t.Y + 228);
+        var caja = new Rectangle(x, t.Y + 250, t.Width - 56, 48);
+        using (var b = new SolidBrush(Color.FromArgb(20, 22, 30))) g.FillRectangle(b, caja);
+        using (var p = new Pen(nick.Focused ? Acento : Color.FromArgb(60, 255, 255, 255))) g.DrawRectangle(p, caja);
+
+        int y = t.Y + 318;
+        foreach (string[] fila in Revisiones())
+        {
+            Color fc = fila[2] == "ok" ? Verde : fila[2] == "mal" ? Rojo : fila[2] == "ojo" ? Ambar : Gris;
+            Punto(g, x + 4, y + 10, fc);
+            Escribir(g, fila[0], Fuentes.Texto(11f), Texto, x + 16, y + 1);
+            Escribir(g, fila[1], Fuentes.Titulo(15f), fc, t.Right - 28 - Medir(g, fila[1], Fuentes.Titulo(15f)), y);
+            y += 26;
         }
 
-        int px = 316, pw = 420;
-        Escribir(g, ocupado ? "T R A B A J A N D O" : "E S T A D O", px, y + 14, 8.5f, FontStyle.Bold, Gris);
-        Redondeado(g, new Rectangle(px, y + 36, pw, 6), 3, Color.FromArgb(40, 255, 255, 255), Color.Empty);
-        if (progreso > 0)
-            using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(px, y + 36, pw, 6), Acento, Acento2, 0f))
-                g.FillRectangle(b, px, y + 36, pw * progreso / 100, 6);
-        Escribir(g, Recortar(g, estado, pw, 9f), px, y + 46, 9f, FontStyle.Regular, Gris);
-
-        var srv = new Rectangle(758, y + 14, 150, 48);
-        Redondeado(g, srv, 10, Color.FromArgb(24, 27, 36), Color.FromArgb(50, 255, 255, 255));
-        Punto(g, srv.X + 18, srv.Y + 24, server.EnLinea ? Verde : Rojo);
-        Escribir(g, Recortar(g, server.EnLinea && server.Nombre.Length > 0 ? server.Nombre : "AMERICA RP", 110, 10f), srv.X + 30, srv.Y + 5, 10f, FontStyle.Bold, Texto);
-        Escribir(g, server.EnLinea ? server.Jugadores + " jugadores" : "Apagado", srv.X + 30, srv.Y + 25, 8.5f, FontStyle.Regular, Gris);
-
-        var jugar = new Rectangle(922, y + 12, 154, 52);
+        // Botón inclinado: el borde en diagonal le da otro aire que un rectángulo redondeado.
+        var jugar = new Rectangle(x, t.Bottom - 96, t.Width - 56, 68);
         bool sobre = jugar.Contains(mouse) && !ocupado;
-        using (var path = Camino(jugar, 10))
-        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(jugar, sobre ? Acento2 : Acento, sobre ? Acento : Acento2, 0f))
-            g.FillPath(b, path);
-        Escribir(g, ocupado ? "ESPERÁ..." : "JUGAR  ▶", jugar.X + (jugar.Width - Medir(g, ocupado ? "ESPERÁ..." : "JUGAR  ▶", 14f, FontStyle.Bold)) / 2, jugar.Y + 12, 14f, FontStyle.Bold, Color.White);
+        var forma = new[] { new Point(jugar.X + 14, jugar.Y), new Point(jugar.Right, jugar.Y), new Point(jugar.Right - 14, jugar.Bottom), new Point(jugar.X, jugar.Bottom) };
+        using (var b = new SolidBrush(ocupado ? Color.FromArgb(120, Acento) : sobre ? Color.FromArgb(255, 186, 72) : Acento)) g.FillPolygon(b, forma);
+        string txt = ocupado ? "ESPERÁ..." : "JUGAR";
+        Escribir(g, txt, Fuentes.Titulo(40f), Oscuro, jugar.X + (jugar.Width - Medir(g, txt, Fuentes.Titulo(40f))) / 2, jugar.Y + 10);
         if (!ocupado) zonas.Add(new Zona { R = jugar, Click = Jugar });
+    }
+
+    void DibujarPie(Graphics g)
+    {
+        using (var b = new SolidBrush(Color.FromArgb(40, 255, 255, 255))) g.FillRectangle(b, 0, Alto - 3, Ancho, 3);
+        if (progreso > 0) using (var b = new SolidBrush(Acento)) g.FillRectangle(b, 0, Alto - 3, Ancho * progreso / 100, 3);
+        Escribir(g, Recortar(g, (ocupado ? "● " : "") + estado, 640, Fuentes.Texto(11f)), Fuentes.Texto(11f), Gris, 40, Alto - 36);
+
+        int x = Tarjeta.Right;
+        for (int i = Config.Redes.Length - 1; i >= 0; i--)
+        {
+            if (Config.Redes[i].Value.Length == 0) continue;
+            string t = Config.Redes[i].Key.ToUpperInvariant(), url = Config.Redes[i].Value;
+            int w = Medir(g, t, Fuentes.Titulo(17f));
+            x -= w;
+            var r = new Rectangle(x - 4, Alto - 40, w + 8, 30);
+            Escribir(g, t, Fuentes.Titulo(17f), r.Contains(mouse) ? Acento : Gris, x, Alto - 37);
+            zonas.Add(new Zona { R = r, Click = delegate { Abrir(url); } });
+            x -= 22;
+        }
     }
 
     // ---------- piezas ----------
 
-    void Pildora(Graphics g, Rectangle r, string texto, bool activa, Action click)
+    void Boton(Graphics g, Rectangle r, string texto, bool principal, Action click)
     {
         bool sobre = r.Contains(mouse);
-        Color relleno = activa ? Color.FromArgb(220, Acento) : Color.FromArgb(sobre ? 200 : 150, 30, 34, 46);
-        Redondeado(g, r, r.Height / 2, relleno, activa ? Color.Empty : Color.FromArgb(sobre ? 120 : 60, 255, 255, 255));
-        int w = Medir(g, texto, 9.5f, FontStyle.Bold);
-        Escribir(g, texto, r.X + (r.Width - w) / 2, r.Y + (r.Height - 18) / 2, 9.5f, FontStyle.Bold, activa ? Oscuro : Texto);
+        if (principal) using (var b = new SolidBrush(sobre ? Color.FromArgb(255, 186, 72) : Acento)) g.FillRectangle(b, r);
+        else using (var p = new Pen(sobre ? Acento : Color.FromArgb(120, 255, 255, 255), 1.5f)) g.DrawRectangle(p, r);
+        Font f = Fuentes.Titulo(18f);
+        Escribir(g, texto, f, principal ? Oscuro : Texto, r.X + (r.Width - Medir(g, texto, f)) / 2, r.Y + (r.Height - 26) / 2);
         zonas.Add(new Zona { R = r, Click = click });
     }
 
-    void Icono(Graphics g, Rectangle r, string texto, Action click)
+    void Linea(Graphics g, Rectangle r, bool cruz, Action click)
     {
         bool sobre = r.Contains(mouse);
-        Redondeado(g, r, 8, Color.FromArgb(sobre ? 200 : 130, 30, 34, 46), Color.FromArgb(60, 255, 255, 255));
-        int w = Medir(g, texto, 10f, FontStyle.Bold);
-        Escribir(g, texto, r.X + (r.Width - w) / 2, r.Y + (r.Height - 19) / 2, 10f, FontStyle.Bold, Texto);
+        if (sobre) using (var b = new SolidBrush(Color.FromArgb(cruz ? 200 : 60, cruz ? Rojo : Color.White))) g.FillRectangle(b, r);
+        using (var p = new Pen(Texto, 1.6f))
+        {
+            int cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
+            if (cruz) { g.DrawLine(p, cx - 6, cy - 6, cx + 6, cy + 6); g.DrawLine(p, cx + 6, cy - 6, cx - 6, cy + 6); }
+            else g.DrawLine(p, cx - 7, cy, cx + 7, cy);
+        }
         zonas.Add(new Zona { R = r, Click = click });
     }
 
-    void Estado(Graphics g, int x, int y, string que, Color color, string valor)
+    static void Vidrio(Graphics g, Rectangle r)
     {
-        Punto(g, x + 4, y + 10, color);
-        Escribir(g, que, x + 16, y + 1, 9.5f, FontStyle.Regular, Texto);
-        Escribir(g, valor, x + 160, y + 1, 9.5f, FontStyle.Bold, color);
+        using (var b = new SolidBrush(Color.FromArgb(205, 10, 12, 18))) g.FillRectangle(b, r);
+        using (var p = new Pen(Color.FromArgb(34, 255, 255, 255))) g.DrawRectangle(p, r);
+    }
+
+    static void Sombra(Graphics g, Rectangle r, int desde, int hasta, float angulo)
+    {
+        // El pincel es 2 px más grande: si no, en el borde repite el color del otro extremo y se ve una raya.
+        var mayor = Rectangle.Inflate(r, 2, 2);
+        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(mayor, Color.FromArgb(desde, Oscuro), Color.FromArgb(hasta, Oscuro), angulo))
+            g.FillRectangle(b, r);
     }
 
     static void Punto(Graphics g, int x, int y, Color c)
@@ -791,43 +852,20 @@ class Ventana : Form
         using (var b = new SolidBrush(c)) g.FillPolygon(b, pts);
     }
 
-    static System.Drawing.Drawing2D.GraphicsPath Camino(Rectangle r, int radio)
+    static void Escribir(Graphics g, string texto, Font f, Color c, int x, int y)
     {
-        var p = new System.Drawing.Drawing2D.GraphicsPath();
-        int d = Math.Max(1, Math.Min(radio * 2, Math.Min(r.Width, r.Height)));
-        p.AddArc(r.X, r.Y, d, d, 180, 90);
-        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-        p.CloseFigure();
-        return p;
+        using (var b = new SolidBrush(c)) g.DrawString(texto, f, b, x, y);
     }
 
-    static void Redondeado(Graphics g, Rectangle r, int radio, Color relleno, Color borde)
+    static int Medir(Graphics g, string texto, Font f)
     {
-        using (var p = Camino(r, radio))
-        {
-            using (var b = new SolidBrush(relleno)) g.FillPath(b, p);
-            if (borde != Color.Empty) using (var l = new Pen(borde)) g.DrawPath(l, p);
-        }
+        return (int)g.MeasureString(texto, f, PointF.Empty, StringFormat.GenericTypographic).Width;
     }
 
-    static void Escribir(Graphics g, string texto, int x, int y, float tam, FontStyle estilo, Color c)
+    static string Recortar(Graphics g, string texto, int ancho, Font f)
     {
-        using (var f = new Font("Segoe UI", tam, estilo))
-        using (var b = new SolidBrush(c))
-            g.DrawString(texto, f, b, x, y);
-    }
-
-    static int Medir(Graphics g, string texto, float tam, FontStyle estilo)
-    {
-        using (var f = new Font("Segoe UI", tam, estilo)) return (int)g.MeasureString(texto, f).Width;
-    }
-
-    static string Recortar(Graphics g, string texto, int ancho, float tam)
-    {
-        if (Medir(g, texto, tam, FontStyle.Regular) <= ancho) return texto;
-        while (texto.Length > 1 && Medir(g, "..." + texto, tam, FontStyle.Regular) > ancho) texto = texto.Substring(1);
+        if (Medir(g, texto, f) <= ancho) return texto;
+        while (texto.Length > 1 && Medir(g, "..." + texto, f) > ancho) texto = texto.Substring(1);
         return "..." + texto;
     }
 }
@@ -840,86 +878,244 @@ static class Web
     }
 }
 
-// Fondo: fondo.jpg del repo si existe (se guarda para abrir rápido la próxima vez); si no, uno dibujado acá.
-static class Fondo
+// Fotos del fondo: fondos/lista.txt del repo nombra las imágenes (una por línea). Se guardan en la PC para abrir rápido.
+static class Fotos
 {
-    const int MaxBytes = 15 * 1024 * 1024;
+    const int MaxBytes = 15 * 1024 * 1024, MaxFotos = 12;
+    static readonly Regex NombreValido = new Regex(@"^[A-Za-z0-9_-]{1,60}\.(jpg|jpeg|png)$", RegexOptions.IgnoreCase);
 
-    static string Cache()
+    static string Carpeta()
     {
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "fondo.jpg");
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "fondos");
     }
 
-    static Image Desde(byte[] datos)
+    // Se achica cada foto una vez al tamaño que se va a usar: dibujarla 30 veces por segundo en tamaño original sería lento.
+    static Image Preparar(byte[] datos, int ancho, int alto)
     {
-        // Se copia a un Bitmap para no depender del stream.
         using (var ms = new MemoryStream(datos))
         using (Image img = Image.FromStream(ms))
-            return new Bitmap(img);
+        {
+            float esc = Math.Max(ancho * 1.15f / img.Width, alto * 1.15f / img.Height);
+            var bmp = new Bitmap((int)(img.Width * esc), (int)(img.Height * esc));
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.DrawImage(img, 0, 0, bmp.Width, bmp.Height);
+            }
+            return bmp;
+        }
     }
 
-    public static Image Cargado()
+    public static List<string> LeerLista(string texto)
     {
-        try { return File.Exists(Cache()) ? Desde(File.ReadAllBytes(Cache())) : null; }
-        catch (Exception) { return null; }
+        return texto.Replace("\r", "").Split('\n').Select(l => l.Trim()).Where(l => NombreValido.IsMatch(l)).Take(MaxFotos).ToList();
     }
 
-    public static Image Bajar()
+    public static List<Image> Guardadas(int ancho, int alto)
     {
-        if (Config.FondoUrl.Length == 0) return null;
+        var fotos = new List<Image>();
         try
         {
-            byte[] datos;
-            using (var web = new WebClient()) datos = web.DownloadData(Config.FondoUrl);
-            if (datos.Length > MaxBytes) return null;
-            Image img = Desde(datos);
-            Directory.CreateDirectory(Path.GetDirectoryName(Cache()));
-            File.WriteAllBytes(Cache(), datos);
-            return img;
+            if (!Directory.Exists(Carpeta())) return fotos;
+            foreach (string f in Directory.GetFiles(Carpeta()).OrderBy(f => f).Take(MaxFotos))
+                try { fotos.Add(Preparar(File.ReadAllBytes(f), ancho, alto)); } catch (Exception) { }
         }
-        catch (Exception) { return null; }
+        catch (Exception) { }
+        return fotos;
     }
 
-    // Atardecer sobre una ciudad: siempre el mismo dibujo (semilla fija).
-    public static Image Generado(int ancho, int alto)
+    // shortcut: baja todas las fotos en cada inicio; si pesan mucho, comparar por fecha o hash antes de bajar.
+    public static List<Image> Bajar(int ancho, int alto)
     {
-        var bmp = new Bitmap(ancho, alto);
-        using (Graphics g = Graphics.FromImage(bmp))
+        var fotos = new List<Image>();
+        if (Config.FondosUrl.Length == 0) return fotos;
+        try
         {
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            int horizonte = (int)(alto * 0.72);
-            using (var cielo = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, 0, ancho, horizonte + 1), Color.Black, Color.Black, 90f))
+            List<string> nombres;
+            using (var web = new WebClient())
             {
-                var mezcla = new System.Drawing.Drawing2D.ColorBlend();
-                mezcla.Colors = new[] { Color.FromArgb(10, 12, 30), Color.FromArgb(52, 26, 72), Color.FromArgb(170, 60, 70), Color.FromArgb(245, 150, 60) };
-                mezcla.Positions = new[] { 0f, 0.45f, 0.78f, 1f };
-                cielo.InterpolationColors = mezcla;
-                g.FillRectangle(cielo, 0, 0, ancho, horizonte + 1);
-            }
-            int sx = (int)(ancho * 0.68), sy = horizonte - 30;
-            for (int i = 6; i >= 1; i--)
-                using (var b = new SolidBrush(Color.FromArgb(18, 255, 190, 110))) g.FillEllipse(b, sx - 60 * i / 2 - 40, sy - 60 * i / 2 - 40, 60 * i + 80, 60 * i + 80);
-            using (var b = new SolidBrush(Color.FromArgb(255, 214, 140))) g.FillEllipse(b, sx - 70, sy - 70, 140, 140);
-
-            var azar = new Random(7);
-            for (int capa = 0; capa < 2; capa++)
-            {
-                Color color = capa == 0 ? Color.FromArgb(40, 22, 44) : Color.FromArgb(14, 12, 22);
-                int x = -20;
-                while (x < ancho)
+                nombres = LeerLista(web.DownloadString(Config.FondosUrl + "lista.txt"));
+                Directory.CreateDirectory(Carpeta());
+                foreach (string viejo in Directory.GetFiles(Carpeta()))
+                    if (!nombres.Contains(Path.GetFileName(viejo))) File.Delete(viejo);
+                foreach (string n in nombres)
                 {
-                    int w = azar.Next(40, 110), h = azar.Next(capa == 0 ? 60 : 30, capa == 0 ? 260 : 190);
-                    using (var b = new SolidBrush(color)) g.FillRectangle(b, x, horizonte - h + capa * 40, w, h + alto);
-                    if (capa == 1)
-                        for (int vy = horizonte - h + 52; vy < alto; vy += 14)
-                            for (int vx = x + 8; vx < x + w - 8; vx += 12)
-                                if (azar.Next(9) == 0)
-                                    using (var v = new SolidBrush(Color.FromArgb(160, 255, 200, 120))) g.FillRectangle(v, vx, vy, 4, 6);
-                    x += w + azar.Next(0, 12);
+                    byte[] datos = web.DownloadData(Config.FondosUrl + n);
+                    if (datos.Length > MaxBytes) continue;
+                    fotos.Add(Preparar(datos, ancho, alto));
+                    File.WriteAllBytes(Path.Combine(Carpeta(), n), datos);
                 }
             }
         }
+        catch (Exception) { }
+        return fotos;
+    }
+}
+
+// Fondo animado. Con fotos: cada una se acerca y se desliza despacio y se funde con la siguiente.
+// Sin fotos: una ciudad de noche dibujada, con autos que pasan y luces de antena que parpadean.
+class Escena
+{
+    const double PorFoto = 9, Fundido = 1.6;
+    readonly int ancho, alto, ruta;
+    public List<Image> Fotos = new List<Image>();
+    Bitmap cielo, lejos, cerca;
+    readonly List<PointF> antenas = new List<PointF>();
+
+    public Escena(int ancho, int alto)
+    {
+        this.ancho = ancho;
+        this.alto = alto;
+        ruta = alto - 92;
+    }
+
+    public void Dibujar(Graphics g, double t)
+    {
+        if (Fotos.Count > 0) DibujarFotos(g, t);
+        else DibujarCiudad(g, t);
+    }
+
+    void DibujarFotos(Graphics g, double t)
+    {
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+        int n = (int)(t / PorFoto);
+        double dentro = t - n * PorFoto;
+        Foto(g, Fotos[n % Fotos.Count], n, dentro / PorFoto, 1f);
+        if (dentro > PorFoto - Fundido && Fotos.Count > 1)
+            Foto(g, Fotos[(n + 1) % Fotos.Count], n + 1, 0, (float)((dentro - (PorFoto - Fundido)) / Fundido));
+    }
+
+    void Foto(Graphics g, Image img, int n, double avance, float opacidad)
+    {
+        // Las fotos ya vienen 15% más grandes que la ventana: se achica el sobrante de a poco y se corre de lado.
+        float zoom = 1f - 0.1f * (float)avance;
+        float w = img.Width * zoom, h = img.Height * zoom;
+        if (w < ancho) { h *= ancho / w; w = ancho; }
+        if (h < alto) { w *= alto / h; h = alto; }
+        float sobra = w - ancho;
+        float x = n % 2 == 0 ? -sobra * (float)avance : -sobra * (1 - (float)avance);
+        float y = -(h - alto) / 2;
+        if (opacidad >= 1f) { g.DrawImage(img, x, y, w, h); return; }
+        var m = new System.Drawing.Imaging.ColorMatrix { Matrix33 = opacidad };
+        using (var a = new System.Drawing.Imaging.ImageAttributes())
+        {
+            a.SetColorMatrix(m);
+            g.DrawImage(img, new Rectangle((int)x, (int)y, (int)w, (int)h), 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, a);
+        }
+    }
+
+    void DibujarCiudad(Graphics g, double t)
+    {
+        if (cielo == null) Armar();
+        g.DrawImageUnscaled(cielo, 0, 0);
+        double vaiven = 0.5 - 0.5 * Math.Cos(t * 0.035);
+        int xl = -(int)((lejos.Width - ancho) * vaiven), xc = -(int)((cerca.Width - ancho) * vaiven);
+        g.DrawImageUnscaled(lejos, xl, 0);
+        g.DrawImageUnscaled(cerca, xc, 0);
+
+        for (int i = 0; i < antenas.Count; i++)
+            if (Math.Sin(t * 2.2 + i * 1.7) > 0.55)
+                Brillo(g, antenas[i].X + xc, antenas[i].Y, Color.FromArgb(255, 70, 60), 5);
+
+        // Autos: los que vienen muestran faros blancos, los que se van, luces rojas.
+        for (int i = 0; i < 9; i++)
+        {
+            double vel = 70 + (i * 37) % 60, largo = ancho + 300;
+            float x = (float)((t * vel + i * 211) % largo) - 150;
+            Brillo(g, x, ruta + 26, Color.FromArgb(255, 240, 200), 4);
+            Brillo(g, x + 12, ruta + 26, Color.FromArgb(255, 240, 200), 4);
+            float x2 = ancho - (float)((t * (vel * 0.8) + i * 173) % largo) + 150;
+            Brillo(g, x2, ruta + 12, Color.FromArgb(255, 50, 40), 3);
+            Brillo(g, x2 + 10, ruta + 12, Color.FromArgb(255, 50, 40), 3);
+        }
+    }
+
+    static void Brillo(Graphics g, float x, float y, Color c, float r)
+    {
+        using (var b = new SolidBrush(Color.FromArgb(40, c))) g.FillEllipse(b, x - r * 3, y - r * 2, r * 6, r * 4);
+        using (var b = new SolidBrush(c)) g.FillEllipse(b, x - r / 2, y - r / 2, r, r);
+    }
+
+    void Armar()
+    {
+        var azar = new Random(11);
+        cielo = new Bitmap(ancho, alto);
+        using (Graphics g = Graphics.FromImage(cielo))
+        {
+            using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, 0, ancho, alto), Color.Black, Color.Black, 90f))
+            {
+                var mezcla = new System.Drawing.Drawing2D.ColorBlend();
+                mezcla.Colors = new[] { Color.FromArgb(4, 6, 14), Color.FromArgb(14, 20, 40), Color.FromArgb(46, 38, 56), Color.FromArgb(86, 52, 40) };
+                mezcla.Positions = new[] { 0f, 0.5f, 0.78f, 1f };
+                b.InterpolationColors = mezcla;
+                g.FillRectangle(b, 0, 0, ancho, alto);
+            }
+            for (int i = 0; i < 90; i++)
+                using (var b = new SolidBrush(Color.FromArgb(azar.Next(60, 180), 255, 255, 255))) g.FillRectangle(b, azar.Next(ancho), azar.Next(alto / 2), 1, 1);
+            using (var b = new SolidBrush(Color.FromArgb(235, 230, 210))) g.FillEllipse(b, ancho / 2 + 40, 120, 30, 30);
+        }
+
+        lejos = Skyline(azar, (int)(ancho * 1.12), 140, 330, Color.FromArgb(16, 20, 34), 22, false);
+        cerca = Skyline(azar, (int)(ancho * 1.3), 90, 290, Color.FromArgb(6, 7, 12), 9, true);
+    }
+
+    Bitmap Skyline(Random azar, int w, int minAlto, int maxAlto, Color color, int chanceVentana, bool primerPlano)
+    {
+        var bmp = new Bitmap(w, alto);
+        using (Graphics g = Graphics.FromImage(bmp))
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            int x = -10;
+            while (x < w)
+            {
+                int bw = azar.Next(50, 130), bh = azar.Next(minAlto, maxAlto), top = ruta - bh;
+                using (var b = new SolidBrush(color)) g.FillRectangle(b, x, top, bw, bh + 4);
+                if (primerPlano && bh > 200 && azar.Next(3) == 0)
+                {
+                    using (var p = new Pen(color, 2)) g.DrawLine(p, x + bw / 2, top, x + bw / 2, top - 30);
+                    antenas.Add(new PointF(x + bw / 2, top - 30));
+                }
+                for (int vy = top + 10; vy < ruta - 8; vy += 13)
+                    for (int vx = x + 7; vx < x + bw - 7; vx += 11)
+                        if (azar.Next(chanceVentana) == 0)
+                        {
+                            Color luz = azar.Next(5) == 0 ? Color.FromArgb(170, 170, 200, 255) : Color.FromArgb(primerPlano ? 200 : 110, 255, 196, 120);
+                            using (var b = new SolidBrush(luz)) g.FillRectangle(b, vx, vy, 5, 7);
+                        }
+                x += bw + azar.Next(0, 8);
+            }
+            if (primerPlano)
+            {
+                // Ruta con faroles y palmeras.
+                using (var b = new SolidBrush(Color.FromArgb(10, 11, 16))) g.FillRectangle(b, 0, ruta, w, alto - ruta);
+                for (int fx = 30; fx < w; fx += 140)
+                {
+                    using (var p = new Pen(Color.FromArgb(18, 20, 28), 3)) g.DrawLine(p, fx, ruta + 4, fx, ruta - 70);
+                    using (var b = new SolidBrush(Color.FromArgb(50, 255, 190, 110))) g.FillEllipse(b, fx - 40, ruta - 90, 80, 50);
+                    using (var b = new SolidBrush(Color.FromArgb(255, 220, 160))) g.FillEllipse(b, fx - 4, ruta - 74, 8, 5);
+                }
+                for (int px = 90; px < w; px += azar.Next(220, 380)) Palmera(g, px, ruta + 2, azar.Next(150, 210));
+            }
+        }
         return bmp;
+    }
+
+    static void Palmera(Graphics g, int x, int y, int h)
+    {
+        Color c = Color.FromArgb(3, 4, 8);
+        using (var p = new Pen(c, 7))
+        {
+            p.StartCap = p.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+            g.DrawBezier(p, x, y, x + 6, y - h / 3, x + 18, y - 2 * h / 3, x + 26, y - h);
+        }
+        // Hojas que salen hacia arriba y caen por su peso.
+        using (var p = new Pen(c, 8))
+        {
+            p.StartCap = p.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+            int tx = x + 26, ty = y - h;
+            foreach (int dx in new[] { -82, -52, -22, 22, 52, 82 })
+                g.DrawBezier(p, tx, ty, tx + dx * 0.3f, ty - 26, tx + dx * 0.75f, ty - 20, tx + dx, ty + Math.Abs(dx) * 0.42f + 6);
+        }
     }
 }
 

@@ -1,0 +1,3 @@
+# Fotos del fondo animado, una por línea, en el orden en que se muestran (jpg o png, solo letras, números, - y _).
+# Ejemplo:
+# noche-plaza.jpg
