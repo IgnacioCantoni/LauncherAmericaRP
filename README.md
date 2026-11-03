@@ -35,13 +35,15 @@ Editá `noticias.txt`, commit y push. Los launchers la leen al abrirse.
 
 ## Modo GTA Full: ENB
 
-El ENB es un paquete opcional: cada jugador lo activa o lo desactiva en MI JUEGO. Al activarlo se baja e instala en su carpeta del GTA; al desactivarlo se sacan esos mismos archivos (solo los que siguen iguales a los instalados).
+El ENB (ENBSeries v0.430 para GTA SA) es opcional: cada jugador lo activa o lo desactiva en MI JUEGO.
 
-1. Copiá los archivos del ENB en `paquetes/enb/archivos/`, con las mismas carpetas que van dentro del GTA (por ejemplo `d3d9.dll`, `enbseries.ini` y la carpeta `enbseries/`).
+La licencia de ENBSeries prohíbe repartir sus archivos a través de un launcher o gestor de descargas. Por eso, al activarlo, el launcher abre la página oficial (enbdev.com), el jugador baja `enbseries_gtasa_v0430.zip` y lo elige. El launcher revisa que sea esa versión (por la huella del `d3d9.dll`, en `Config.EnbDllSha`), que no pise archivos de otro mod, e instala la carpeta `WrapperVersion` del zip. Al desactivarlo saca esos archivos, solo los que siguen iguales a como se instalaron.
+
+Lo que sí se reparte desde acá es el preset del server (los `.ini` y `.fx`):
+
+1. Copiá los archivos del preset en `paquetes/enb/archivos/` (por ejemplo `enbseries.ini`). Nunca `.dll` ni `.exe` del ENB.
 2. Doble clic en `generar-manifiesto.bat`.
-3. Commit y push.
-
-Antes de repartirlo, revisá la licencia de ENBSeries en enbdev.com y la del preset que uses.
+3. Commit y push. Se instala encima del ENB de cada jugador que lo tenga activado.
 
 ## Cambiar el video de fondo
 

@@ -10,6 +10,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.IO.Compression;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -24,8 +25,13 @@ static class Config
     const string Repo = "https://raw.githubusercontent.com/IgnacioCantoni/LauncherAmericaRP/main/";
     public const string NoticiasUrl = Repo + "noticias.txt";
     public const string ManifiestoUrl = Repo + "actualizaciones/manifiesto.txt";
-    // Paquete opcional de GTA Full: gráficos ENB. Cada jugador lo activa o desactiva en MI JUEGO. Vacío = no aparece.
+    // GTA Full: gráficos ENB, opcionales (se activan en MI JUEGO). La licencia de ENBSeries no deja repartir su d3d9.dll
+    // por un launcher: cada jugador baja el zip oficial y el launcher lo instala desde ahí. Lo que sí se reparte es el
+    // preset del server (.ini y .fx) en paquetes/enb. EnbUrl vacío = no aparece.
     public const string EnbUrl = Repo + "paquetes/enb/manifiesto.txt";
+    public const string EnbDescargaUrl = "http://enbdev.com/download_mod_gtasa.htm";
+    public const string EnbZip = "enbseries_gtasa_v0430.zip";
+    public const string EnbDllSha = "ee323eae134d2cdddbd7b3c57956e66766a84ce7c7ac7faef5afde336bfd73e8"; // d3d9.dll de la v0.430
     public const string DescargaSampUrl = "https://www.sa-mp.mp/downloads/";
     // Links del pie de la ventana, en este orden. Los que tengan el link vacío no aparecen.
     public static readonly KeyValuePair<string, string>[] Redes =
@@ -246,6 +252,53 @@ static class Actualizador
             if (!File.Exists(destino) || Sha256(destino) != r.Entradas[i].Key) r.Pendientes.Add(r.Entradas[i].Value);
         }
         return r;
+    }
+
+    // Una línea "sha256 ruta" por cada ruta que exista en la carpeta: sirve para recordar qué se instaló.
+    public static string Huellas(string carpetaGta, IEnumerable<string> rutas)
+    {
+        var sb = new StringBuilder();
+        foreach (string ruta in rutas.Distinct().OrderBy(r => r, StringComparer.Ordinal))
+        {
+            string destino = RutaSegura(carpetaGta, ruta);
+            if (File.Exists(destino)) sb.Append(Sha256(destino)).Append(' ').Append(ruta).Append('\n');
+        }
+        return sb.ToString();
+    }
+
+    static string Sha256(Stream s)
+    {
+        using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(s)).Replace("-", "").ToLowerInvariant();
+    }
+
+    // Instala la carpeta WrapperVersion del zip oficial de ENBSeries que bajó el jugador. Antes de copiar nada revisa
+    // que sea la versión esperada y que no pise archivos de otro mod. Devuelve las rutas instaladas.
+    public static List<string> InstalarZipEnb(string carpetaGta, string zip, string dllSha)
+    {
+        const string Raiz = "WrapperVersion/";
+        using (ZipArchive z = ZipFile.OpenRead(zip))
+        {
+            var archivos = z.Entries.Where(e => e.FullName.Replace('\\', '/').StartsWith(Raiz) && e.Name.Length > 0).ToList();
+            ZipArchiveEntry dll = archivos.FirstOrDefault(e => e.FullName.Replace('\\', '/') == Raiz + "d3d9.dll");
+            if (dll == null) throw new InvalidDataException("Ese zip no es el ENBSeries para GTA San Andreas.");
+            using (Stream s = dll.Open())
+                if (Sha256(s) != dllSha) throw new InvalidDataException("Ese zip es otra versión del ENB. El server usa la del archivo " + Config.EnbZip + ".");
+            var rutas = new List<string>();
+            foreach (ZipArchiveEntry e in archivos)
+            {
+                string ruta = e.FullName.Replace('\\', '/').Substring(Raiz.Length), destino = RutaSegura(carpetaGta, ruta);
+                if (File.Exists(destino)) using (Stream s = e.Open()) if (Sha256(destino) != Sha256(s))
+                    throw new InvalidDataException("Tu GTA ya tiene un " + ruta + " de otro mod. Sacalo antes de activar el ENB.");
+                rutas.Add(ruta);
+            }
+            foreach (ZipArchiveEntry e in archivos)
+            {
+                string destino = RutaSegura(carpetaGta, e.FullName.Replace('\\', '/').Substring(Raiz.Length));
+                Directory.CreateDirectory(Path.GetDirectoryName(destino));
+                e.ExtractToFile(destino, true);
+            }
+            return rutas;
+        }
     }
 
     // Saca de la carpeta del GTA los archivos de un manifiesto que se instaló antes. Solo borra los que siguen
@@ -505,7 +558,9 @@ class Ventana : Form
             try
             {
                 Actualizador.Revision enb = await Task.Run(() => Actualizador.Aplicar(carpeta, Config.EnbUrl, Avisar));
-                File.WriteAllText(EnbArchivo(), enb.Texto);
+                // Se recuerda lo del zip más lo del preset, con cómo quedó cada archivo, para poder sacarlo después.
+                var rutas = Actualizador.LeerManifiesto(File.ReadAllText(EnbArchivo())).Select(e => e.Value).Concat(enb.Entradas.Select(e => e.Value));
+                File.WriteAllText(EnbArchivo(), Actualizador.Huellas(carpeta, rutas));
             }
             catch (Exception ex) { Avisar("No se pudo instalar el ENB: " + ex.Message, 0); }
         }
@@ -536,9 +591,27 @@ class Ventana : Form
         if (ocupado) return;
         if (!EnbActivo())
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(EnbArchivo()));
-            File.WriteAllText(EnbArchivo(), "");
-            Actualizar();
+            if (Carpeta().Length == 0 && !ElegirCarpeta()) return;
+            string carpeta = Carpeta(), zip;
+            MessageBox.Show(this, "El ENB se baja de su página oficial. Se va a abrir: bajá el archivo " + Config.EnbZip +
+                " (versión 0.430) y después elegilo en la ventana que aparece.", "Activar ENB", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            Abrir(Config.EnbDescargaUrl);
+            using (var d = new OpenFileDialog { Title = "Elegí " + Config.EnbZip, Filter = "ENBSeries|*.zip", FileName = Config.EnbZip })
+            {
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                zip = d.FileName;
+            }
+            Ocupar(true);
+            try
+            {
+                List<string> rutas = await Task.Run(() => Actualizador.InstalarZipEnb(carpeta, zip, Config.EnbDllSha));
+                Directory.CreateDirectory(Path.GetDirectoryName(EnbArchivo()));
+                File.WriteAllText(EnbArchivo(), Actualizador.Huellas(carpeta, rutas));
+                Avisar("ENB instalado. Shift+F12 lo prende y lo apaga en el juego.", 100);
+            }
+            catch (Exception ex) { MessageBox.Show(this, ex.Message, "Activar ENB", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+            finally { Ocupar(false); }
+            Actualizar(); // suma el preset del server
             return;
         }
         Ocupar(true);
@@ -1046,6 +1119,11 @@ static class Prueba
         if (!ok) fallas++;
     }
 
+    static string Sha(Stream s)
+    {
+        using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(s)).Replace("-", "").ToLowerInvariant();
+    }
+
     static bool Tira(Action a)
     {
         try { a(); return false; } catch (InvalidDataException) { return true; }
@@ -1092,6 +1170,22 @@ static class Prueba
             string m2 = m + "0000000000000000000000000000000000000000000000000000000000000000 d3d9.dll\n";
             Ver(Actualizador.Quitar(gta, m2) == 1 && !File.Exists(Path.Combine(gta, "models", "a.txt")) && File.Exists(Path.Combine(gta, "d3d9.dll")), "quitar paquete respeta archivos propios");
             Ver(Tira(() => Actualizador.Quitar(gta, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad ../afuera.txt")), "quitar rechaza rutas de afuera");
+
+            // Zip del ENB: versión equivocada, archivo de otro mod y la instalación buena.
+            string zip = Path.Combine(carpeta, "enb.zip");
+            using (ZipArchive z = ZipFile.Open(zip, ZipArchiveMode.Create))
+            {
+                foreach (string[] f in new[] { new[] { "WrapperVersion/d3d9.dll", "dll" }, new[] { "WrapperVersion/enbseries/enbhelper.dll", "h" }, new[] { "AsiVersion/enbseries.asi", "asi" } })
+                    using (var w = new StreamWriter(z.CreateEntry(f[0]).Open())) w.Write(f[1]);
+            }
+            string shaDll;
+            using (var ms = new MemoryStream(Encoding.ASCII.GetBytes("dll"))) shaDll = Sha(ms);
+            Ver(Tira(() => Actualizador.InstalarZipEnb(gta, zip, "otro")), "zip ENB: rechaza otra versión");
+            Ver(Tira(() => Actualizador.InstalarZipEnb(gta, zip, shaDll)) && !File.Exists(Path.Combine(gta, "enbseries", "enbhelper.dll")), "zip ENB: no pisa el d3d9.dll de otro mod ni copia nada");
+            File.Delete(Path.Combine(gta, "d3d9.dll"));
+            List<string> inst = Actualizador.InstalarZipEnb(gta, zip, shaDll);
+            Ver(inst.Count == 2 && File.ReadAllText(Path.Combine(gta, "d3d9.dll")) == "dll" && !File.Exists(Path.Combine(gta, "enbseries.asi")), "zip ENB: instala solo WrapperVersion");
+            Ver(Actualizador.Quitar(gta, Actualizador.Huellas(gta, inst)) == 2 && !File.Exists(Path.Combine(gta, "d3d9.dll")), "zip ENB: se saca entero");
         }
         finally { Directory.Delete(carpeta, true); }
 
