@@ -9,9 +9,9 @@ Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe
 - **Mi juego**: la carpeta del GTA y si están bien la versión 1.0, el SA-MP 0.3.7 (`samp.exe` y `samp.dll`) y los archivos del server. El resumen también está en la tarjeta del server, junto al botón JUGAR.
 - **Noticias**: muestra `noticias.txt` de este repo.
 - **Mods**: lista los archivos de `actualizaciones/archivos/` y cuáles le faltan al jugador. Antes de jugar (o con "Actualizar") baja los que no tenga o tenga distintos.
-- **Fondo animado**: pasa las fotos de `fondos/` acercándolas y corriéndolas despacio, y fundiendo una con la siguiente. Sin fotos, muestra una ciudad de noche dibujada con autos que pasan.
+- **Fondo en video**: `fondo/video.bin` (armado desde el video del server) se repite en bucle detrás de todo. Va dentro del `.exe`.
 - **Redes y soporte**: links de Discord, YouTube, TikTok, Instagram y Soporte en el pie; aparecen los que tengan link en `Config.Redes`.
-- **Tipografías**: Bebas Neue (títulos) y Barlow (textos), con licencia libre SIL OFL (ver `fuentes/`). Van dentro del `.exe`.
+- **Tipografías**: Montserrat Bold Italic (títulos, la misma del video) y Barlow (textos), con licencia libre SIL OFL (ver `fuentes/`). Van dentro del `.exe`.
 
 ## Compilar
 
@@ -25,7 +25,7 @@ Arriba de `src/Launcher.cs`, en `Config`:
 
 - `Host` y `Puerto`: la IP pública (o dominio) y el puerto del server. Hoy está en `127.0.0.1:7777`, que solo sirve en la PC donde corre el server.
 - `Redes`: los links del pie.
-- `NoticiasUrl`, `ManifiestoUrl` y `FondosUrl`: apuntan a este repo. Si se dejan vacías, esa función se apaga.
+- `NoticiasUrl`, `ManifiestoUrl` y `EnbUrl`: apuntan a este repo. Si se dejan vacías, esa función se apaga.
 
 Después de cambiarlos, volvé a compilar y repartí el `.exe` nuevo.
 
@@ -43,11 +43,9 @@ El ENB es un paquete opcional: cada jugador lo activa o lo desactiva en MI JUEGO
 
 Antes de repartirlo, revisá la licencia de ENBSeries en enbdev.com y la del preset que uses.
 
-## Poner fotos de fondo
+## Cambiar el video de fondo
 
-1. Sacá capturas en el server con F8 (quedan en `Documentos\GTA San Andreas User Files\SAMP\screens`). Quedan mejor de noche, con poca interfaz en pantalla (sin chat ni HUD).
-2. Copialas a `fondos/` con nombres simples (por ejemplo `noche-plaza.jpg`) y anotá cada nombre en `fondos/lista.txt`, en el orden en que querés que pasen. Hasta 12.
-3. Commit y push. Los launchers las bajan al abrirse y las guardan para la próxima vez.
+Con Python y ffmpeg instalados: `python fondo/armar_video.py tu-video.mp4`. Rehace `fondo/video.bin` (cuadros JPEG de 1100x660, sin sonido). Después volvé a compilar.
 
 ## Publicar archivos o mods
 

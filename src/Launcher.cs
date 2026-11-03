@@ -27,8 +27,6 @@ static class Config
     // Paquete opcional de GTA Full: gráficos ENB. Cada jugador lo activa o desactiva en MI JUEGO. Vacío = no aparece.
     public const string EnbUrl = Repo + "paquetes/enb/manifiesto.txt";
     public const string DescargaSampUrl = "https://www.sa-mp.mp/downloads/";
-    // Carpeta con las fotos del fondo animado (fondos/lista.txt + imágenes). Vacío = siempre la ciudad dibujada.
-    public const string FondosUrl = Repo + "fondos/";
     // Links del pie de la ventana, en este orden. Los que tengan el link vacío no aparecen.
     public static readonly KeyValuePair<string, string>[] Redes =
     {
@@ -294,7 +292,7 @@ static class Actualizador
     }
 }
 
-// Tipografías propias (SIL OFL, ver fuentes/): Bebas Neue para títulos y Barlow para el resto.
+// Tipografías propias (SIL OFL, ver fuentes/): Montserrat Bold Italic para títulos (la del video) y Barlow para el resto.
 // Van dentro del .exe como recursos; si no cargan, se usa Segoe UI.
 static class Fuentes
 {
@@ -304,7 +302,7 @@ static class Fuentes
 
     static Fuentes()
     {
-        foreach (string nombre in new[] { "BebasNeue.ttf", "Barlow-Regular.ttf", "Barlow-Bold.ttf" })
+        foreach (string nombre in new[] { "Montserrat-BoldItalic.ttf", "Barlow-Regular.ttf", "Barlow-Bold.ttf" })
         {
             try
             {
@@ -325,7 +323,7 @@ static class Fuentes
         }
         foreach (FontFamily f in coleccion.Families)
         {
-            if (f.Name == "Bebas Neue") titulo = f;
+            if (f.Name == "Montserrat") titulo = f;
             if (f.Name == "Barlow") cuerpo = f;
         }
     }
@@ -344,7 +342,8 @@ static class Fuentes
         return f;
     }
 
-    public static Font Titulo(float tam) { return Pedir(titulo, tam, FontStyle.Regular); }
+    // Los tamaños de la interfaz se pensaron para una letra angosta; Montserrat es más ancha, así que se achica acá.
+    public static Font Titulo(float tam) { return Pedir(titulo, tam * 0.6f, FontStyle.Bold | FontStyle.Italic); }
     public static Font Texto(float tam) { return Pedir(cuerpo, tam, FontStyle.Regular); }
     public static Font Negrita(float tam) { return Pedir(cuerpo, tam, FontStyle.Bold); }
 }
@@ -363,7 +362,7 @@ class Ventana : Form
     readonly TextBox nick = new TextBox();
     readonly Timer reloj = new Timer(), cuadros = new Timer();
     readonly Stopwatch tiempo = Stopwatch.StartNew();
-    readonly Escena escena = new Escena(Ancho, Alto);
+    readonly Video video = Video.Cargar();
     Point mouse = new Point(-1, -1), arrastre;
     bool arrastrando, consultando, ocupado;
 
@@ -409,7 +408,6 @@ class Ventana : Form
             cuadros.Start();
             RefrescarServer();
             CargarNoticias();
-            CargarFotos();
             RevisarMods();
         };
     }
@@ -449,13 +447,6 @@ class Ventana : Form
         if (Config.NoticiasUrl.Length == 0) { noticias = "Todavía no hay noticias."; return; }
         try { noticias = await Task.Run(() => Web.Texto(Config.NoticiasUrl)); }
         catch (Exception ex) { noticias = "No se pudieron cargar las noticias: " + ex.Message; }
-    }
-
-    async void CargarFotos()
-    {
-        escena.Fotos = Fotos.Guardadas(Ancho, Alto);
-        List<Image> nuevas = await Task.Run(() => Fotos.Bajar(Ancho, Alto));
-        if (nuevas.Count > 0) escena.Fotos = nuevas;
     }
 
     async void RevisarMods()
@@ -656,7 +647,7 @@ class Ventana : Form
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
         zonas.Clear();
 
-        escena.Dibujar(g, tiempo.Elapsed.TotalSeconds);
+        if (video != null) video.Dibujar(g, tiempo.Elapsed.TotalSeconds);
         Sombra(g, new Rectangle(0, 0, Ancho, 140), 200, 0, 90f);
         Sombra(g, new Rectangle(0, Alto - 300, 760, 300), 0, 235, 90f);
         Sombra(g, new Rectangle(0, 0, 520, Alto), 150, 0, 0f);
@@ -673,8 +664,7 @@ class Ventana : Form
     void DibujarArriba(Graphics g)
     {
         Estrella(g, 52, 38, 17, Acento);
-        Escribir(g, "AMERICA", Fuentes.Titulo(30f), Texto, 78, 16);
-        Escribir(g, "RP", Fuentes.Titulo(30f), Acento, 78 + Medir(g, "AMERICA", Fuentes.Titulo(30f)) + 9, 16);
+        Neon(g, "America RP", Fuentes.Titulo(34f), 76, 20);
 
         int x = 300;
         foreach (string[] p in new[] { new[] { "inicio", "INICIO" }, new[] { "noticias", "NOTICIAS" }, new[] { "mods", "MODS" }, new[] { "juego", "MI JUEGO" } })
@@ -901,6 +891,18 @@ class Ventana : Form
             g.FillRectangle(b, r);
     }
 
+    // Letras con brillo azul, como el logo del video.
+    static void Neon(Graphics g, string texto, Font f, int x, int y)
+    {
+        using (var camino = new System.Drawing.Drawing2D.GraphicsPath())
+        {
+            camino.AddString(texto, f.FontFamily, (int)f.Style, g.DpiY * f.SizeInPoints / 72f, new Point(x, y), StringFormat.GenericTypographic);
+            foreach (int ancho in new[] { 10, 6, 3 })
+                using (var p = new Pen(Color.FromArgb(ancho == 10 ? 40 : ancho == 6 ? 80 : 200, 60, 150, 255), ancho)) { p.LineJoin = System.Drawing.Drawing2D.LineJoin.Round; g.DrawPath(p, camino); }
+            using (var b = new SolidBrush(Color.White)) g.FillPath(b, camino);
+        }
+    }
+
     static void Punto(Graphics g, int x, int y, Color c)
     {
         using (var b = new SolidBrush(c)) g.FillEllipse(b, x - 4, y - 4, 8, 8);
@@ -944,244 +946,71 @@ static class Web
     }
 }
 
-// Fotos del fondo: fondos/lista.txt del repo nombra las imágenes (una por línea). Se guardan en la PC para abrir rápido.
-static class Fotos
+// Fondo en video: fondo/video.bin va dentro del .exe (lo arma fondo/armar_video.py) y se repite en bucle.
+// Son JPEG ya del tamaño de la ventana; se descomprime solo el cuadro que toca, así no ocupa cientos de MB.
+class Video
 {
-    const int MaxBytes = 15 * 1024 * 1024, MaxFotos = 12;
-    static readonly Regex NombreValido = new Regex(@"^[A-Za-z0-9_-]{1,60}\.(jpg|jpeg|png)$", RegexOptions.IgnoreCase);
+    readonly byte[] datos;
+    readonly List<int> inicios = new List<int>(), largos = new List<int>();
+    readonly int fps;
+    int actual = -1;
+    Image cuadro;
 
-    static string Carpeta()
+    Video(byte[] datos)
     {
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "fondos");
-    }
-
-    // Se achica cada foto una vez al tamaño que se va a usar: dibujarla 30 veces por segundo en tamaño original sería lento.
-    static Image Preparar(byte[] datos, int ancho, int alto)
-    {
-        using (var ms = new MemoryStream(datos))
-        using (Image img = Image.FromStream(ms))
+        this.datos = datos;
+        if (datos.Length < 16 || Encoding.ASCII.GetString(datos, 0, 8) != "AMRPVID1") throw new InvalidDataException("video.bin inválido");
+        fps = Math.Max(1, BitConverter.ToInt32(datos, 8));
+        int n = BitConverter.ToInt32(datos, 12), pos = 16;
+        for (int i = 0; i < n && pos + 4 <= datos.Length; i++)
         {
-            float esc = Math.Max(ancho * 1.15f / img.Width, alto * 1.15f / img.Height);
-            var bmp = new Bitmap((int)(img.Width * esc), (int)(img.Height * esc));
-            using (Graphics g = Graphics.FromImage(bmp))
-            {
-                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                g.DrawImage(img, 0, 0, bmp.Width, bmp.Height);
-            }
-            return bmp;
+            int largo = BitConverter.ToInt32(datos, pos);
+            if (largo <= 0 || pos + 4 + largo > datos.Length) break;
+            inicios.Add(pos + 4);
+            largos.Add(largo);
+            pos += 4 + largo;
         }
+        if (inicios.Count == 0) throw new InvalidDataException("video.bin sin cuadros");
     }
 
-    public static List<string> LeerLista(string texto)
-    {
-        return texto.Replace("\r", "").Split('\n').Select(l => l.Trim()).Where(l => NombreValido.IsMatch(l)).Take(MaxFotos).ToList();
-    }
+    public int Cuadros { get { return inicios.Count; } }
 
-    public static List<Image> Guardadas(int ancho, int alto)
+    public static Video Desde(byte[] datos) { return new Video(datos); }
+
+    // Sin video (compilado sin el recurso o roto) el fondo queda liso.
+    public static Video Cargar()
     {
-        var fotos = new List<Image>();
         try
         {
-            if (!Directory.Exists(Carpeta())) return fotos;
-            foreach (string f in Directory.GetFiles(Carpeta()).OrderBy(f => f).Take(MaxFotos))
-                try { fotos.Add(Preparar(File.ReadAllBytes(f), ancho, alto)); } catch (Exception) { }
-        }
-        catch (Exception) { }
-        return fotos;
-    }
-
-    // shortcut: baja todas las fotos en cada inicio; si pesan mucho, comparar por fecha o hash antes de bajar.
-    public static List<Image> Bajar(int ancho, int alto)
-    {
-        var fotos = new List<Image>();
-        if (Config.FondosUrl.Length == 0) return fotos;
-        try
-        {
-            List<string> nombres;
-            using (var web = new WebClient())
+            using (Stream s = typeof(Video).Assembly.GetManifestResourceStream("video.bin"))
             {
-                nombres = LeerLista(web.DownloadString(Config.FondosUrl + "lista.txt"));
-                Directory.CreateDirectory(Carpeta());
-                foreach (string viejo in Directory.GetFiles(Carpeta()))
-                    if (!nombres.Contains(Path.GetFileName(viejo))) File.Delete(viejo);
-                foreach (string n in nombres)
-                {
-                    byte[] datos = web.DownloadData(Config.FondosUrl + n);
-                    if (datos.Length > MaxBytes) continue;
-                    fotos.Add(Preparar(datos, ancho, alto));
-                    File.WriteAllBytes(Path.Combine(Carpeta(), n), datos);
-                }
+                if (s == null) return null;
+                var ms = new MemoryStream();
+                s.CopyTo(ms);
+                return new Video(ms.ToArray());
             }
         }
-        catch (Exception) { }
-        return fotos;
-    }
-}
-
-// Fondo animado. Con fotos: cada una se acerca y se desliza despacio y se funde con la siguiente.
-// Sin fotos: una ciudad de noche dibujada, con autos que pasan y luces de antena que parpadean.
-class Escena
-{
-    const double PorFoto = 9, Fundido = 1.6;
-    readonly int ancho, alto, ruta;
-    public List<Image> Fotos = new List<Image>();
-    Bitmap cielo, lejos, cerca;
-    readonly List<PointF> antenas = new List<PointF>();
-
-    public Escena(int ancho, int alto)
-    {
-        this.ancho = ancho;
-        this.alto = alto;
-        ruta = alto - 92;
+        catch (Exception) { return null; }
     }
 
     public void Dibujar(Graphics g, double t)
     {
-        if (Fotos.Count > 0) DibujarFotos(g, t);
-        else DibujarCiudad(g, t);
-    }
-
-    void DibujarFotos(Graphics g, double t)
-    {
+        int i = (int)(t * fps) % inicios.Count;
+        if (i != actual)
+        {
+            try
+            {
+                Image nuevo;
+                using (var ms = new MemoryStream(datos, inicios[i], largos[i])) using (Image img = Image.FromStream(ms)) nuevo = new Bitmap(img);
+                if (cuadro != null) cuadro.Dispose();
+                cuadro = nuevo;
+            }
+            catch (Exception) { }
+            actual = i;
+        }
+        if (cuadro == null) return;
         g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
-        int n = (int)(t / PorFoto);
-        double dentro = t - n * PorFoto;
-        Foto(g, Fotos[n % Fotos.Count], n, dentro / PorFoto, 1f);
-        if (dentro > PorFoto - Fundido && Fotos.Count > 1)
-            Foto(g, Fotos[(n + 1) % Fotos.Count], n + 1, 0, (float)((dentro - (PorFoto - Fundido)) / Fundido));
-    }
-
-    void Foto(Graphics g, Image img, int n, double avance, float opacidad)
-    {
-        // Las fotos ya vienen 15% más grandes que la ventana: se achica el sobrante de a poco y se corre de lado.
-        float zoom = 1f - 0.1f * (float)avance;
-        float w = img.Width * zoom, h = img.Height * zoom;
-        if (w < ancho) { h *= ancho / w; w = ancho; }
-        if (h < alto) { w *= alto / h; h = alto; }
-        float sobra = w - ancho;
-        float x = n % 2 == 0 ? -sobra * (float)avance : -sobra * (1 - (float)avance);
-        float y = -(h - alto) / 2;
-        if (opacidad >= 1f) { g.DrawImage(img, x, y, w, h); return; }
-        var m = new System.Drawing.Imaging.ColorMatrix { Matrix33 = opacidad };
-        using (var a = new System.Drawing.Imaging.ImageAttributes())
-        {
-            a.SetColorMatrix(m);
-            g.DrawImage(img, new Rectangle((int)x, (int)y, (int)w, (int)h), 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, a);
-        }
-    }
-
-    void DibujarCiudad(Graphics g, double t)
-    {
-        if (cielo == null) Armar();
-        g.DrawImageUnscaled(cielo, 0, 0);
-        double vaiven = 0.5 - 0.5 * Math.Cos(t * 0.035);
-        int xl = -(int)((lejos.Width - ancho) * vaiven), xc = -(int)((cerca.Width - ancho) * vaiven);
-        g.DrawImageUnscaled(lejos, xl, 0);
-        g.DrawImageUnscaled(cerca, xc, 0);
-
-        for (int i = 0; i < antenas.Count; i++)
-            if (Math.Sin(t * 2.2 + i * 1.7) > 0.55)
-                Brillo(g, antenas[i].X + xc, antenas[i].Y, Color.FromArgb(255, 70, 60), 5);
-
-        // Autos: los que vienen muestran faros blancos, los que se van, luces rojas.
-        for (int i = 0; i < 9; i++)
-        {
-            double vel = 70 + (i * 37) % 60, largo = ancho + 300;
-            float x = (float)((t * vel + i * 211) % largo) - 150;
-            Brillo(g, x, ruta + 26, Color.FromArgb(255, 240, 200), 4);
-            Brillo(g, x + 12, ruta + 26, Color.FromArgb(255, 240, 200), 4);
-            float x2 = ancho - (float)((t * (vel * 0.8) + i * 173) % largo) + 150;
-            Brillo(g, x2, ruta + 12, Color.FromArgb(255, 50, 40), 3);
-            Brillo(g, x2 + 10, ruta + 12, Color.FromArgb(255, 50, 40), 3);
-        }
-    }
-
-    static void Brillo(Graphics g, float x, float y, Color c, float r)
-    {
-        using (var b = new SolidBrush(Color.FromArgb(40, c))) g.FillEllipse(b, x - r * 3, y - r * 2, r * 6, r * 4);
-        using (var b = new SolidBrush(c)) g.FillEllipse(b, x - r / 2, y - r / 2, r, r);
-    }
-
-    void Armar()
-    {
-        var azar = new Random(11);
-        cielo = new Bitmap(ancho, alto);
-        using (Graphics g = Graphics.FromImage(cielo))
-        {
-            using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, 0, ancho, alto), Color.Black, Color.Black, 90f))
-            {
-                var mezcla = new System.Drawing.Drawing2D.ColorBlend();
-                mezcla.Colors = new[] { Color.FromArgb(4, 6, 14), Color.FromArgb(14, 20, 40), Color.FromArgb(46, 38, 56), Color.FromArgb(86, 52, 40) };
-                mezcla.Positions = new[] { 0f, 0.5f, 0.78f, 1f };
-                b.InterpolationColors = mezcla;
-                g.FillRectangle(b, 0, 0, ancho, alto);
-            }
-            for (int i = 0; i < 90; i++)
-                using (var b = new SolidBrush(Color.FromArgb(azar.Next(60, 180), 255, 255, 255))) g.FillRectangle(b, azar.Next(ancho), azar.Next(alto / 2), 1, 1);
-            using (var b = new SolidBrush(Color.FromArgb(235, 230, 210))) g.FillEllipse(b, ancho / 2 + 40, 120, 30, 30);
-        }
-
-        lejos = Skyline(azar, (int)(ancho * 1.12), 140, 330, Color.FromArgb(16, 20, 34), 22, false);
-        cerca = Skyline(azar, (int)(ancho * 1.3), 90, 290, Color.FromArgb(6, 7, 12), 9, true);
-    }
-
-    Bitmap Skyline(Random azar, int w, int minAlto, int maxAlto, Color color, int chanceVentana, bool primerPlano)
-    {
-        var bmp = new Bitmap(w, alto);
-        using (Graphics g = Graphics.FromImage(bmp))
-        {
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            int x = -10;
-            while (x < w)
-            {
-                int bw = azar.Next(50, 130), bh = azar.Next(minAlto, maxAlto), top = ruta - bh;
-                using (var b = new SolidBrush(color)) g.FillRectangle(b, x, top, bw, bh + 4);
-                if (primerPlano && bh > 200 && azar.Next(3) == 0)
-                {
-                    using (var p = new Pen(color, 2)) g.DrawLine(p, x + bw / 2, top, x + bw / 2, top - 30);
-                    antenas.Add(new PointF(x + bw / 2, top - 30));
-                }
-                for (int vy = top + 10; vy < ruta - 8; vy += 13)
-                    for (int vx = x + 7; vx < x + bw - 7; vx += 11)
-                        if (azar.Next(chanceVentana) == 0)
-                        {
-                            Color luz = azar.Next(5) == 0 ? Color.FromArgb(170, 170, 200, 255) : Color.FromArgb(primerPlano ? 200 : 110, 255, 196, 120);
-                            using (var b = new SolidBrush(luz)) g.FillRectangle(b, vx, vy, 5, 7);
-                        }
-                x += bw + azar.Next(0, 8);
-            }
-            if (primerPlano)
-            {
-                // Ruta con faroles y palmeras.
-                using (var b = new SolidBrush(Color.FromArgb(10, 11, 16))) g.FillRectangle(b, 0, ruta, w, alto - ruta);
-                for (int fx = 30; fx < w; fx += 140)
-                {
-                    using (var p = new Pen(Color.FromArgb(18, 20, 28), 3)) g.DrawLine(p, fx, ruta + 4, fx, ruta - 70);
-                    using (var b = new SolidBrush(Color.FromArgb(50, 255, 190, 110))) g.FillEllipse(b, fx - 40, ruta - 90, 80, 50);
-                    using (var b = new SolidBrush(Color.FromArgb(255, 220, 160))) g.FillEllipse(b, fx - 4, ruta - 74, 8, 5);
-                }
-                for (int px = 90; px < w; px += azar.Next(220, 380)) Palmera(g, px, ruta + 2, azar.Next(150, 210));
-            }
-        }
-        return bmp;
-    }
-
-    static void Palmera(Graphics g, int x, int y, int h)
-    {
-        Color c = Color.FromArgb(3, 4, 8);
-        using (var p = new Pen(c, 7))
-        {
-            p.StartCap = p.EndCap = System.Drawing.Drawing2D.LineCap.Round;
-            g.DrawBezier(p, x, y, x + 6, y - h / 3, x + 18, y - 2 * h / 3, x + 26, y - h);
-        }
-        // Hojas que salen hacia arriba y caen por su peso.
-        using (var p = new Pen(c, 8))
-        {
-            p.StartCap = p.EndCap = System.Drawing.Drawing2D.LineCap.Round;
-            int tx = x + 26, ty = y - h;
-            foreach (int dx in new[] { -82, -52, -22, 22, 52, 82 })
-                g.DrawBezier(p, tx, ty, tx + dx * 0.3f, ty - 26, tx + dx * 0.75f, ty - 20, tx + dx, ty + Math.Abs(dx) * 0.42f + 6);
-        }
+        g.DrawImage(cuadro, 0, 0, 1100, 660);
     }
 }
 
@@ -1265,6 +1094,14 @@ static class Prueba
             Ver(Tira(() => Actualizador.Quitar(gta, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad ../afuera.txt")), "quitar rechaza rutas de afuera");
         }
         finally { Directory.Delete(carpeta, true); }
+
+        var vid = new List<byte>(Encoding.ASCII.GetBytes("AMRPVID1"));
+        vid.AddRange(BitConverter.GetBytes(24));
+        vid.AddRange(BitConverter.GetBytes(5)); // dice 5 cuadros pero trae 2 y uno cortado
+        for (int i = 0; i < 2; i++) { vid.AddRange(BitConverter.GetBytes(3)); vid.AddRange(new byte[] { 1, 2, 3 }); }
+        vid.AddRange(BitConverter.GetBytes(999));
+        Ver(Video.Desde(vid.ToArray()).Cuadros == 2, "video: lee solo los cuadros completos");
+        Ver(Tira(() => Video.Desde(Encoding.ASCII.GetBytes("cualquier cosa nada"))), "video: rechaza archivo que no es video");
 
         Ver(Instalacion.NickValido.IsMatch("Juan_Perez") && !Instalacion.NickValido.IsMatch("ab") && !Instalacion.NickValido.IsMatch("con espacio"), "nick");
         Console.WriteLine(fallas == 0 ? "Todo bien." : fallas + " falla(s).");
