@@ -32,9 +32,9 @@ static class Config
     public const string EnbDescargaUrl = "http://enbdev.com/download_mod_gtasa.htm";
     public const string EnbZip = "enbseries_gtasa_v0430.zip";
     // Con SA-MP 0.3.7 la versión d3d9.dll del ENB cierra el juego: se usa la versión ASI (AsiVersion/enbseries.asi),
-    // que carga el Ultimate ASI Loader (dinput8.dll, licencia MIT) que sí se reparte en paquetes/enb.
+    // que carga el Ultimate ASI Loader (dinput8.dll, licencia MIT). El cargador va en actualizaciones porque también lo usa CLEO.
     public const string EnbAsiSha = "a166b48a3eec747a38ac512b23003cb244134aacb9c18ace67baaca7188c64b1"; // enbseries.asi de la v0.430
-    public const string AsiLoaderSha = "63b465dbc1bf9c5ab4e33c3ccad099d9edb702f2c51587ac8d4f196497396437"; // dinput8.dll que va en paquetes/enb
+    public const string AsiLoaderSha = "63b465dbc1bf9c5ab4e33c3ccad099d9edb702f2c51587ac8d4f196497396437"; // dinput8.dll que va en actualizaciones
     public const string DescargaSampUrl = "https://www.sa-mp.mp/downloads/";
     // Links del pie de la ventana, en este orden. Los que tengan el link vacío no aparecen.
     public static readonly KeyValuePair<string, string>[] Redes =
@@ -630,6 +630,8 @@ class Ventana : Form
         try
         {
             string carpeta = Carpeta(), texto = File.ReadAllText(EnbArchivo());
+            // Los ENB instalados antes de CLEO tienen anotado el dinput8.dll, que ahora se queda porque lo usa CLEO.
+            texto = string.Join("\n", texto.Split('\n').Where(l => !l.TrimEnd().EndsWith(" dinput8.dll")));
             int n = carpeta.Length == 0 ? 0 : await Task.Run(() => Actualizador.Quitar(carpeta, texto));
             File.Delete(EnbArchivo());
             Avisar("ENB desactivado: se sacaron " + n + " archivo(s).", 100);
