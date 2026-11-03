@@ -36,6 +36,10 @@ static class Config
     public const string EnbAsiSha = "a166b48a3eec747a38ac512b23003cb244134aacb9c18ace67baaca7188c64b1"; // enbseries.asi de la v0.430
     public const string AsiLoaderSha = "63b465dbc1bf9c5ab4e33c3ccad099d9edb702f2c51587ac8d4f196497396437"; // dinput8.dll que va en actualizaciones
     public const string DescargaSampUrl = "https://www.sa-mp.mp/downloads/";
+    // Pantallas en HTML del server (teléfono y las que vengan): cliente de omp-cef (licencia MIT). Su libcef.dll pesa
+    // más de 100 MB y no entra en el repo: se baja el zip oficial del release y se revisa su huella. Vacío = no se instala.
+    public const string CefZipUrl = "https://github.com/aurora-mp/omp-cef/releases/download/v1.4.0/client-files-v1.4.0.zip";
+    public const string CefZipSha = "9bdcf634a6b473e648716deaa3779f55ac1211924ee9c55013897582cf34e55f";
     // Links del pie de la ventana, en este orden. Los que tengan el link vacío no aparecen.
     public static readonly KeyValuePair<string, string>[] Redes =
     {
@@ -313,6 +317,64 @@ static class Actualizador
         }
     }
 
+    // Instala el cliente de CEF si falta o es de otra versión. Devuelve false si ya estaba.
+    public static bool InstalarCef(string carpetaGta, Action<string, int> progreso)
+    {
+        string marca = RutaSegura(carpetaGta, "cef/americarp-version.txt");
+        if (File.Exists(marca) && File.ReadAllText(marca).Trim() == Config.CefZipSha && File.Exists(RutaSegura(carpetaGta, "cef.asi")))
+            return false;
+        string zip = Path.Combine(Path.GetTempPath(), "AmericaRP-cef.zip");
+        try
+        {
+            Bajar(Config.CefZipUrl, zip, "Bajando las pantallas del server", progreso);
+            if (Sha256(zip) != Config.CefZipSha) throw new InvalidDataException("El cliente de CEF bajado no es el esperado.");
+            progreso("Instalando las pantallas del server...", 100);
+            ExtraerCef(carpetaGta, zip);
+            File.WriteAllText(marca, Config.CefZipSha);
+        }
+        finally { if (File.Exists(zip)) File.Delete(zip); }
+        return true;
+    }
+
+    // Del zip de omp-cef solo van cef.asi y la carpeta cef/ (sin el .lib, que es para compilar).
+    public static void ExtraerCef(string carpetaGta, string zip)
+    {
+        using (ZipArchive z = ZipFile.OpenRead(zip))
+            foreach (ZipArchiveEntry e in z.Entries)
+            {
+                string nombre = e.FullName.Replace('\\', '/');
+                if (e.Name.Length == 0 || nombre.EndsWith(".lib") || (nombre != "cef.asi" && !nombre.StartsWith("cef/"))) continue;
+                string destino = RutaSegura(carpetaGta, nombre);
+                Directory.CreateDirectory(Path.GetDirectoryName(destino));
+                try { e.ExtractToFile(destino, true); }
+                catch (IOException) { throw new IOException("No se pudo reemplazar " + nombre + ". Cerrá el GTA y probá de nuevo."); }
+            }
+    }
+
+    // Descarga con avance, para archivos grandes.
+    static void Bajar(string url, string destino, string texto, Action<string, int> progreso)
+    {
+        using (WebResponse respuesta = WebRequest.Create(url).GetResponse())
+        using (Stream entrada = respuesta.GetResponseStream())
+        using (FileStream salida = File.Create(destino))
+        {
+            long total = respuesta.ContentLength, leido = 0;
+            byte[] buffer = new byte[81920];
+            int n, ultimo = -1;
+            while ((n = entrada.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                salida.Write(buffer, 0, n);
+                leido += n;
+                int porcentaje = total > 0 ? (int)(100 * leido / total) : 0;
+                if (porcentaje != ultimo)
+                {
+                    ultimo = porcentaje;
+                    progreso(texto + ": " + (leido >> 20) + (total > 0 ? " de " + (total >> 20) : "") + " MB", porcentaje);
+                }
+            }
+        }
+    }
+
     // Saca de la carpeta del GTA los archivos de un manifiesto que se instaló antes. Solo borra los que siguen
     // idénticos a los instalados: si el jugador puso su propio archivo con el mismo nombre, no se toca.
     public static int Quitar(string carpetaGta, string textoManifiesto)
@@ -563,6 +625,12 @@ class Ventana : Form
                     return false;
             }
             RevisarMods();
+        }
+        if (Config.CefZipUrl.Length > 0 && File.Exists(Path.Combine(carpeta, "gta_sa.exe")))
+        {
+            // Sin CEF se juega igual (con los diálogos de siempre): si falla, se avisa y se sigue.
+            try { await Task.Run(() => Actualizador.InstalarCef(carpeta, Avisar)); }
+            catch (Exception ex) { Avisar("No se pudieron instalar las pantallas del server: " + ex.Message, 0); }
         }
         if (EnbActivo() && Config.EnbUrl.Length > 0 && File.Exists(Path.Combine(carpeta, "gta_sa.exe")))
         {
@@ -1204,6 +1272,25 @@ static class Prueba
             List<string> inst = Actualizador.InstalarZipEnb(gta, zip, shaAsi);
             Ver(inst.Count == 2 && File.ReadAllText(Path.Combine(gta, "enbseries.asi")) == "asi" && File.ReadAllText(Path.Combine(gta, "d3d9.dll")) == "mio", "zip ENB: instala el .asi y deja afuera su d3d9.dll");
             Ver(Actualizador.Quitar(gta, Actualizador.Huellas(gta, inst)) == 2 && !File.Exists(Path.Combine(gta, "enbseries.asi")) && File.Exists(Path.Combine(gta, "d3d9.dll")), "zip ENB: se saca entero");
+        }
+        finally { Directory.Delete(carpeta, true); }
+
+        // Zip de CEF: solo cef.asi y cef/, sin el .lib, y nada fuera del GTA.
+        carpeta = Path.Combine(Path.GetTempPath(), "amrp-cef-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(carpeta);
+        try
+        {
+            string zip = Path.Combine(carpeta, "cef.zip"), gta = Path.Combine(carpeta, "gta");
+            using (ZipArchive z = ZipFile.Open(zip, ZipArchiveMode.Create))
+                foreach (string f in new[] { "cef.asi", "cef/client.dll", "cef/locales/es.pak", "cef/libcef.lib", "otro/leeme.txt" })
+                    using (var w = new StreamWriter(z.CreateEntry(f).Open())) w.Write(f);
+            Actualizador.ExtraerCef(gta, zip);
+            Ver(File.Exists(Path.Combine(gta, "cef.asi")) && File.Exists(Path.Combine(gta, "cef", "locales", "es.pak"))
+                && !File.Exists(Path.Combine(gta, "cef", "libcef.lib")) && !Directory.Exists(Path.Combine(gta, "otro")), "zip CEF: instala solo cef.asi y cef/");
+            string malo = Path.Combine(carpeta, "malo.zip");
+            using (ZipArchive z = ZipFile.Open(malo, ZipArchiveMode.Create))
+                using (var w = new StreamWriter(z.CreateEntry("cef/../../afuera.txt").Open())) w.Write("x");
+            Ver(Tira(() => Actualizador.ExtraerCef(gta, malo)) && !File.Exists(Path.Combine(carpeta, "afuera.txt")), "zip CEF: rechaza rutas de afuera");
         }
         finally { Directory.Delete(carpeta, true); }
 
