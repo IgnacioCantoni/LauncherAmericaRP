@@ -1768,7 +1768,7 @@ class Ventana : Lienzo
     readonly NotifyIcon bandeja = new NotifyIcon();
     readonly Timer reloj = new Timer(), cuadros = new Timer();
     readonly Stopwatch tiempo = Stopwatch.StartNew();
-    readonly Bitmap fondo = Fondo.Cargar(Ancho, Alto);
+    readonly Bitmap fondo = Fondo.Cargar(Ancho, Alto), estrella = Fondo.Imagen("arranque-estrella.png");
     bool consultando, ocupado, tapada;
     Rectangle menuAncla = Rectangle.Empty;
     List<Tuple<string, string, Action>> menuItems;
@@ -2507,8 +2507,14 @@ class Ventana : Lienzo
 
     void DibujarArriba(Graphics g)
     {
-        Estrella(g, 52, 38, 17, Acento);
-        Escribir(g, "America RP", Fuentes.Titulo(32f), Texto, 76, 22);
+        // La misma estrella dorada de la pantalla de carga; sin la imagen, la estrella dibujada.
+        if (estrella != null)
+        {
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.DrawImage(estrella, new Rectangle(52 - 32, 38 - 33, 64, 64));
+        }
+        else Estrella(g, 52, 38, 17, Acento);
+        Escribir(g, "America RP", Fuentes.Titulo(32f), Texto, 80, 22);
 
         int x = 300;
         foreach (string[] p in new[] { new[] { "inicio", "INICIO" }, new[] { "noticias", "NOTICIAS" }, new[] { "mods", "MODS" }, new[] { "soporte", "SOPORTE" }, new[] { "ajustes", "AJUSTES" } })
