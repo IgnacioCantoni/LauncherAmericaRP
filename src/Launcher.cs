@@ -22,8 +22,13 @@ static class Config
     // Lo que cambia de un server a otro. Después de tocarlo, volvé a compilar.
     // Versión de este launcher. Para sacar una nueva, ver "Sacar una versión nueva del launcher" en el README.
     public const string Version = "1.4.0";
-    public const string Host = "127.0.0.1";
-    public const int Puerto = 7777;
+    // Servidores que se eligen en INICIO: nombre, dirección y puerto. El primero es el de siempre.
+    // shortcut: el de desarrollo va en 127.0.0.1:7778 hasta tener su dirección real.
+    public static readonly Tuple<string, string, int>[] Servidores =
+    {
+        Tuple.Create("OFICIAL", "127.0.0.1", 7777),
+        Tuple.Create("DESARROLLO", "127.0.0.1", 7778),
+    };
     // Vacío = sin noticias / sin actualizaciones.
     const string Repo = "https://raw.githubusercontent.com/IgnacioCantoni/LauncherAmericaRP/main/";
     public const string NoticiasUrl = Repo + "noticias.txt";
@@ -177,6 +182,11 @@ static class Registro
 
     // Clientes: "liviano" es el oficial (el GTA principal); "custom" es otra carpeta del jugador, con sus aportes.
     public static string Cliente { get { string c = Leer(Propia, "cliente"); return c.Length == 0 ? "liviano" : c; } set { Guardar(Propia, "cliente", value); } }
+    public static int Servidor
+    {
+        get { int n; return int.TryParse(Leer(Propia, "servidor"), out n) && n >= 0 && n < Config.Servidores.Length ? n : 0; }
+        set { Guardar(Propia, "servidor", value.ToString()); }
+    }
     public static string GtaPrincipal { get { return Leer(Propia, "gta_principal"); } set { Guardar(Propia, "gta_principal", value); } }
     public static string GtaCustom { get { return Leer(Propia, "gta_custom"); } set { Guardar(Propia, "gta_custom", value); } }
     // Lo que se anota por carpeta (ENB, mods) va aparte para el personalizado.
@@ -1786,7 +1796,8 @@ class Ventana : Lienzo
     string menuPestana = "";
     double cambioPestana = -1000;
 
-    EstadoServidor server = new EstadoServidor();
+    EstadoServidor[] estados = Config.Servidores.Select(s => new EstadoServidor()).ToArray();
+    EstadoServidor server { get { return estados[Registro.Servidor]; } }
     bool serverConsultado;
     string pestana = "inicio", noticias = "Cargando noticias...", estado = "Listo para jugar.";
     List<Noticia> listaNoticias = Noticias.Leer("Cargando noticias...");
@@ -1909,7 +1920,8 @@ class Ventana : Lienzo
     {
         if (consultando) return;
         consultando = true;
-        server = await Task.Run(() => Consulta.Pedir(Config.Host, Config.Puerto, 2500));
+        // Se consultan todos a la vez, para mostrar en INICIO si cada uno está en línea y su ping.
+        estados = await Task.WhenAll(Config.Servidores.Select(s => Task.Run(() => Consulta.Pedir(s.Item2, s.Item3, 2500))));
         serverConsultado = true;
         consultando = false;
     }
@@ -2292,7 +2304,7 @@ class Ventana : Lienzo
             string carpeta = Carpeta();
             DateTime inicio = DateTime.Now;
             Juego.DejarPasarAlFrente();
-            Process.Start(new ProcessStartInfo(Path.Combine(carpeta, "samp.exe"), Config.Host + ":" + Config.Puerto) { WorkingDirectory = carpeta });
+            Process.Start(new ProcessStartInfo(Path.Combine(carpeta, "samp.exe"), Config.Servidores[Registro.Servidor].Item2 + ":" + Config.Servidores[Registro.Servidor].Item3) { WorkingDirectory = carpeta });
             Avisar("Abriendo el GTA...", 100);
             Vigilar(carpeta, inicio);
         }
@@ -2621,6 +2633,32 @@ class Ventana : Lienzo
                 zonas.Add(new Zona { R = puntos, Click = delegate { AbrirMenu(puntos, OpcionesJuego()); } });
             }
             y += 102;
+        }
+        DibujarServidores(g, x, y + 6, ancho);
+    }
+
+    // Elegir a qué server entrar, cada uno con su luz (verde en línea, roja apagado) y su ping.
+    void DibujarServidores(Graphics g, int x, int y, int ancho)
+    {
+        Escribir(g, "ELEGÍ EL SERVIDOR", Fuentes.Negrita(10f), Gris, x + 4, y);
+        y += 24;
+        int n = Config.Servidores.Length, w = (ancho - 10 * (n - 1)) / n;
+        for (int i = 0; i < n; i++)
+        {
+            var r = new Rectangle(x + i * (w + 10), y, w, 64);
+            bool elegido = Registro.Servidor == i;
+            EstadoServidor e = estados[i];
+            Relleno(g, r, elegido ? Color.FromArgb(225, 14, 16, 22) : Color.FromArgb((int)(170 + 40 * Brillo(r)), 12, 14, 20), 14);
+            Borde(g, r, elegido ? Color.FromArgb(220, Acento) : Color.FromArgb(18, 255, 255, 255), 14, elegido ? 1.5f : 1f);
+            int indice = i;
+            zonas.Add(new Zona { R = r, Click = delegate { Registro.Servidor = indice; Invalidate(); } });
+
+            Color luz = !serverConsultado ? Gris : e.EnLinea ? Verde : Rojo;
+            using (var b = new SolidBrush(Color.FromArgb(60, luz))) g.FillEllipse(b, r.X + 14, r.Y + 22, 20, 20);
+            using (var b = new SolidBrush(luz)) g.FillEllipse(b, r.X + 19, r.Y + 27, 10, 10);
+            Escribir(g, Config.Servidores[i].Item1, Fuentes.Negrita(13f), Texto, r.X + 46, r.Y + 12);
+            string detalle = !serverConsultado ? "Consultando..." : e.EnLinea ? e.Ping + " ms · " + e.Jugadores + "/" + e.Maximo + " jugadores" : "Apagado";
+            Escribir(g, Recortar(g, detalle, r.Right - 14 - (r.X + 46), Fuentes.Texto(10f)), Fuentes.Texto(10f), e.EnLinea ? Gris : Color.FromArgb(200, Gris), r.X + 46, r.Y + 36);
         }
     }
 
