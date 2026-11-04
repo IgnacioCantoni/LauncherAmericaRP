@@ -434,6 +434,42 @@ static class Juego
     [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint acceso, bool heredar, int id);
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int formato, StringBuilder ruta, ref int largo);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    delegate bool CadaVentana(IntPtr v, IntPtr dato);
+    [DllImport("user32.dll")] static extern bool EnumWindows(CadaVentana f, IntPtr dato);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr v, out int id);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr v);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr v);
+    [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int id);
+
+    // Con dos monitores el GTA abre "Device Selection" (elegir pantalla) sin botón en la barra de tareas. Si el launcher
+    // se esconde antes, Windows le da el foco a otra ventana y ese cuadro queda tapado: el juego parece no abrir nunca.
+    // Por eso el launcher espera la primera ventana del GTA (hasta un minuto), la trae al frente y recién ahí se esconde.
+    public static void DejarPasarAlFrente() { AllowSetForegroundWindow(-1); }
+
+    public static IntPtr EsperarVentana(string carpeta)
+    {
+        string exe = Path.Combine(Path.GetFullPath(carpeta), "gta_sa.exe");
+        for (int i = 0; i < 120; i++)
+        {
+            var ids = new HashSet<int>();
+            foreach (Process p in Process.GetProcessesByName("gta_sa"))
+                using (p) if (string.Equals(Ruta(p.Id), exe, StringComparison.OrdinalIgnoreCase)) ids.Add(p.Id);
+            IntPtr hallada = IntPtr.Zero;
+            if (ids.Count > 0)
+                EnumWindows(delegate (IntPtr v, IntPtr dato)
+                {
+                    int id;
+                    GetWindowThreadProcessId(v, out id);
+                    if (ids.Contains(id) && IsWindowVisible(v)) { hallada = v; return false; }
+                    return true;
+                }, IntPtr.Zero);
+            if (hallada != IntPtr.Zero) return hallada;
+            System.Threading.Thread.Sleep(500);
+        }
+        return IntPtr.Zero;
+    }
+
+    public static void AlFrente(IntPtr v) { SetForegroundWindow(v); }
 
     public class Cierre { public int? Codigo; public DateTime Inicio, Fin; public bool Bien { get { return Codigo == null || Codigo == 0; } } }
 
@@ -1365,14 +1401,9 @@ class Ventana : Form
             if (!await Preparar()) return;
             string carpeta = Carpeta();
             DateTime inicio = DateTime.Now;
+            Juego.DejarPasarAlFrente();
             Process.Start(new ProcessStartInfo(Path.Combine(carpeta, "samp.exe"), Config.Host + ":" + Config.Puerto) { WorkingDirectory = carpeta });
             Avisar("Abriendo el GTA...", 100);
-            if (Ajustes.Bandeja)
-            {
-                bandeja.Visible = true;
-                Hide();
-            }
-            else WindowState = FormWindowState.Minimized;
             Vigilar(carpeta, inicio);
         }
         catch (Exception ex) { MessageBox.Show(this, "No se pudo abrir el juego: " + ex.Message, "AMERICA RP", MessageBoxButtons.OK, MessageBoxIcon.Error); }
@@ -1382,6 +1413,15 @@ class Ventana : Form
     // Cuando el GTA se cierra vuelve el launcher. Si se cerró de golpe, avisa y deja un informe para soporte.
     async void Vigilar(string carpeta, DateTime inicio)
     {
+        IntPtr ventana = IntPtr.Zero;
+        try { ventana = await Task.Run(() => Juego.EsperarVentana(carpeta)); } catch (Exception) { }
+        if (ventana != IntPtr.Zero) Juego.AlFrente(ventana);
+        if (Ajustes.Bandeja)
+        {
+            bandeja.Visible = true;
+            Hide();
+        }
+        else WindowState = FormWindowState.Minimized;
         Juego.Cierre c;
         try { c = await Task.Run(() => Juego.Esperar(carpeta, inicio)); }
         catch (Exception) { return; }
