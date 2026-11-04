@@ -43,7 +43,7 @@ static class Config
     // d3dx9 que piden samp.dll (d3dx9_25) y el ENB (d3dx9_43), y que Windows 10 y 11 no traen. Vacío = no se ofrece.
     public const string DirectXUrl = "https://download.microsoft.com/download/8/4/A/84A35BF1-DAFE-4AE8-82AF-AD2AE20B6B14/directx_Jun2010_redist.exe";
     public const string DirectXSha = "053f76dcbb28802e23341b6a787e3b0791c0fa5c8d4d011b1044172dbf89c73b";
-    // GTA Full: gráficos ENB, opcionales (se activan en MI JUEGO). La licencia de ENBSeries no deja repartir su d3d9.dll
+    // GTA Full: gráficos ENB, opcionales (cliente AMERICA RP FULL). La licencia de ENBSeries no deja repartir su d3d9.dll
     // por un launcher: cada jugador baja el zip oficial y el launcher lo instala desde ahí. Lo que sí se reparte es el
     // preset del server (.ini y .fx) en paquetes/enb. EnbUrl vacío = no aparece.
     public const string EnbUrl = Repo + "paquetes/enb/manifiesto.txt";
@@ -152,22 +152,35 @@ static class Registro
 {
     const string Clave = @"Software\SAMP";
 
-    static string Leer(string valor)
+    const string Propia = @"Software\AmericaRP";
+
+    static string Leer(string valor) { return Leer(Clave, valor); }
+    static void Guardar(string valor, string dato) { Guardar(Clave, valor, dato); }
+
+    static string Leer(string clave, string valor)
     {
-        using (RegistryKey k = Registry.CurrentUser.OpenSubKey(Clave))
+        using (RegistryKey k = Registry.CurrentUser.OpenSubKey(clave))
         {
             object v = k == null ? null : k.GetValue(valor);
             return v == null ? "" : v.ToString();
         }
     }
 
-    static void Guardar(string valor, string dato)
+    static void Guardar(string clave, string valor, string dato)
     {
-        using (RegistryKey k = Registry.CurrentUser.CreateSubKey(Clave)) k.SetValue(valor, dato);
+        using (RegistryKey k = Registry.CurrentUser.CreateSubKey(clave)) k.SetValue(valor, dato);
     }
 
     public static string Nick { get { return Leer("PlayerName"); } set { Guardar("PlayerName", value); } }
+    // La de SA-MP: es el GTA que abre samp.exe, o sea el del cliente elegido.
     public static string GtaExe { get { return Leer("gta_sa_exe"); } set { Guardar("gta_sa_exe", value); } }
+
+    // Clientes: "liviano" y "completo" (con ENB) usan el GTA principal; "custom" es otra carpeta del jugador.
+    public static string Cliente { get { string c = Leer(Propia, "cliente"); return c.Length == 0 ? "liviano" : c; } set { Guardar(Propia, "cliente", value); } }
+    public static string GtaPrincipal { get { return Leer(Propia, "gta_principal"); } set { Guardar(Propia, "gta_principal", value); } }
+    public static string GtaCustom { get { return Leer(Propia, "gta_custom"); } set { Guardar(Propia, "gta_custom", value); } }
+    // Lo que se anota por carpeta (ENB, mods) va aparte para el personalizado.
+    public static string Sufijo { get { return Cliente == "custom" ? "-custom" : ""; } }
 }
 
 static class Instalacion
@@ -1240,6 +1253,19 @@ static class Fuentes
     public static Font Titulo(float tam) { return Pedir(titulo, tam * 0.6f, FontStyle.Bold | FontStyle.Italic); }
     public static Font Texto(float tam) { return Pedir(cuerpo, tam, FontStyle.Regular); }
     public static Font Negrita(float tam) { return Pedir(cuerpo, tam, FontStyle.Bold); }
+
+    // Íconos de Windows 10/11 (Segoe MDL2 Assets). Sin esa fuente devuelve null y se dibuja sin íconos.
+    static FontFamily iconos;
+    static bool iconosBuscados;
+    public static Font Iconos(float tam)
+    {
+        if (!iconosBuscados)
+        {
+            iconosBuscados = true;
+            try { var f = new FontFamily("Segoe MDL2 Assets"); if (f.Name == "Segoe MDL2 Assets") iconos = f; } catch (ArgumentException) { }
+        }
+        return iconos == null ? null : Pedir(iconos, tam, FontStyle.Regular);
+    }
 }
 
 // Base de las ventanas propias: sin bordes de Windows, puntas redondeadas y botones dibujados a mano.
@@ -1700,7 +1726,9 @@ class Ventana : Lienzo
     readonly Stopwatch tiempo = Stopwatch.StartNew();
     readonly Bitmap fondo = Fondo.Cargar(Ancho, Alto);
     bool consultando, ocupado, tapada;
-    Rectangle menuJuego = Rectangle.Empty;
+    Rectangle menuAncla = Rectangle.Empty;
+    List<Tuple<string, string, Action>> menuItems;
+    string menuPestana = "";
     double cambioPestana = -1000;
 
     EstadoServidor server = new EstadoServidor();
@@ -1751,6 +1779,9 @@ class Ventana : Lienzo
         bandeja.MouseClick += delegate { Restaurar(); };
         FormClosed += delegate { bandeja.Visible = false; bandeja.Dispose(); };
 
+        // Hasta 1.4.0 había un solo GTA: pasa a ser el principal.
+        if (Registro.GtaPrincipal.Length == 0 && Registro.Cliente != "custom" && Registro.GtaExe.Length > 0) Registro.GtaPrincipal = Registro.GtaExe;
+        Mods.Dir = DirMods();
         RevisarInstalacion();
         reloj.Interval = 15000;
         reloj.Tick += delegate { RefrescarServer(); };
@@ -1771,6 +1802,34 @@ class Ventana : Lienzo
     }
 
     // ---------- datos ----------
+
+    static string DirMods()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "mods" + Registro.Sufijo);
+    }
+
+    // Guarda el GTA del cliente elegido (y se lo pasa a SA-MP).
+    static void GuardarGta(string exe)
+    {
+        Registro.GtaExe = exe;
+        if (Registro.Cliente == "custom") Registro.GtaCustom = exe;
+        else Registro.GtaPrincipal = exe;
+    }
+
+    void ElegirCliente(string c)
+    {
+        if (ocupado || c == Registro.Cliente) return;
+        if (Juego.Abierto()) { Mensaje("Cerrá el GTA antes de cambiar de cliente.", "Cliente", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        Registro.Cliente = c;
+        Registro.GtaExe = c == "custom" ? Registro.GtaCustom : Registro.GtaPrincipal;
+        Mods.Dir = DirMods();
+        RevisarInstalacion();
+        RevisarMods();
+        if (Carpeta().Length == 0) { ElegirCarpeta(); return; }
+        // Liviano y completo comparten el GTA: la diferencia es el ENB prendido o apagado.
+        if (c == "completo" && !EnbActivo()) CambiarEnb();
+        else if (c == "liviano" && EnbActivo()) CambiarEnb();
+    }
 
     string Carpeta()
     {
@@ -1883,7 +1942,7 @@ class Ventana : Lienzo
         catch (Exception) { return new List<Noticia>(); }
     }
 
-    // Cuántos archivos del server le faltan al jugador (fila "Archivos del server" de MI JUEGO).
+    // Cuántos archivos del server le faltan al jugador (estado del cliente en INICIO).
     async void RevisarMods()
     {
         if (Config.ManifiestoUrl.Length == 0 || Carpeta().Length == 0) return;
@@ -1924,7 +1983,7 @@ class Ventana : Lienzo
         string exe = Explorador.Elegir(this, "BUSCÁ TU GTA", "Abrí la carpeta del GTA San Andreas y elegí gta_sa.exe.",
             n => n.Equals("gta_sa.exe", StringComparison.OrdinalIgnoreCase), Carpeta());
         if (exe == null) return false;
-        Registro.GtaExe = exe;
+        GuardarGta(exe);
         RevisarInstalacion();
         RevisarMods();
         return true;
@@ -2031,7 +2090,7 @@ class Ventana : Lienzo
             "¿Instalarlo ahora? Se baja de Microsoft (96 MB) y Windows te va a pedir permiso de administrador.",
             "DirectX 9", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
         {
-            Avisar("Falta DirectX 9: si el juego no abre, instalalo desde MI JUEGO.", 0);
+            Avisar("Falta DirectX 9: si el juego no abre, tocá Revisar archivos del server en las opciones del cliente.", 0);
             return true;
         }
         try { await Task.Run(() => DirectX.Instalar(Avisar)); }
@@ -2054,7 +2113,7 @@ class Ventana : Lienzo
     // Si el ENB está activo, este archivo existe y guarda el manifiesto que se instaló, para poder sacarlo después.
     static string EnbArchivo()
     {
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "enb-instalado.txt");
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "enb-instalado" + Registro.Sufijo + ".txt");
     }
 
     // Desactivar no borra el ENB: le cambia el nombre al .asi (el cargador solo lee .asi), así activarlo es al instante.
@@ -2240,34 +2299,61 @@ class Ventana : Lienzo
             soporte.Length > 0 ? MessageBoxButtons.YesNo : MessageBoxButtons.OK, MessageBoxIcon.Information) == DialogResult.Yes) Abrir(soporte);
     }
 
-    void MenuJuego(Rectangle r)
+    void AbrirMenu(Rectangle ancla, List<Tuple<string, string, Action>> items)
     {
-        menuJuego = r;
+        menuAncla = ancla;
+        menuItems = items;
+        menuPestana = pestana;
     }
 
-    // Menú de OPCIONES dibujado encima de MI JUEGO; se dibuja último para que sus zonas tapen a las de abajo.
+    // Opciones del GTA del cliente elegido (los tres puntos del cliente en INICIO). null = no se puede.
+    List<Tuple<string, string, Action>> OpcionesJuego()
+    {
+        bool hay = Carpeta().Length > 0;
+        return new List<Tuple<string, string, Action>>
+        {
+            Tuple.Create("Ver estado del juego", "\uE946", (Action)VerEstado),
+            Tuple.Create("Revisar archivos del server", "\uE895", hay ? (Action)Actualizar : null),
+            Tuple.Create("Reparar archivos (revisar todo de cero)", "\uE90F", hay ? (Action)delegate { if (ocupado) return; Actualizador.BorrarHuellas(); Actualizar(); } : null),
+            Tuple.Create("Mover ubicación del juego", "\uE8DE", hay ? (Action)MoverCarpeta : null),
+            Tuple.Create("Abrir carpeta del juego", "\uE838", hay ? (Action)delegate { Abrir(Carpeta()); } : null),
+            Tuple.Create("Elegir otra carpeta", "\uE8DA", (Action)delegate { ElegirCarpeta(); }),
+        };
+    }
+
+    void VerEstado()
+    {
+        Mensaje(string.Join("\n", Revisiones().Select(f => f[0] + ": " + f[1])) + "\n\nCarpeta: " + (Carpeta().Length > 0 ? Carpeta() : "sin elegir"),
+            "Estado del juego", MessageBoxButtons.OK, Revisiones().Any(f => f[2] == "mal") ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+    }
+
+    // Menú dibujado encima de todo; se dibuja último para que sus zonas tapen a las de abajo.
     void DibujarMenu(Graphics g)
     {
-        if (menuJuego.IsEmpty) return;
-        if (pestana != "juego") { menuJuego = Rectangle.Empty; return; }
-        bool hay = Carpeta().Length > 0;
-        var items = new List<KeyValuePair<string, Action>>
-        {
-            new KeyValuePair<string, Action>("Abrir la carpeta del GTA", hay ? (Action)delegate { Abrir(Carpeta()); } : null),
-            new KeyValuePair<string, Action>("Reparar archivos (revisar todo de cero)", hay ? (Action)delegate { if (ocupado) return; Actualizador.BorrarHuellas(); Actualizar(); } : null),
-            new KeyValuePair<string, Action>("Mover la carpeta a otro lugar", hay ? (Action)MoverCarpeta : null),
-            new KeyValuePair<string, Action>("Elegir otra carpeta", delegate { ElegirCarpeta(); }),
-        };
-        var caja = new Rectangle(menuJuego.Right - 320, menuJuego.Bottom + 8, 320, items.Count * 42 + 12);
+        if (menuAncla.IsEmpty) return;
+        if (pestana != menuPestana) { menuAncla = Rectangle.Empty; return; }
+        var items = menuItems;
+        Font iconos = Fuentes.Iconos(11f);
+        int x = menuAncla.X < Ancho / 2 ? menuAncla.X : menuAncla.Right - 330;
+        var caja = new Rectangle(x, menuAncla.Bottom + 8, 330, items.Count * 46 + 12);
         Relleno(g, new Rectangle(caja.X + 2, caja.Y + 6, caja.Width, caja.Height), Color.FromArgb(90, 0, 0, 0), 14);
         Relleno(g, caja, Color.FromArgb(250, Panel), 14);
         Borde(g, caja, Color.FromArgb(24, 255, 255, 255), 14, 1f);
         for (int i = 0; i < items.Count; i++)
         {
-            var r = new Rectangle(caja.X + 6, caja.Y + 6 + i * 42, caja.Width - 12, 42);
-            Action a = items[i].Value;
+            var r = new Rectangle(caja.X + 6, caja.Y + 6 + i * 46, caja.Width - 12, 46);
+            Action a = items[i].Item3;
+            Color c = a != null ? Texto : Color.FromArgb(110, Gris);
             if (a != null) Relleno(g, r, Color.FromArgb((int)(28 * Brillo(r)), 255, 255, 255), 10);
-            Escribir(g, items[i].Key, Fuentes.Texto(12f), a != null ? Texto : Color.FromArgb(110, Gris), r.X + 14, r.Y + 11);
+            int tx = r.X + 14;
+            if (iconos != null)
+            {
+                var cuadro = new Rectangle(r.X + 8, r.Y + 7, 32, 32);
+                Relleno(g, cuadro, Color.FromArgb(18, 255, 255, 255), 8);
+                Centrado(g, items[i].Item2, iconos, c, cuadro);
+                tx = cuadro.Right + 12;
+            }
+            Escribir(g, items[i].Item1, Fuentes.Texto(12f), c, tx, r.Y + 13);
             if (a != null) zonas.Add(new Zona { R = r, Click = a, Menu = true });
         }
     }
@@ -2283,7 +2369,7 @@ class Ventana : Lienzo
         try
         {
             string nueva = await Task.Run(() => Mudanza.Copiar(origen, destino, Avisar));
-            Registro.GtaExe = Path.Combine(nueva, "gta_sa.exe");
+            GuardarGta(Path.Combine(nueva, "gta_sa.exe"));
             RevisarInstalacion();
             RevisarMods();
             Avisar("El GTA ahora está en " + nueva + ".", 100);
@@ -2322,9 +2408,9 @@ class Ventana : Lienzo
     // Con el menú de OPCIONES abierto, un clic afuera solo lo cierra.
     protected override void Clic(Zona z)
     {
-        if (!menuJuego.IsEmpty)
+        if (!menuAncla.IsEmpty)
         {
-            menuJuego = Rectangle.Empty;
+            menuAncla = Rectangle.Empty;
             if (z != null && z.Menu) z.Click();
             return;
         }
@@ -2361,7 +2447,6 @@ class Ventana : Lienzo
         g.TranslateTransform(0, 12 * (1 - k));
         if (pestana == "noticias") DibujarNoticias(g);
         else if (pestana == "mods") DibujarMods(g);
-        else if (pestana == "juego") DibujarJuego(g);
         else if (pestana == "ajustes") DibujarAjustes(g);
         else if (pestana == "soporte") DibujarSoporte(g);
         else if (pestana == "novedades") DibujarNovedades(g);
@@ -2380,7 +2465,7 @@ class Ventana : Lienzo
         Escribir(g, "America RP", Fuentes.Titulo(32f), Texto, 76, 22);
 
         int x = 300;
-        foreach (string[] p in new[] { new[] { "inicio", "INICIO" }, new[] { "noticias", "NOTICIAS" }, new[] { "mods", "MODS" }, new[] { "juego", "MI JUEGO" }, new[] { "ajustes", "AJUSTES" } })
+        foreach (string[] p in new[] { new[] { "inicio", "INICIO" }, new[] { "noticias", "NOTICIAS" }, new[] { "mods", "MODS" }, new[] { "soporte", "SOPORTE" }, new[] { "ajustes", "AJUSTES" } })
         {
             Font f = Fuentes.Titulo(19f);
             int w = Medir(g, p[1], f);
@@ -2399,6 +2484,7 @@ class Ventana : Lienzo
 
     void DibujarInicio(Graphics g)
     {
+        DibujarClientes(g);
         int y = Contenido.Bottom - 150;
         Escribir(g, "SERVIDOR DE ROLEPLAY EN ESPAÑOL", Fuentes.Negrita(10f), Acento, 44, y);
         Escribir(g, "BIENVENIDO A AMERICA RP", Fuentes.Titulo(58f), Texto, 40, y + 18);
@@ -2406,6 +2492,75 @@ class Ventana : Lienzo
         string primera = ultima == null ? "" : ultima.Titulo.Length > 0 ? ultima.Titulo : ultima.Lineas.FirstOrDefault(l => l.Trim().Length > 0 && !l.Contains("Bienvenido")) ?? "";
         using (var b = new SolidBrush(Color.FromArgb(220, Texto)))
             g.DrawString(primera, Fuentes.Texto(13f), b, new RectangleF(44, y + 104, 600, 50));
+    }
+
+    // Como el selector de juego de otros launchers, pero sin repartir el GTA: todos usan el GTA de cada jugador.
+    void DibujarClientes(Graphics g)
+    {
+        int x = 40, y = 100, ancho = 440;
+        Escribir(g, "ELEGÍ TU CLIENTE", Fuentes.Negrita(10f), Gris, x + 4, y);
+        y += 24;
+        string principal = Registro.GtaPrincipal, custom = Registro.GtaCustom, dir = principal.Length == 0 ? "" : Path.GetDirectoryName(principal);
+        bool hayP = principal.Length > 0 && File.Exists(principal), hayC = custom.Length > 0 && File.Exists(custom);
+        bool hayEnb = hayP && (File.Exists(Path.Combine(dir, "enbseries.asi")) || File.Exists(Path.Combine(dir, AsiApagado)));
+        var clientes = new[]
+        {
+            new { Id = "liviano", Nombre = "AMERICA RP", Etiqueta = "LIVIANO", Estado = hayP ? "Listo" : "Sin elegir", Color = hayP ? Verde : Gris,
+                Texto = "Tu GTA con los archivos del server. Anda en cualquier PC." },
+            new { Id = "completo", Nombre = "AMERICA RP FULL", Etiqueta = "ENB", Estado = !hayP ? "Sin elegir" : hayEnb ? "Listo" : "Falta bajar el ENB", Color = !hayP ? Gris : hayEnb ? Verde : Ambar,
+                Texto = "Con gráficos ENB: luces y colores mejorados. Pide más PC." },
+            new { Id = "custom", Nombre = "GTA PERSONALIZADO", Etiqueta = "", Estado = hayC ? "Listo" : "Sin elegir", Color = hayC ? Verde : Gris,
+                Texto = hayC ? "Carpeta: " + Path.GetDirectoryName(custom) : "Otra carpeta tuya, con tus propios mods." },
+        };
+        string[] falta = Revisiones().FirstOrDefault(f => f[2] == "mal" || f[2] == "ojo");
+        foreach (var c in clientes)
+        {
+            var r = new Rectangle(x, y, ancho, 92);
+            bool elegido = Registro.Cliente == c.Id;
+            // En el elegido, lo primero que falta (DirectX, archivos del server...) reemplaza al "Listo".
+            string estado = elegido && falta != null && Carpeta().Length > 0 ? falta[0] + ": " + falta[1].ToLowerInvariant() : c.Estado;
+            Color colorEstado = elegido && falta != null && Carpeta().Length > 0 ? (falta[2] == "mal" ? Rojo : Ambar) : c.Color;
+            Relleno(g, r, elegido ? Color.FromArgb(225, 14, 16, 22) : Color.FromArgb((int)(170 + 40 * Brillo(r)), 12, 14, 20), 14);
+            Borde(g, r, elegido ? Color.FromArgb(220, Acento) : Color.FromArgb(18, 255, 255, 255), 14, elegido ? 1.5f : 1f);
+            string id = c.Id;
+            zonas.Add(new Zona { R = r, Click = delegate { ElegirCliente(id); } });
+
+            // Botón de radio.
+            using (var p = new Pen(elegido ? Acento : Gris, 1.6f)) g.DrawEllipse(p, r.X + 16, r.Y + 38, 16, 16);
+            if (elegido) using (var b = new SolidBrush(Acento)) g.FillEllipse(b, r.X + 20, r.Y + 42, 8, 8);
+
+            // Ícono: estrella clara (liviano), estrella sobre naranja (full) o carpeta (personalizado).
+            var icono = new Rectangle(r.X + 46, r.Y + 22, 48, 48);
+            Relleno(g, icono, c.Id == "completo" ? Acento : Campo, 12);
+            if (c.Id == "custom")
+            {
+                Relleno(g, new Rectangle(icono.X + 12, icono.Y + 14, 10, 6), Acento, 2);
+                Relleno(g, new Rectangle(icono.X + 12, icono.Y + 17, 24, 18), Acento, 4);
+            }
+            else Estrella(g, icono.X + 24, icono.Y + 25, 13, c.Id == "completo" ? Oscuro : Acento);
+
+            int tx = icono.Right + 14, tw = r.Right - 44 - tx;
+            Escribir(g, c.Nombre, Fuentes.Negrita(13.5f), Texto, tx, r.Y + 12);
+            Escribir(g, estado, Fuentes.Negrita(10f), colorEstado, tx, r.Y + 38);
+            if (c.Etiqueta.Length > 0)
+            {
+                Font chica = Fuentes.Negrita(9f);
+                var e = new Rectangle(tx + Medir(g, estado, Fuentes.Negrita(10f)) + 12, r.Y + 37, Medir(g, c.Etiqueta, chica) + 16, 18);
+                Relleno(g, e, Color.FromArgb(40, Acento), 9);
+                Centrado(g, c.Etiqueta, chica, Acento, e);
+            }
+            using (var b = new SolidBrush(Gris)) using (var formato = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
+                g.DrawString(c.Texto, Fuentes.Texto(10f), b, new RectangleF(tx, r.Y + 62, tw, 20), formato);
+
+            if (elegido)
+            {
+                var puntos = new Rectangle(r.Right - 40, r.Y + 26, 28, 40);
+                Relleno(g, puntos, Color.FromArgb((int)(36 * Brillo(puntos)), 255, 255, 255), 8);
+                for (int i = 0; i < 3; i++) Punto(g, puntos.X + 14, puntos.Y + 12 + i * 8, Gris);
+                zonas.Add(new Zona { R = puntos, Click = delegate { AbrirMenu(puntos, OpcionesJuego()); } });
+            }
+            y += 102;
+        }
     }
 
     Rectangle Hoja(Graphics g, string titulo)
@@ -2640,36 +2795,6 @@ class Ventana : Lienzo
         g.ResetClip();
     }
 
-    void DibujarJuego(Graphics g)
-    {
-        Rectangle area = Hoja(g, "MI JUEGO");
-        string carpeta = Carpeta();
-        Escribir(g, "CARPETA DEL GTA SAN ANDREAS", Fuentes.Negrita(10f), Gris, area.X, area.Y);
-        Escribir(g, carpeta.Length == 0 ? "Sin elegir" : Recortar(g, carpeta, area.Width - 200, Fuentes.Texto(13f)), Fuentes.Texto(13f), Texto, area.X, area.Y + 20);
-        var opciones = new Rectangle(area.Right - 170, area.Y + 6, 170, 38);
-        Boton(g, opciones, "OPCIONES ▾", false, delegate { MenuJuego(opciones); });
-
-        int y = area.Y + 80;
-        foreach (string[] fila in Revisiones())
-        {
-            Color c = fila[2] == "ok" ? Verde : fila[2] == "mal" ? Rojo : fila[2] == "ojo" ? Ambar : Gris;
-            using (var p = new Pen(Color.FromArgb(28, 255, 255, 255))) g.DrawLine(p, area.X, y + 44, area.Right, y + 44);
-            Escribir(g, fila[0], Fuentes.Negrita(13f), Texto, area.X, y + 10);
-            Escribir(g, fila[1], Fuentes.Titulo(18f), c, area.Right - Medir(g, fila[1], Fuentes.Titulo(18f)), y + 9);
-            y += 46;
-        }
-        if (Config.EnbUrl.Length > 0)
-        {
-            bool activo = EnbActivo();
-            Escribir(g, "GTA FULL · GRÁFICOS ENB", Fuentes.Negrita(13f), Texto, area.X, y + 10);
-            Interruptor(g, new Rectangle(area.Right - 44, y + 10, 44, 24), activo, CambiarEnb);
-            Escribir(g, "Luces y colores mejorados. Pide más PC: si el juego anda lento, desactivalo.", Fuentes.Texto(11f), Gris, area.X, y + 40);
-            y += 66;
-        }
-        Boton(g, new Rectangle(area.X, y + 24, 200, 40), "REVISAR Y ACTUALIZAR", true, Actualizar);
-        Boton(g, new Rectangle(area.X + 216, y + 24, 200, 40), "SOPORTE", false, delegate { Pestana("soporte"); });
-    }
-
     // [nombre, valor, ok|ojo|mal|nada]
     List<string[]> Revisiones()
     {
@@ -2712,20 +2837,12 @@ class Ventana : Lienzo
         Relleno(g, caja, Campo, 10);
         if (nick.Focused) Borde(g, caja, Acento, 10, 1.5f);
 
-        int y = t.Y + 318;
-        // En la tarjeta entran cuatro filas: las tres de siempre y, si algo más anda mal, la primera de esas.
-        List<string[]> filas = Revisiones();
-        string[] otra = filas.Skip(3).FirstOrDefault(f => f[2] == "mal" || f[2] == "ojo");
-        filas = filas.Take(3).ToList();
-        if (otra != null) filas.Add(otra);
-        foreach (string[] fila in filas)
-        {
-            Color fc = fila[2] == "ok" ? Verde : fila[2] == "mal" ? Rojo : fila[2] == "ojo" ? Ambar : Gris;
-            Punto(g, x + 4, y + 10, fc);
-            Escribir(g, fila[0], Fuentes.Texto(11f), Texto, x + 16, y + 1);
-            Escribir(g, fila[1], Fuentes.Titulo(15f), fc, t.Right - 28 - Medir(g, fila[1], Fuentes.Titulo(15f)), y);
-            y += 26;
-        }
+        // Qué cliente se va a abrir; el detalle de lo que falta está en la tarjeta del cliente, en INICIO.
+        Escribir(g, "CLIENTE", Fuentes.Negrita(9.5f), Gris, x, t.Y + 320);
+        string cliente = Registro.Cliente == "completo" ? "AMERICA RP FULL" : Registro.Cliente == "custom" ? "GTA PERSONALIZADO" : "AMERICA RP";
+        Escribir(g, cliente, Fuentes.Negrita(13f), Texto, x, t.Y + 340);
+        var cambiar = new Rectangle(t.Right - 28 - 80, t.Y + 334, 80, 30);
+        if (pestana != "inicio") Chip(g, cambiar, "CAMBIAR", false, delegate { Pestana("inicio"); });
 
         var jugar = new Rectangle(x, t.Bottom - 92, t.Width - 56, 64);
         Relleno(g, jugar, ocupado ? Color.FromArgb(120, Acento) : Mezcla(Acento, Color.FromArgb(255, 196, 92), Brillo(jugar)), 14);

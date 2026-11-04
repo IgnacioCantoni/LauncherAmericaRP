@@ -4,7 +4,7 @@
 ## 2026-11-04 | Launcher | 1.4.0
 - Pestaña MODS nueva: mods opcionales elegidos por el staff, que se instalan y se sacan con un clic.
 - Soporte: elegís qué te pasa, contás qué pasó y el launcher arma el mensaje para Discord, con el informe técnico si querés.
-- MI JUEGO > OPCIONES: abrir la carpeta del GTA, reparar archivos y mover la carpeta a otro lugar.
+- En INICIO elegís el cliente (AMERICA RP, AMERICA RP FULL con ENB o tu propio GTA), y sus opciones abren la carpeta, reparan archivos o la mueven a otro lugar. MI JUEGO ya no hace falta.
 - Noticias desplegables y una sección con los parches del server.
 - Estas novedades.
 - Diseño nuevo, más simple: ventana más grande y redondeada, interruptores, y los avisos y la búsqueda de carpetas con el estilo del launcher en vez de los cuadros de Windows.
