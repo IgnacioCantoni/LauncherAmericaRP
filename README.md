@@ -8,7 +8,7 @@ Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe
 - **Estado del server**: cada 15 segundos muestra si está en línea, los jugadores y el ping.
 - **Mi juego**: la carpeta del GTA y si están bien la versión 1.0, el SA-MP 0.3.7 (`samp.exe` y `samp.dll`) y los archivos del server. El resumen también está en la tarjeta del server, junto al botón JUGAR.
 - **Noticias**: muestra `noticias.txt` de este repo, cada noticia con su fecha, etiqueta y título (ver abajo).
-- **Mods**: lista los archivos de `actualizaciones/archivos/` y cuáles le faltan al jugador. Antes de jugar (o con "Actualizar") baja los que no tenga o tenga distintos.
+- **Mods**: catálogo de mods opcionales que elige el staff (ver "Mods opcionales"). Cada jugador instala y saca los que quiera con un clic. Los archivos que el server reparte a todos (`actualizaciones/archivos/`) se bajan solos antes de jugar, y su estado está en MI JUEGO.
 - **Fondo en video**: `fondo/video.bin` (armado desde el video del server) se repite en bucle detrás de todo. Va dentro del `.exe`.
 - **Se actualiza solo**: al abrir, mira `launcher/version.txt`. Si hay una versión nueva, la baja de la Release de GitHub, revisa su huella, se reemplaza y se vuelve a abrir (ver abajo).
 - **DirectX 9**: antes de jugar revisa que estén `d3dx9_25.dll` (la pide el SA-MP) y, con el ENB activo, `d3dx9_43.dll`. Si faltan, ofrece bajar el instalador oficial de Microsoft de junio de 2010, revisa su huella y lo instala en silencio (Windows pide permiso de administrador). Visual C++ no hace falta: CEF, CLEO y el cargador de ASI no lo usan.
@@ -120,6 +120,26 @@ Cada launcher compara la huella de cada archivo con la de su copia y baja solo l
 Para instalar el SA-MP solo, subí `samp.exe`, `samp.dll` y el resto de los archivos del cliente 0.3.7 a `actualizaciones/archivos/`.
 
 Límite: GitHub no acepta archivos de más de 100 MB en el repo.
+
+## Mods opcionales
+
+Los mods de la pestaña MODS los publica el staff desde este repo. Los jugadores no suben mods desde el launcher: un mod puede traer un `.asi` o un `.dll`, que es código que corre en la PC de cada jugador, así que solo entra lo que revisó un moderador. Si un jugador quiere sumar uno, lo pasa por Discord.
+
+Para sumar un mod:
+
+1. Elegí un id en minúsculas, sin espacios (por ejemplo `hud-limpio`).
+2. Copiá sus archivos en `mods/<id>/archivos/`, con las mismas carpetas que van dentro del GTA (`mods/hud-limpio/archivos/models/hud.txd`).
+3. Opcional: una foto en `mods/<id>/imagen.jpg` (se ve en 150x86, conviene 16:9).
+4. Agregalo en `mods/catalogo.txt`: `## hud-limpio | HUD limpio | Interfaz | Autor` y abajo la descripción.
+5. Doble clic en `generar-manifiesto.bat`, commit y push.
+
+Para actualizarlo, cambiá sus archivos y repetí el paso 5: a quien lo tenga le aparece ACTUALIZAR. Para sacarlo del catálogo, borrá su entrada (a quien ya lo tenga no se le borra).
+
+Protecciones:
+- Cada archivo se baja y se revisa contra su huella SHA-256 antes de ponerlo. Ninguna ruta puede salir de la carpeta del GTA.
+- Un mod nunca pisa archivos del server (`actualizaciones`, el ENB, `gta_sa.exe`, `samp.exe`, `samp.dll`...) ni archivos de otro mod instalado. En esos casos no se instala y avisa por qué.
+- Lo que el mod reemplaza del jugador se guarda en `%LOCALAPPDATA%\AmericaRP\mods\<id>\` y vuelve a su lugar al sacarlo. Si una instalación nueva falla a mitad de camino, la carpeta queda como estaba.
+- `prohibidos.txt` no saca archivos de mods instalados.
 
 ## Repartir el launcher
 

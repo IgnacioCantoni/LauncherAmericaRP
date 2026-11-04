@@ -1,0 +1,6 @@
+# Mods opcionales de AMERICA RP. Aparecen en la pestaña MODS del launcher y cada jugador elige cuáles instalar.
+# Cada mod empieza con "## id | nombre | categoría | autor" y abajo va su descripción.
+# El id es en minúsculas, sin espacios (letras, números, - y _), y es el nombre de su carpeta: mods/<id>/archivos.
+# Ejemplo (sin el "#" del principio):
+# ## hud-limpio | HUD limpio | Interfaz | Staff AMERICA
+# Un HUD sin adornos, con la letra del server.
