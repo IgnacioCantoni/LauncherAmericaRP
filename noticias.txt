@@ -1,5 +1,12 @@
-¡Bienvenido a AMERICA RP!
+## 2026-11-04 | Actualización | Launcher 1.3.0
+Ajustes, soporte y noticias nuevas.
+- Pestaña AJUSTES: el launcher se esconde al lado del reloj mientras jugás y puede actualizarse sin preguntar.
+- En MI JUEGO, "Copiar informe" arma todo lo que soporte necesita para ayudarte. Pegalo en Discord.
+- Antes de jugar se sacan del GTA los archivos que no se pueden usar en el server. No se borran: quedan en la carpeta _prohibidos.
 
+## 2026-11-04 | Arreglo | El GTA ya no se cierra con error al salir
+Al salir del server el juego se cerraba con un error de las pantallas nuevas. Ya está arreglado y el GTA abre en ventana sin bordes.
+
+## 2026-11-01 | Aviso | ¡Bienvenido a AMERICA RP!
 Elegí tu nick, tocá JUGAR y te conectás directo al server.
-
 Si es tu primera vez, entrá a MI JUEGO y tocá "Revisar y actualizar": el launcher se fija que tengas el GTA San Andreas 1.0 y el SA-MP 0.3.7, y baja solo los archivos del server que te falten.
