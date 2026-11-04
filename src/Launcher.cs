@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.IO.Compression;
@@ -20,7 +21,7 @@ static class Config
 {
     // Lo que cambia de un server a otro. Después de tocarlo, volvé a compilar.
     // Versión de este launcher. Para sacar una nueva, ver "Sacar una versión nueva del launcher" en el README.
-    public const string Version = "1.1.0";
+    public const string Version = "1.2.0";
     public const string Host = "127.0.0.1";
     public const int Puerto = 7777;
     // Vacío = sin noticias / sin actualizaciones.
@@ -181,13 +182,178 @@ static class Instalacion
         }
         if (!File.Exists(Path.Combine(carpeta, "samp.exe")) || !File.Exists(Path.Combine(carpeta, "samp.dll")))
             lista.Add("Falta el cliente SA-MP 0.3.7 en la carpeta del GTA.");
+        // Es la tabla de textos del juego: sin ella el SA-MP se cae al cargar sin decir por qué. Vale cualquier idioma.
+        if (!File.Exists(Path.Combine(carpeta, "text", "american.gxt")))
+            lista.Add("Falta text\\american.gxt en la carpeta del GTA: sin ese archivo el juego se cierra al cargar. Copialo de otro GTA San Andreas 1.0.");
         return lista;
+    }
+
+    // [carpeta, motivo, "grave" si Windows no deja escribir ahí sin ser administrador]
+    public static List<string[]> LugaresMalos()
+    {
+        var l = new List<string[]>();
+        string nada = "Windows no deja que el launcher actualice archivos ahí. Mové el GTA a otra carpeta, por ejemplo C:\\Juegos\\GTA San Andreas.";
+        foreach (Environment.SpecialFolder f in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86, Environment.SpecialFolder.Windows })
+            l.Add(new[] { Environment.GetFolderPath(f), "El GTA está en " + Environment.GetFolderPath(f) + ". " + nada, "grave" });
+        string onedrive = Environment.GetEnvironmentVariable("OneDrive") ?? "";
+        l.Add(new[] { onedrive, "El GTA está en OneDrive: puede subir o borrar archivos mientras jugás. Conviene moverlo a otra carpeta.", "" });
+        l.Add(new[] { Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "El GTA está en el Escritorio: el antivirus lo revisa más y puede trabarlo. Conviene moverlo a otra carpeta.", "" });
+        return l;
+    }
+
+    // null si la carpeta está bien.
+    public static string[] ProblemaCarpeta(string carpeta, List<string[]> lugares)
+    {
+        if (string.IsNullOrEmpty(carpeta)) return null;
+        string c = Path.GetFullPath(carpeta).TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
+        foreach (string[] l in lugares)
+        {
+            if (l[0].Length == 0) continue;
+            string raiz = Path.GetFullPath(l[0]).TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
+            if (c.StartsWith(raiz, StringComparison.OrdinalIgnoreCase)) return l;
+        }
+        return null;
+    }
+
+    // Parche de 4 GB: el GTA es de 32 bits y sin la marca Large Address Aware Windows le da 2 GB. Con el ENB se queda sin
+    // memoria a los 10 o 15 minutos y se cierra sin error. Devuelve true si lo puso (la primera vez guarda una copia).
+    public static bool Poner4Gb(string exe)
+    {
+        byte[] d = File.ReadAllBytes(exe);
+        if (d.Length < 0x40 || d[0] != 'M' || d[1] != 'Z') throw new InvalidDataException("gta_sa.exe no es un programa de Windows.");
+        int pe = BitConverter.ToInt32(d, 0x3C);
+        if (pe < 0 || pe + 24 > d.Length || d[pe] != 'P' || d[pe + 1] != 'E' || d[pe + 2] != 0 || d[pe + 3] != 0) throw new InvalidDataException("gta_sa.exe no es un programa de Windows.");
+        int marcas = pe + 22; // Characteristics del encabezado COFF
+        if ((d[marcas] & 0x20) != 0) return false;
+        string copia = exe + ".sin4gb";
+        if (!File.Exists(copia)) File.Copy(exe, copia);
+        d[marcas] |= 0x20;
+        File.WriteAllBytes(exe, d);
+        return true;
     }
 
     public static bool PareceGta10(string carpeta)
     {
         long tam = new FileInfo(Path.Combine(carpeta, "gta_sa.exe")).Length;
         return TamanosGta10.Contains(tam);
+    }
+}
+
+// Lo que pasa con el GTA después de JUGAR: si se cerró bien o de golpe, y el informe para soporte.
+static class Juego
+{
+    [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint acceso, bool heredar, int id);
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int formato, StringBuilder ruta, ref int largo);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+
+    public class Cierre { public int? Codigo; public DateTime Inicio, Fin; public bool Bien { get { return Codigo == null || Codigo == 0; } } }
+
+    // Ruta completa del .exe de un proceso, también de uno de 32 bits (Process.MainModule no siempre puede).
+    static string Ruta(int id)
+    {
+        IntPtr h = OpenProcess(0x1000, false, id); // PROCESS_QUERY_LIMITED_INFORMATION
+        if (h == IntPtr.Zero) return null;
+        try
+        {
+            var sb = new StringBuilder(1024);
+            int n = sb.Capacity;
+            return QueryFullProcessImageName(h, 0, sb, ref n) ? sb.ToString() : null;
+        }
+        finally { CloseHandle(h); }
+    }
+
+    public static bool Abierto() { return Process.GetProcessesByName("gta_sa").Length > 0; }
+
+    // Espera a que el samp.exe abra el GTA (hasta un minuto) y después a que se cierre. null si nunca apareció.
+    public static Cierre Esperar(string carpeta, DateTime inicio)
+    {
+        string exe = Path.Combine(Path.GetFullPath(carpeta), "gta_sa.exe");
+        Process gta = null;
+        for (int i = 0; i < 120 && gta == null; i++)
+        {
+            foreach (Process p in Process.GetProcessesByName("gta_sa"))
+                if (gta == null && string.Equals(Ruta(p.Id), exe, StringComparison.OrdinalIgnoreCase)) gta = p; else p.Dispose();
+            if (gta == null) System.Threading.Thread.Sleep(500);
+        }
+        if (gta == null) return null;
+        using (gta)
+        {
+            gta.WaitForExit();
+            var c = new Cierre { Inicio = inicio, Fin = DateTime.Now };
+            try { c.Codigo = gta.ExitCode; } catch (Exception) { } // sin permiso para leerlo: no se avisa nada
+            return c;
+        }
+    }
+
+    // El CEF deja procesos (cef\renderer.exe) que a veces siguen vivos si el GTA se cerró mal, con sus archivos trabados.
+    public static int CerrarCefColgado(string carpeta)
+    {
+        string cef = Path.Combine(Path.GetFullPath(carpeta), "cef") + Path.DirectorySeparatorChar;
+        int n = 0;
+        foreach (Process p in Process.GetProcesses())
+            using (p)
+            {
+                string ruta = Ruta(p.Id);
+                if (ruta == null || !ruta.StartsWith(cef, StringComparison.OrdinalIgnoreCase)) continue;
+                try { p.Kill(); n++; } catch (Exception) { }
+            }
+        return n;
+    }
+
+    public static string CodigoTexto(int codigo)
+    {
+        string hex = "0x" + ((uint)codigo).ToString("X8");
+        switch ((uint)codigo)
+        {
+            case 0xC0000005: return hex + " (acceso a memoria inválido: casi siempre un mod o falta de memoria)";
+            case 0xC00000FD: return hex + " (se quedó sin pila)";
+            case 0xC0000409: return hex + " (un programa rompió su propia memoria)";
+            case 0xE06D7363: return hex + " (error dentro de un .asi o .dll)";
+            case 1: return hex + " (lo cerraron desde el Administrador de tareas o se trabó)";
+            default: return hex;
+        }
+    }
+
+    public static string Informe(Cierre c, string carpeta, bool enb, string[] log)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("AMERICA RP: el GTA se cerró de golpe");
+        sb.AppendLine("Fecha: " + c.Fin.ToString("yyyy-MM-dd HH:mm:ss"));
+        sb.AppendLine("Launcher: " + Config.Version);
+        sb.AppendLine("Código de salida: " + (c.Codigo == null ? "desconocido" : CodigoTexto(c.Codigo.Value)));
+        sb.AppendLine("Tiempo jugado: " + (int)(c.Fin - c.Inicio).TotalMinutes + " min");
+        sb.AppendLine("Carpeta del GTA: " + carpeta);
+        sb.AppendLine("ENB activo: " + (enb ? "sí" : "no"));
+        sb.AppendLine("Windows: " + Environment.OSVersion.VersionString + (Environment.Is64BitOperatingSystem ? ", 64 bits" : ", 32 bits"));
+        sb.AppendLine();
+        sb.AppendLine("Últimas líneas del chat de SA-MP:");
+        foreach (string l in log) sb.AppendLine(l);
+        return sb.ToString();
+    }
+
+    // Las últimas líneas de un archivo que puede estar abierto por otro programa.
+    public static string[] Ultimas(string archivo, int cuantas)
+    {
+        if (!File.Exists(archivo)) return new string[0];
+        using (var f = new FileStream(archivo, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        using (var r = new StreamReader(f, Consulta.Texto1252()))
+        {
+            var cola = new Queue<string>();
+            string l;
+            while ((l = r.ReadLine()) != null) { cola.Enqueue(l); if (cola.Count > cuantas) cola.Dequeue(); }
+            return cola.ToArray();
+        }
+    }
+
+    // Guarda el informe en %LOCALAPPDATA%\AmericaRP\informes y devuelve la ruta.
+    public static string GuardarInforme(Cierre c, string carpeta, bool enb)
+    {
+        string chat = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "GTA San Andreas User Files", "SAMP", "chatlog.txt");
+        string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "informes");
+        Directory.CreateDirectory(dir);
+        string archivo = Path.Combine(dir, "cierre-" + c.Fin.ToString("yyyyMMdd-HHmmss") + ".txt");
+        File.WriteAllText(archivo, Informe(c, carpeta, enb, Ultimas(chat, 30)), new UTF8Encoding(true));
+        return archivo;
     }
 }
 
@@ -229,6 +395,54 @@ static class Actualizador
         return baseUrl + "archivos/" + string.Join("/", ruta.Split('/').Select(Uri.EscapeDataString));
     }
 
+    // Memoria de huellas: si un archivo tiene el mismo tamaño y la misma fecha que la última vez, no se vuelve a leer.
+    // shortcut: quien cambie un archivo dejando igual el tamaño y la fecha no se detecta; si hace falta, hashear todo al cambiar de versión.
+    public static string CacheRuta = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "huellas.txt");
+    static readonly object candado = new object();
+    static Dictionary<string, string> cache;
+
+    public static string HuellaRapida(string archivo)
+    {
+        var fi = new FileInfo(archivo);
+        string clave = fi.FullName.ToLowerInvariant(), marca = fi.Length + " " + fi.LastWriteTimeUtc.Ticks + " ";
+        lock (candado)
+        {
+            if (cache == null) cache = LeerCache();
+            string v;
+            if (cache.TryGetValue(clave, out v) && v.StartsWith(marca)) return v.Substring(marca.Length);
+        }
+        string sha = Sha256(archivo);
+        lock (candado)
+        {
+            cache[clave] = marca + sha;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(CacheRuta));
+                File.WriteAllLines(CacheRuta, cache.Select(e => e.Key + "\t" + e.Value));
+            }
+            catch (Exception) { } // sin memoria se revisa todo la próxima vez, nada más
+        }
+        return sha;
+    }
+
+    public static void OlvidarHuellas() { lock (candado) cache = null; }
+
+    static Dictionary<string, string> LeerCache()
+    {
+        var d = new Dictionary<string, string>();
+        try
+        {
+            if (File.Exists(CacheRuta))
+                foreach (string l in File.ReadAllLines(CacheRuta))
+                {
+                    int t = l.IndexOf('\t');
+                    if (t > 0) d[l.Substring(0, t)] = l.Substring(t + 1);
+                }
+        }
+        catch (Exception) { }
+        return d;
+    }
+
     public static string Sha256(string archivo)
     {
         using (var sha = SHA256.Create())
@@ -267,7 +481,7 @@ static class Actualizador
         {
             string destino = RutaSegura(carpetaGta, r.Entradas[i].Value);
             progreso("Revisando " + r.Entradas[i].Value, 100 * i / Math.Max(1, r.Entradas.Count));
-            if (!File.Exists(destino) || Sha256(destino) != r.Entradas[i].Key) r.Pendientes.Add(r.Entradas[i].Value);
+            if (!File.Exists(destino) || HuellaRapida(destino) != r.Entradas[i].Key) r.Pendientes.Add(r.Entradas[i].Value);
         }
         return r;
     }
@@ -745,6 +959,13 @@ class Ventana : Form
     {
         if (Carpeta().Length == 0 && !ElegirCarpeta()) return false;
         string carpeta = Carpeta();
+        string[] problema = Instalacion.ProblemaCarpeta(carpeta, Instalacion.LugaresMalos());
+        if (problema != null && problema[2] == "grave")
+        {
+            // Avisa y deja seguir: si alguien ya lo instaló todo como administrador, puede jugar igual.
+            if (MessageBox.Show(this, problema[1] + "\n\n¿Seguir igual?", "Carpeta del GTA", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return false;
+        }
         if (Config.ManifiestoUrl.Length > 0 && File.Exists(Path.Combine(carpeta, "gta_sa.exe")))
         {
             try { await Task.Run(() => Actualizador.Aplicar(carpeta, Config.ManifiestoUrl, Avisar)); }
@@ -786,6 +1007,12 @@ class Ventana : Form
             return false;
         }
         if (faltaDx.Count > 0 && !await OfrecerDirectX()) return false;
+        if (EnbActivo())
+        {
+            try { if (Instalacion.Poner4Gb(Path.Combine(carpeta, "gta_sa.exe"))) Avisar("Listo el parche de 4 GB para el ENB.", 100); }
+            catch (Exception ex) { Avisar("No se pudo poner el parche de 4 GB: " + ex.Message, 0); }
+        }
+        if (problema != null) Avisar(problema[1], 100);
         if (!gta10) Avisar("Tu gta_sa.exe no parece la versión 1.0. Si el juego se cierra al conectar, instalá la 1.0.", 100);
         return true;
     }
@@ -890,14 +1117,44 @@ class Ventana : Form
         try
         {
             Registro.Nick = n;
+            if (Juego.Abierto())
+            {
+                MessageBox.Show(this, "El GTA ya está abierto. Cerralo antes de volver a entrar.", "AMERICA RP", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             if (!await Preparar()) return;
             string carpeta = Carpeta();
+            DateTime inicio = DateTime.Now;
             Process.Start(new ProcessStartInfo(Path.Combine(carpeta, "samp.exe"), Config.Host + ":" + Config.Puerto) { WorkingDirectory = carpeta });
             Avisar("Abriendo el GTA...", 100);
             WindowState = FormWindowState.Minimized;
+            Vigilar(carpeta, inicio);
         }
         catch (Exception ex) { MessageBox.Show(this, "No se pudo abrir el juego: " + ex.Message, "AMERICA RP", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         finally { Ocupar(false); }
+    }
+
+    // Cuando el GTA se cierra vuelve el launcher. Si se cerró de golpe, avisa y deja un informe para soporte.
+    async void Vigilar(string carpeta, DateTime inicio)
+    {
+        Juego.Cierre c;
+        try { c = await Task.Run(() => Juego.Esperar(carpeta, inicio)); }
+        catch (Exception) { return; }
+        if (c == null) { Avisar("No se vio abrir el GTA. Si no abrió, probá de nuevo.", 0); return; }
+        try { await Task.Run(() => Juego.CerrarCefColgado(carpeta)); } catch (Exception) { }
+        WindowState = FormWindowState.Normal;
+        Activate();
+        if (c.Bien) { Avisar("Listo para jugar.", 100); return; }
+        string informe;
+        try { informe = Juego.GuardarInforme(c, carpeta, EnbActivo()); }
+        catch (Exception) { informe = null; }
+        Avisar("El GTA se cerró de golpe.", 0);
+        if (MessageBox.Show(this, "El GTA se cerró de golpe (código " + Juego.CodigoTexto(c.Codigo.Value) + ") después de " + (int)(c.Fin - c.Inicio).TotalMinutes + " min." +
+            (informe == null ? "" : "\n\nGuardé un informe para soporte. ¿Abrir la carpeta?"), "AMERICA RP",
+            informe == null ? MessageBoxButtons.OK : MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+        {
+            try { Process.Start("explorer.exe", "/select,\"" + informe + "\""); } catch (Exception) { }
+        }
     }
 
     static void Abrir(string url)
@@ -1092,13 +1349,15 @@ class Ventana : Form
     {
         string carpeta = Carpeta();
         bool hayGta = carpeta.Length > 0 && File.Exists(Path.Combine(carpeta, "gta_sa.exe"));
-        bool haySamp = hayGta && faltantes.Count == 0;
+        bool haySamp = hayGta && File.Exists(Path.Combine(carpeta, "samp.exe")) && File.Exists(Path.Combine(carpeta, "samp.dll"));
+        string[] problema = Instalacion.ProblemaCarpeta(carpeta, Instalacion.LugaresMalos());
         int pend = revision == null ? -1 : revision.Pendientes.Count;
         return new List<string[]>
         {
             new[] { "GTA San Andreas 1.0", !hayGta ? "FALTA" : gta10 ? "OK" : "REVISAR", !hayGta ? "mal" : gta10 ? "ok" : "ojo" },
             new[] { "SA-MP 0.3.7", haySamp ? "OK" : "FALTA", haySamp ? "ok" : "mal" },
             new[] { "DirectX 9", faltaDx.Count == 0 ? "OK" : "FALTA", faltaDx.Count == 0 ? "ok" : "mal" },
+            new[] { "Lugar de la carpeta", !hayGta ? "-" : problema == null ? "OK" : problema[2] == "grave" ? "MOVERLA" : "REVISAR", !hayGta ? "nada" : problema == null ? "ok" : problema[2] == "grave" ? "mal" : "ojo" },
             new[] { "Archivos del server", pend < 0 ? "-" : pend == 0 ? "AL DÍA" : pend + " POR BAJAR", pend < 0 ? "nada" : pend == 0 ? "ok" : "ojo" },
         };
     }
@@ -1129,7 +1388,12 @@ class Ventana : Form
         using (var p = new Pen(nick.Focused ? Acento : Color.FromArgb(60, 255, 255, 255))) g.DrawRectangle(p, caja);
 
         int y = t.Y + 318;
-        foreach (string[] fila in Revisiones())
+        // En la tarjeta entran cuatro filas: las tres de siempre y, si algo más anda mal, la primera de esas.
+        List<string[]> filas = Revisiones();
+        string[] otra = filas.Skip(3).FirstOrDefault(f => f[2] == "mal" || f[2] == "ojo");
+        filas = filas.Take(3).ToList();
+        if (otra != null) filas.Add(otra);
+        foreach (string[] fila in filas)
         {
             Color fc = fila[2] == "ok" ? Verde : fila[2] == "mal" ? Rojo : fila[2] == "ojo" ? Ambar : Gris;
             Punto(g, x + 4, y + 10, fc);
@@ -1501,6 +1765,74 @@ static class Prueba
             Ver(DirectX.Faltan(sis, gtaDx, true).Count == 0 && DirectX.Faltan(sis, "", true).SequenceEqual(new[] { "d3dx9_43.dll" }), "DirectX: vale en el sistema o en la carpeta del GTA");
         }
         finally { Directory.Delete(carpeta, true); }
+
+        carpeta = Path.Combine(Path.GetTempPath(), "amrp-e2-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(carpeta);
+        string cacheAntes = Actualizador.CacheRuta;
+        try
+        {
+            Actualizador.CacheRuta = Path.Combine(carpeta, "huellas.txt");
+            Actualizador.OlvidarHuellas();
+            string f = Path.Combine(carpeta, "a.img");
+            File.WriteAllText(f, "abc");
+            DateTime fecha = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            File.SetLastWriteTimeUtc(f, fecha);
+            string h1 = Actualizador.HuellaRapida(f);
+            File.WriteAllText(f, "xyz"); // mismo tamaño y misma fecha: no lo vuelve a leer
+            File.SetLastWriteTimeUtc(f, fecha);
+            Actualizador.OlvidarHuellas(); // y lo recuerda aunque se cierre el launcher
+            Ver(h1 == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" && Actualizador.HuellaRapida(f) == h1, "huellas: no relee un archivo sin cambios");
+            File.SetLastWriteTimeUtc(f, fecha.AddSeconds(1));
+            Ver(Actualizador.HuellaRapida(f) == "3608bca1e44ea6c4d268eb6db02260269892c0b42b86bbf1e77a6fa16c3c9282", "huellas: si cambió la fecha lo vuelve a leer");
+            File.WriteAllText(Actualizador.CacheRuta, "basura sin tabulador\n\t\n");
+            Actualizador.OlvidarHuellas();
+            Ver(Actualizador.HuellaRapida(f) == "3608bca1e44ea6c4d268eb6db02260269892c0b42b86bbf1e77a6fa16c3c9282", "huellas: un archivo de memoria roto no molesta");
+
+            // Parche de 4 GB sobre un .exe mínimo: pone la marca una vez, guarda copia y no toca otra cosa.
+            byte[] exe = new byte[0x200];
+            exe[0] = (byte)'M'; exe[1] = (byte)'Z';
+            BitConverter.GetBytes(0x80).CopyTo(exe, 0x3C);
+            exe[0x80] = (byte)'P'; exe[0x81] = (byte)'E';
+            exe[0x80 + 22] = 0x02;
+            string gtaExe = Path.Combine(carpeta, "gta_sa.exe");
+            File.WriteAllBytes(gtaExe, exe);
+            bool puso = Instalacion.Poner4Gb(gtaExe);
+            byte[] despues = File.ReadAllBytes(gtaExe);
+            Ver(puso && despues[0x80 + 22] == 0x22 && despues.Length == exe.Length && File.ReadAllBytes(gtaExe + ".sin4gb").SequenceEqual(exe), "4 GB: pone la marca y guarda la copia");
+            Ver(!Instalacion.Poner4Gb(gtaExe) && File.ReadAllBytes(gtaExe + ".sin4gb").SequenceEqual(exe), "4 GB: la segunda vez no hace nada");
+            File.WriteAllText(gtaExe, "no soy un exe");
+            Ver(Tira(() => Instalacion.Poner4Gb(gtaExe)), "4 GB: rechaza un archivo que no es .exe");
+
+            // american.gxt
+            string g = Path.Combine(carpeta, "gta");
+            Directory.CreateDirectory(Path.Combine(g, "text"));
+            foreach (string n in new[] { "gta_sa.exe", "samp.exe", "samp.dll" }) File.WriteAllText(Path.Combine(g, n), "x");
+            Ver(Instalacion.Faltantes(g).Count == 1 && Instalacion.Faltantes(g)[0].Contains("american.gxt") && !Instalacion.Faltantes(g)[0].Contains("SA-MP"), "falta american.gxt");
+            File.WriteAllText(Path.Combine(g, "text", "american.gxt"), "x");
+            Ver(Instalacion.Faltantes(g).Count == 0, "con american.gxt no falta nada");
+
+            // Lugar de la carpeta
+            string pf = Path.Combine(carpeta, "Program Files"), od = Path.Combine(carpeta, "OneDrive");
+            var lugares = new List<string[]> { new[] { "", "vacío", "" }, new[] { pf, "pf", "grave" }, new[] { od, "od", "" } };
+            Ver(Instalacion.ProblemaCarpeta(Path.Combine(pf, "Rockstar", "GTA"), lugares)[1] == "pf" && Instalacion.ProblemaCarpeta(Path.Combine(od, "GTA"), lugares)[2] == ""
+                && Instalacion.ProblemaCarpeta(Path.Combine(carpeta, "Program Files (x86)", "GTA"), lugares) == null && Instalacion.ProblemaCarpeta(Path.Combine(carpeta, "Juegos"), lugares) == null, "lugar de la carpeta");
+
+            // Informe de cierre
+            string chat = Path.Combine(carpeta, "chatlog.txt");
+            File.WriteAllLines(chat, Enumerable.Range(1, 40).Select(i => "linea " + i));
+            string[] ult = Juego.Ultimas(chat, 30);
+            Ver(ult.Length == 30 && ult[0] == "linea 11" && ult[29] == "linea 40" && Juego.Ultimas(Path.Combine(carpeta, "no.txt"), 5).Length == 0, "informe: últimas líneas del chat");
+            var cierre = new Juego.Cierre { Codigo = unchecked((int)0xC0000005), Inicio = new DateTime(2026, 11, 4, 10, 0, 0), Fin = new DateTime(2026, 11, 4, 10, 12, 30) };
+            string inf = Juego.Informe(cierre, "D:\\GTA", true, ult);
+            Ver(!cierre.Bien && inf.Contains("0xC0000005 (acceso") && inf.Contains("12 min") && inf.Contains("ENB activo: sí") && inf.Contains("linea 40"), "informe: código, tiempo y log");
+            Ver(new Juego.Cierre { Codigo = 0 }.Bien && new Juego.Cierre().Bien && Juego.CodigoTexto(1).StartsWith("0x00000001 (lo cerraron"), "cierre normal o sin código no avisa");
+        }
+        finally
+        {
+            Actualizador.CacheRuta = cacheAntes;
+            Actualizador.OlvidarHuellas();
+            Directory.Delete(carpeta, true);
+        }
 
         Ver(Instalacion.NickValido.IsMatch("Juan_Perez") && !Instalacion.NickValido.IsMatch("ab") && !Instalacion.NickValido.IsMatch("con espacio"), "nick");
         Console.WriteLine(fallas == 0 ? "Todo bien." : fallas + " falla(s).");
