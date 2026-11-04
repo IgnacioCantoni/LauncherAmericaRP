@@ -1,1 +1,2 @@
 # Generado por AmericaRP.exe --manifiesto. No editar a mano.
+cfb2b820c4e7fea009c37ff3016b83b3f0a7875e6275c8d72189718ea84eb97c enblocal.ini

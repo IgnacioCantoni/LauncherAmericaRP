@@ -307,6 +307,7 @@ static class Juego
         {
             case 0xC0000005: return hex + " (acceso a memoria inválido: casi siempre un mod o falta de memoria)";
             case 0xC00000FD: return hex + " (se quedó sin pila)";
+            case 0xC0000602: return hex + " (falla al cerrar el CEF: revisá que esté salida_limpia.asi)";
             case 0xC0000409: return hex + " (un programa rompió su propia memoria)";
             case 0xE06D7363: return hex + " (error dentro de un .asi o .dll)";
             case 1: return hex + " (lo cerraron desde el Administrador de tareas o se trabó)";

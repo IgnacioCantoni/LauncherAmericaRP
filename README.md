@@ -72,6 +72,11 @@ El teléfono y las demás pantallas en HTML del server usan omp-cef (licencia MI
 
 Para pasar a otra versión de omp-cef: cambiá la URL y la huella (SHA-256 del zip), volvé a compilar y repartí el `.exe`. La versión tiene que ser la misma que la del `Cef.dll` del server.
 
+
+Dos arreglos van con las actualizaciones para todos, porque el cliente de CEF los necesita:
+
+- `salida_limpia.asi`: el SA-MP sale con `ExitProcess`, y al descargarse `cef\client.dll` Windows corta el GTA con 0xC0000602, así que cada salida contaba como crash. Esta ASI cambia ese `ExitProcess` de samp.dll por `TerminateProcess` con el mismo código, cuando el SA-MP y el CEF ya se apagaron. Fuente en `cliente/salida_limpia.c`. Se compila con `i686-w64-mingw32-gcc -O2 -s -shared -nostdlib -e _DllMain@12 -o salida_limpia.asi salida_limpia.c -lkernel32`. Sacarla cuando omp-cef lo arregle.
+- `wndmode.ini`: el Ultimate ASI Loader abre el GTA en ventana sin bordes. Evita que la pantalla del CEF quede rota con Alt+Tab y el rasgado de imagen. Con el ENB activo, el `enblocal.ini` del paquete ENB (`paquetes/enb/archivos`) pide lo mismo (`ForceBorderless` y `ForceBorderlessFullscreen`).
 ## Cambiar el video de fondo
 
 Con Python y ffmpeg instalados: `python fondo/armar_video.py tu-video.mp4`. Rehace `fondo/video.bin` (cuadros JPEG de 1100x660, sin sonido). Después volvé a compilar.
