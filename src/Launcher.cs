@@ -361,8 +361,6 @@ static class Ajustes
 
     // Mientras jugás el launcher se va a la bandeja (al lado del reloj) en vez de quedar minimizado.
     public static bool Bandeja { get { return Si("bandeja", true); } set { Poner("bandeja", value); } }
-    // Si hay una versión nueva del launcher, se instala sin preguntar.
-    public static bool ActualizarSolo { get { return Si("actualizar_solo", false); } set { Poner("actualizar_solo", value); } }
 }
 
 // Informe para pegar en el canal de soporte: lo que soporte siempre pregunta, en un solo texto.
@@ -2047,9 +2045,7 @@ class Ventana : Lienzo
         try { r = Autoactualizacion.Leer(await Task.Run(() => Web.Texto(Config.VersionUrl))); }
         catch (Exception) { return; } // sin internet o sin version.txt: se sigue con este
         if (r.Key <= new Version(Config.Version) || ocupado) return;
-        if (!Ajustes.ActualizarSolo && Mensaje("Hay una versión nueva del launcher (" + r.Key + "). Se baja en unos segundos y se vuelve a abrir solo.\n\n¿Actualizar ahora?",
-            "AMERICA RP", MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes) return;
-        if (ocupado) return;
+        // Siempre se actualiza solo, sin preguntar: todos tienen que jugar con la última versión.
         Ocupar(true);
         string exe = Application.ExecutablePath;
         try { await Task.Run(() => Autoactualizacion.Instalar(exe, r.Key, r.Value, Avisar)); }
@@ -2823,8 +2819,6 @@ class Ventana : Lienzo
         int y = area.Y;
         FilaAjuste(g, area, ref y, "ESCONDER EL LAUNCHER MIENTRAS JUGÁS", "Se va a la bandeja, al lado del reloj, y vuelve solo cuando cerrás el GTA. Si no, queda minimizado.",
             Ajustes.Bandeja, delegate { Ajustes.Bandeja = !Ajustes.Bandeja; });
-        FilaAjuste(g, area, ref y, "ACTUALIZAR EL LAUNCHER SIN PREGUNTAR", "Cuando sale una versión nueva, se instala sola al abrirlo. Si no, te pregunta antes.",
-            Ajustes.ActualizarSolo, delegate { Ajustes.ActualizarSolo = !Ajustes.ActualizarSolo; });
         Escribir(g, "NOVEDADES DEL LAUNCHER", Fuentes.Negrita(13f), Texto, area.X, y + 10);
         Boton(g, new Rectangle(area.Right - 150, y + 4, 150, 34), "VER", false, delegate { Pestana("novedades"); });
         Escribir(g, "Qué trajo cada versión del launcher.", Fuentes.Texto(11f), Gris, area.X, y + 40);
@@ -3394,12 +3388,11 @@ static class Prueba
         try
         {
             Ajustes.Ruta = Path.Combine(carpeta, "ajustes.txt");
-            Ver(Ajustes.Bandeja && !Ajustes.ActualizarSolo, "ajustes: valores de fábrica");
+            Ver(Ajustes.Bandeja, "ajustes: valores de fábrica");
             Ajustes.Bandeja = false;
-            Ajustes.ActualizarSolo = true;
-            Ver(!Ajustes.Bandeja && Ajustes.ActualizarSolo && File.ReadAllLines(Ajustes.Ruta).Length == 2, "ajustes: se guardan");
+            Ver(!Ajustes.Bandeja && File.ReadAllLines(Ajustes.Ruta).Length == 1, "ajustes: se guardan");
             File.WriteAllText(Ajustes.Ruta, "basura\n=x\nbandeja=si\n");
-            Ver(Ajustes.Bandeja && !Ajustes.ActualizarSolo, "ajustes: un archivo raro no rompe");
+            Ver(Ajustes.Bandeja, "ajustes: un archivo raro no rompe");
 
             Ver(Soporte.UltimoCierre(Path.Combine(carpeta, "no-existe")) == "", "soporte: sin informes");
             File.WriteAllText(Path.Combine(carpeta, "cierre-20261101-100000.txt"), "AMERICA RP\nCódigo de salida: viejo\n\nchat");
