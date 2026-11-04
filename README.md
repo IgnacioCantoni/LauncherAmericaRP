@@ -117,6 +117,8 @@ Mientras el GTA carga, en vez de las imágenes de siempre (las de `loadscs.txd`)
 
 ## Cambiar la imagen de fondo
 
+La pantalla de carga del launcher usa `fondo/arranque.jpg` (460x300, la noche con montañas) y `fondo/arranque-estrella.png` (la estrella dorada con transparencia). Para cambiarlas, reemplazalas con el mismo tamaño y volvé a compilar.
+
 Reemplazá `fondo/fondo.jpg` por otra imagen 16:9 (mejor de 1440x810 o más grande) y volvé a compilar. Si no es 16:9 se recorta lo que sobra, sin deformarla.
 
 ## Publicar archivos o mods

@@ -2945,13 +2945,8 @@ class Arranque : Lienzo
     const int Duracion = 1600;
     readonly Stopwatch reloj = Stopwatch.StartNew();
     readonly Timer cuadros = new Timer { Interval = 16 };
-    // Cielo de noche: posición, tamaño y fase de titileo de cada estrella, siempre las mismas.
-    static readonly float[][] cielo = Enumerable.Range(0, 110).Select(i => new float[] { 0, 0, 0, 0 }).ToArray();
-    static Arranque()
-    {
-        var azar = new Random(7);
-        foreach (var e in cielo) { e[0] = azar.Next(460); e[1] = azar.Next(300); e[2] = 0.6f + (float)Math.Pow(azar.NextDouble(), 3) * 1.8f; e[3] = (float)(azar.NextDouble() * Math.PI * 2); }
-    }
+    // Fondo de noche con montañas y estrella dorada brillante (fondo/arranque.jpg y fondo/arranque-estrella.png).
+    static readonly Bitmap cielo = Fondo.Cargar(460, 300, "arranque.jpg"), estrella = Fondo.Imagen("arranque-estrella.png");
 
     public Arranque() : base(460, 300)
     {
@@ -2970,17 +2965,16 @@ class Arranque : Lienzo
         Graphics g = e.Graphics;
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
         float t = Math.Min(1f, reloj.ElapsedMilliseconds / (float)Duracion), aparece = Math.Min(1f, t * 4), k = 1 - (1 - t) * (1 - t);
         double ms = reloj.ElapsedMilliseconds;
 
-        // Noche: azul oscuro arriba, apenas más cálido abajo, con estrellas que titilan.
-        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, -1, ClientSize.Width, ClientSize.Height + 2), Color.FromArgb(7, 9, 24), Color.FromArgb(22, 16, 30), 90f))
-            g.FillRectangle(b, ClientRectangle);
-        foreach (var s in cielo)
-        {
-            int luz = (int)(150 + 105 * Math.Sin(ms / 240 + s[3]));
-            using (var b = new SolidBrush(Color.FromArgb(Math.Max(40, luz), 230, 236, 255))) g.FillEllipse(b, s[0] - s[2] / 2, s[1] - s[2] / 2, s[2], s[2]);
-        }
+        if (cielo != null) g.DrawImage(cielo, 0, 0);
+        else using (var b = new SolidBrush(Panel)) g.FillRectangle(b, ClientRectangle);
+        // Abajo se oscurece un poco para que se lean la barra y el texto.
+        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, 149, ClientSize.Width, 152), Color.FromArgb(0, 0, 0, 0), Color.FromArgb(150, 0, 0, 0), 90f))
+            g.FillRectangle(b, 0, 150, ClientSize.Width, 150);
+
         // Una estrella fugaz cruza el cielo mientras carga.
         float f0 = (float)((ms - 250) / 650);
         if (f0 > 0 && f0 < 1)
@@ -2990,38 +2984,25 @@ class Arranque : Lienzo
             using (var p = new Pen(b, 1.6f)) g.DrawLine(p, cx - 70, cy - 16, cx, cy);
         }
 
-        // Brillo naranja suave detrás del logo.
-        using (var camino = new System.Drawing.Drawing2D.GraphicsPath())
-        {
-            camino.AddEllipse(-60, -90, 580, 420);
-            using (var b = new System.Drawing.Drawing2D.PathGradientBrush(camino) { CenterColor = Color.FromArgb(60, Acento), SurroundColors = new[] { Color.FromArgb(0, Acento) } })
-                g.FillPath(b, camino);
-        }
-
-        // Estrella grande detrás del logo: aparece con el logo, late y gira muy despacio.
-        float tam = 150 * (0.85f + 0.15f * aparece) * (1 + 0.03f * (float)Math.Sin(reloj.ElapsedMilliseconds / 260.0));
-        var puntas = new PointF[10];
-        for (int i = 0; i < 10; i++)
-        {
-            double ang = -Math.PI / 2 + i * Math.PI / 5 + reloj.ElapsedMilliseconds / 9000.0;
-            float r = i % 2 == 0 ? tam : tam * 0.42f;
-            puntas[i] = new PointF(ClientSize.Width / 2f + (float)(Math.Cos(ang) * r), 128 + (float)(Math.Sin(ang) * r));
-        }
-        using (var b = new System.Drawing.Drawing2D.PathGradientBrush(puntas)
-        {
-            CenterPoint = new PointF(ClientSize.Width / 2f, 128),
-            CenterColor = Color.FromArgb((int)(120 * aparece), 255, 214, 150),
-            SurroundColors = new[] { Color.FromArgb(0, Acento) }
-        })
-            g.FillPolygon(b, puntas);
-
+        // Logo: la estrella brillante a la izquierda (late despacio) y "America RP" adelante.
         Font f = Fuentes.Titulo(40f);
-        int ancho = Medir(g, "America RP", f) + 56, x = (ClientSize.Width - ancho) / 2;
-        Ventana.Estrella(g, x + 20, 128, 22, Color.FromArgb((int)(255 * aparece), Acento));
-        Escribir(g, "America RP", f, Color.FromArgb((int)(255 * aparece), Texto), x + 56, 104);
+        int ancho = Medir(g, "America RP", f) + 64, x = (ClientSize.Width - ancho) / 2;
+        if (estrella != null)
+        {
+            float lado = 104 * (1 + 0.05f * (float)Math.Sin(ms / 220));
+            var m = new System.Drawing.Imaging.ColorMatrix { Matrix33 = aparece };
+            using (var atributos = new System.Drawing.Imaging.ImageAttributes())
+            {
+                atributos.SetColorMatrix(m);
+                g.DrawImage(estrella, new Rectangle((int)(x + 22 - lado / 2), (int)(126 - lado / 2), (int)lado, (int)lado), 0, 0, estrella.Width, estrella.Height, GraphicsUnit.Pixel, atributos);
+            }
+        }
+        else Ventana.Estrella(g, x + 22, 128, 22, Color.FromArgb((int)(255 * aparece), Acento));
+        Escribir(g, "America RP", f, Color.FromArgb((int)(140 * aparece), 0, 0, 0), x + 66, 106);
+        Escribir(g, "America RP", f, Color.FromArgb((int)(255 * aparece), Texto), x + 64, 104);
 
         Estela(g, new Rectangle((ClientSize.Width - 240) / 2, 204, 240, 6), k, reloj.ElapsedMilliseconds, true);
-        Centrado(g, "I N I C I A N D O . . .", Fuentes.Negrita(8.5f), Gris, new Rectangle(0, 226, ClientSize.Width, 24));
+        Centrado(g, "I N I C I A N D O . . .", Fuentes.Negrita(8.5f), Color.FromArgb(210, Texto), new Rectangle(0, 226, ClientSize.Width, 24));
     }
 }
 
@@ -3037,11 +3018,22 @@ static class Web
 // Sin la imagen (compilado sin el recurso o rota) el fondo queda liso.
 static class Fondo
 {
-    public static Bitmap Cargar(int ancho, int alto)
+    // Imagen embebida tal cual (null si falta).
+    public static Bitmap Imagen(string recurso)
     {
         try
         {
-            using (Stream s = typeof(Ventana).Assembly.GetManifestResourceStream("fondo.jpg"))
+            using (Stream s = typeof(Ventana).Assembly.GetManifestResourceStream(recurso))
+                return s == null ? null : new Bitmap(s);
+        }
+        catch (Exception) { return null; }
+    }
+
+    public static Bitmap Cargar(int ancho, int alto, string recurso = "fondo.jpg")
+    {
+        try
+        {
+            using (Stream s = typeof(Ventana).Assembly.GetManifestResourceStream(recurso))
             {
                 if (s == null) return null;
                 using (Image img = Image.FromStream(s))
