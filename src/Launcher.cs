@@ -2940,13 +2940,6 @@ class Ventana : Lienzo
         Relleno(g, caja, Campo, 10);
         if (nick.Focused) Borde(g, caja, Acento, 10, 1.5f);
 
-        // Qué cliente se va a abrir; el detalle de lo que falta está en la tarjeta del cliente, en INICIO.
-        Escribir(g, "CLIENTE", Fuentes.Negrita(9.5f), Gris, x, t.Y + 320);
-        string cliente = Registro.Cliente == "custom" ? "CUSTOM" : "OFICIAL";
-        Escribir(g, cliente, Fuentes.Negrita(13f), Texto, x, t.Y + 340);
-        var cambiar = new Rectangle(t.Right - 28 - 80, t.Y + 334, 80, 30);
-        if (pestana != "inicio") Chip(g, cambiar, "CAMBIAR", false, delegate { Pestana("inicio"); });
-
         var jugar = new Rectangle(x, t.Bottom - 92, t.Width - 56, 64);
         Relleno(g, jugar, ocupado ? Color.FromArgb(120, Acento) : Mezcla(Acento, Color.FromArgb(255, 196, 92), Brillo(jugar)), 14);
         Centrado(g, ocupado ? "ESPERÁ..." : "JUGAR", Fuentes.Titulo(34f), Oscuro, jugar);
