@@ -21,7 +21,7 @@ static class Config
 {
     // Lo que cambia de un server a otro. Después de tocarlo, volvé a compilar.
     // Versión de este launcher. Para sacar una nueva, ver "Sacar una versión nueva del launcher" en el README.
-    public const string Version = "1.3.1";
+    public const string Version = "1.3.2";
     public const string Host = "127.0.0.1";
     public const int Puerto = 7777;
     // Vacío = sin noticias / sin actualizaciones.
@@ -723,6 +723,18 @@ static class Actualizador
     }
 
     // Una línea "sha256 ruta" por cada ruta que exista en la carpeta: sirve para recordar qué se instaló.
+    // Los archivos del ENB que hay en el GTA: en la raíz los que empiezan con "enb" (y effect.txt), más la carpeta enbseries.
+    public static List<string> ArchivosEnb(string carpetaGta)
+    {
+        var rutas = Directory.GetFiles(carpetaGta).Select(f => Path.GetFileName(f))
+            .Where(n => (n.StartsWith("enb", StringComparison.OrdinalIgnoreCase) && !n.EndsWith(".desactivado", StringComparison.OrdinalIgnoreCase))
+                || n.Equals("effect.txt", StringComparison.OrdinalIgnoreCase)).ToList();
+        string sub = Path.Combine(carpetaGta, "enbseries");
+        if (Directory.Exists(sub))
+            rutas.AddRange(Directory.GetFiles(sub, "*", SearchOption.AllDirectories).Select(f => f.Substring(carpetaGta.Length).TrimStart('\\', '/').Replace('\\', '/')));
+        return rutas;
+    }
+
     public static string Huellas(string carpetaGta, IEnumerable<string> rutas)
     {
         var sb = new StringBuilder();
@@ -834,19 +846,6 @@ static class Actualizador
                 }
             }
         }
-    }
-
-    // Saca de la carpeta del GTA los archivos de un manifiesto que se instaló antes. Solo borra los que siguen
-    // idénticos a los instalados: si el jugador puso su propio archivo con el mismo nombre, no se toca.
-    public static int Quitar(string carpetaGta, string textoManifiesto)
-    {
-        int borrados = 0;
-        foreach (KeyValuePair<string, string> e in LeerManifiesto(textoManifiesto))
-        {
-            string destino = RutaSegura(carpetaGta, e.Value);
-            if (File.Exists(destino) && Sha256(destino) == e.Key) { File.Delete(destino); borrados++; }
-        }
-        return borrados;
     }
 
     // Devuelve lo que revisó; en Pendientes queda lo que bajó. Si algo falla, tira la excepción y no deja archivos a medias.
@@ -1324,7 +1323,30 @@ class Ventana : Form
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "enb-instalado.txt");
     }
 
-    static bool EnbActivo() { return File.Exists(EnbArchivo()); }
+    // Desactivar no borra el ENB: le cambia el nombre al .asi (el cargador solo lee .asi), así activarlo es al instante.
+    const string AsiApagado = "enbseries.asi.desactivado";
+
+    bool EnbActivo()
+    {
+        if (File.Exists(EnbArchivo())) return true;
+        // Un ENB puesto a mano (sin el launcher) se reconoce por la huella del .asi y se anota como instalado.
+        string carpeta = Carpeta();
+        if (carpeta.Length == 0) return false;
+        try
+        {
+            string asi = Path.Combine(carpeta, "enbseries.asi");
+            if (!File.Exists(asi) || Actualizador.HuellaRapida(asi) != Config.EnbAsiSha) return false;
+            AnotarEnb(carpeta);
+            return true;
+        }
+        catch (Exception) { return false; }
+    }
+
+    static void AnotarEnb(string carpeta)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(EnbArchivo()));
+        File.WriteAllText(EnbArchivo(), Actualizador.Huellas(carpeta, Actualizador.ArchivosEnb(carpeta)));
+    }
 
     async void CambiarEnb()
     {
@@ -1333,6 +1355,21 @@ class Ventana : Form
         {
             if (Carpeta().Length == 0 && !ElegirCarpeta()) return;
             string carpeta = Carpeta(), zip;
+            string apagado = Path.Combine(carpeta, AsiApagado);
+            try
+            {
+                if (File.Exists(apagado) && Actualizador.Sha256(apagado) == Config.EnbAsiSha)
+                {
+                    string asi = Path.Combine(carpeta, "enbseries.asi");
+                    if (File.Exists(asi)) File.Delete(asi);
+                    File.Move(apagado, asi);
+                    AnotarEnb(carpeta);
+                    Avisar("ENB activado. Shift+F12 lo prende y lo apaga en el juego.", 100);
+                    Actualizar(); // suma el preset del server
+                    return;
+                }
+            }
+            catch (Exception ex) { Avisar("No se pudo activar el ENB: " + ex.Message + ". Cerrá el GTA y probá de nuevo.", 0); return; }
             MessageBox.Show(this, "El ENB se baja de su página oficial. Se va a abrir: bajá el archivo " + Config.EnbZip +
                 " (versión 0.430) y después elegilo en la ventana que aparece.", "Activar ENB", MessageBoxButtons.OK, MessageBoxIcon.Information);
             Abrir(Config.EnbDescargaUrl);
@@ -1357,12 +1394,19 @@ class Ventana : Form
         Ocupar(true);
         try
         {
-            string carpeta = Carpeta(), texto = File.ReadAllText(EnbArchivo());
-            // Los ENB instalados antes de CLEO tienen anotado el dinput8.dll, que ahora se queda porque lo usa CLEO.
-            texto = string.Join("\n", texto.Split('\n').Where(l => !l.TrimEnd().EndsWith(" dinput8.dll")));
-            int n = carpeta.Length == 0 ? 0 : await Task.Run(() => Actualizador.Quitar(carpeta, texto));
+            string carpeta = Carpeta();
+            if (carpeta.Length > 0)
+            {
+                string asi = Path.Combine(carpeta, "enbseries.asi"), apagado = Path.Combine(carpeta, AsiApagado);
+                await Task.Run(delegate
+                {
+                    if (!File.Exists(asi)) return;
+                    if (File.Exists(apagado)) File.Delete(apagado);
+                    File.Move(asi, apagado);
+                });
+            }
             File.Delete(EnbArchivo());
-            Avisar("ENB desactivado: se sacaron " + n + " archivo(s).", 100);
+            Avisar("ENB desactivado. Para volver a prenderlo tocá ACTIVAR: no hace falta bajarlo de nuevo.", 100);
         }
         catch (Exception ex) { Avisar("No se pudo sacar el ENB: " + ex.Message + ". Cerrá el GTA y probá de nuevo.", 0); }
         finally { Ocupar(false); }
@@ -2051,14 +2095,9 @@ static class Prueba
             Ver(entradas.Count == 1 && entradas[0].Key == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" && entradas[0].Value == "models/a.txt", "manifiesto generado y leído");
             Ver(Tira(() => Actualizador.LeerManifiesto("hola mundo")), "manifiesto inválido se rechaza");
 
-            // Quitar: borra lo instalado, pero no un archivo que el jugador cambió.
             string gta = Path.Combine(carpeta, "gta");
-            Directory.CreateDirectory(Path.Combine(gta, "models"));
-            File.WriteAllText(Path.Combine(gta, "models", "a.txt"), "abc");
+            Directory.CreateDirectory(gta);
             File.WriteAllText(Path.Combine(gta, "d3d9.dll"), "mio");
-            string m2 = m + "0000000000000000000000000000000000000000000000000000000000000000 d3d9.dll\n";
-            Ver(Actualizador.Quitar(gta, m2) == 1 && !File.Exists(Path.Combine(gta, "models", "a.txt")) && File.Exists(Path.Combine(gta, "d3d9.dll")), "quitar paquete respeta archivos propios");
-            Ver(Tira(() => Actualizador.Quitar(gta, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad ../afuera.txt")), "quitar rechaza rutas de afuera");
 
             // Zip del ENB: versión equivocada, archivo de otro mod y la instalación buena.
             string zip = Path.Combine(carpeta, "enb.zip");
@@ -2078,7 +2117,6 @@ static class Prueba
             File.Delete(Path.Combine(gta, "dinput8.dll"));
             List<string> inst = Actualizador.InstalarZipEnb(gta, zip, shaAsi);
             Ver(inst.Count == 2 && File.ReadAllText(Path.Combine(gta, "enbseries.asi")) == "asi" && File.ReadAllText(Path.Combine(gta, "d3d9.dll")) == "mio", "zip ENB: instala el .asi y deja afuera su d3d9.dll");
-            Ver(Actualizador.Quitar(gta, Actualizador.Huellas(gta, inst)) == 2 && !File.Exists(Path.Combine(gta, "enbseries.asi")) && File.Exists(Path.Combine(gta, "d3d9.dll")), "zip ENB: se saca entero");
         }
         finally { Directory.Delete(carpeta, true); }
 
@@ -2259,6 +2297,17 @@ static class Prueba
             string donde = Prohibidos.Sacar(carpeta, malos);
             Ver(!File.Exists(Path.Combine(carpeta, "s0beit.asi")) && File.Exists(Path.Combine(donde, "cleo", "Aimbot_v2.cs")) && File.Exists(Path.Combine(carpeta, "cleo", "fps.cs"))
                 && Prohibidos.Buscar(carpeta, lista, new[] { "salida_limpia.asi" }).Count == 0, "prohibidos: los mueve sin borrar");
+        }
+        finally { Directory.Delete(carpeta, true); }
+
+        carpeta = Path.Combine(Path.GetTempPath(), "amrp-enb-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(carpeta, "enbseries", "sub"));
+            foreach (string n in new[] { "enbseries.asi", "enbseries.ini", "ENBLOCAL.INI", "effect.txt", "enbseries.asi.desactivado", "gta_sa.exe", "dinput8.dll", Path.Combine("enbseries", "sub", "a.fx") })
+                File.WriteAllText(Path.Combine(carpeta, n), "x");
+            var enb = Actualizador.ArchivosEnb(carpeta).OrderBy(x => x, StringComparer.Ordinal).ToList();
+            Ver(enb.SequenceEqual(new[] { "ENBLOCAL.INI", "effect.txt", "enbseries.asi", "enbseries.ini", "enbseries/sub/a.fx" }), "enb: reconoce sus archivos (" + string.Join(",", enb) + ")");
         }
         finally { Directory.Delete(carpeta, true); }
 
