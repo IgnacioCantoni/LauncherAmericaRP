@@ -2505,7 +2505,7 @@ class Ventana : Lienzo
         {
             new { Id = "liviano", Nombre = "AMERICA RP", Etiqueta = oficial && enb ? "OFICIAL · ENB" : "OFICIAL", Estado = hayP ? "Listo" : "Sin elegir", Color = hayP ? Verde : Gris,
                 Texto = "Tu GTA con los archivos del server." },
-            new { Id = "custom", Nombre = "GTA PERSONALIZADO", Etiqueta = !oficial && enb ? "ENB" : "", Estado = hayC ? "Listo" : "Sin elegir", Color = hayC ? Verde : Gris,
+            new { Id = "custom", Nombre = "CUSTOM", Etiqueta = !oficial && enb ? "ENB" : "", Estado = hayC ? "Listo" : "Sin elegir", Color = hayC ? Verde : Gris,
                 Texto = hayC ? "Carpeta: " + Path.GetDirectoryName(custom) : "Tu propio GTA, con los mods y aportes que quieras." },
         };
         string[] falta = Revisiones().FirstOrDefault(f => f[2] == "mal" || f[2] == "ojo");
@@ -2835,7 +2835,7 @@ class Ventana : Lienzo
 
         // Qué cliente se va a abrir; el detalle de lo que falta está en la tarjeta del cliente, en INICIO.
         Escribir(g, "CLIENTE", Fuentes.Negrita(9.5f), Gris, x, t.Y + 320);
-        string cliente = Registro.Cliente == "custom" ? "GTA PERSONALIZADO" : "AMERICA RP";
+        string cliente = Registro.Cliente == "custom" ? "CUSTOM" : "AMERICA RP";
         Escribir(g, cliente, Fuentes.Negrita(13f), Texto, x, t.Y + 340);
         var cambiar = new Rectangle(t.Right - 28 - 80, t.Y + 334, 80, 30);
         if (pestana != "inicio") Chip(g, cambiar, "CAMBIAR", false, delegate { Pestana("inicio"); });
