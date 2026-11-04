@@ -10,6 +10,8 @@ Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe
 - **Noticias**: muestra `noticias.txt` de este repo.
 - **Mods**: lista los archivos de `actualizaciones/archivos/` y cuáles le faltan al jugador. Antes de jugar (o con "Actualizar") baja los que no tenga o tenga distintos.
 - **Fondo en video**: `fondo/video.bin` (armado desde el video del server) se repite en bucle detrás de todo. Va dentro del `.exe`.
+- **Se actualiza solo**: al abrir, mira `launcher/version.txt`. Si hay una versión nueva, la baja de la Release de GitHub, revisa su huella, se reemplaza y se vuelve a abrir (ver abajo).
+- **DirectX 9**: antes de jugar revisa que estén `d3dx9_25.dll` (la pide el SA-MP) y, con el ENB activo, `d3dx9_43.dll`. Si faltan, ofrece bajar el instalador oficial de Microsoft de junio de 2010, revisa su huella y lo instala en silencio (Windows pide permiso de administrador). Visual C++ no hace falta: CEF, CLEO y el cargador de ASI no lo usan.
 - **Pantallas del server**: instala el cliente de CEF para el teléfono y las demás pantallas en HTML del server (ver abajo).
 - **Redes y soporte**: links de Discord, YouTube, TikTok, Instagram y Soporte en el pie; aparecen los que tengan link en `Config.Redes`.
 - **Tipografías**: Montserrat Bold Italic (títulos, la misma del video) y Barlow (textos), con licencia libre SIL OFL (ver `fuentes/`). Van dentro del `.exe`.
@@ -85,4 +87,16 @@ Límite: GitHub no acepta archivos de más de 100 MB en el repo.
 
 ## Repartir el launcher
 
-Subí `AmericaRP.exe` como archivo de una Release de GitHub (Releases → Draft a new release) y pasá ese link. El `.exe` no se sube al repo (está en `.gitignore`).
+Pasá el link de la última Release: https://github.com/IgnacioCantoni/LauncherAmericaRP/releases/latest. El `.exe` no se sube al repo (está en `.gitignore`).
+
+## Sacar una versión nueva del launcher
+
+Los jugadores que ya lo tienen la reciben solos al abrirlo. En este orden:
+
+1. Subí `Config.Version` en `src/Launcher.cs` (por ejemplo de `1.1.0` a `1.2.0`).
+2. Doble clic en `compilar.bat`.
+3. Doble clic en `publicar-launcher.bat`. Escribe `launcher/version.txt` con la versión y la huella del `.exe`.
+4. En GitHub, Releases → Draft a new release, con la etiqueta `v` + la versión (`v1.2.0`), y subí `AmericaRP.exe`.
+5. Recién después, commit y push de `launcher/version.txt`. Si lo subís antes que la Release, los launchers no encuentran el `.exe` y siguen con el que tienen.
+
+Si el `.exe` bajado no coincide con la huella, no se instala. Si el jugador lo tiene en una carpeta donde Windows no deja escribir (como Archivos de programa), le ofrece abrir la página para bajarlo a mano.

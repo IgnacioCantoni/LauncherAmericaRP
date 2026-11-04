@@ -19,12 +19,23 @@ using Microsoft.Win32;
 static class Config
 {
     // Lo que cambia de un server a otro. Después de tocarlo, volvé a compilar.
+    // Versión de este launcher. Para sacar una nueva, ver "Sacar una versión nueva del launcher" en el README.
+    public const string Version = "1.1.0";
     public const string Host = "127.0.0.1";
     public const int Puerto = 7777;
     // Vacío = sin noticias / sin actualizaciones.
     const string Repo = "https://raw.githubusercontent.com/IgnacioCantoni/LauncherAmericaRP/main/";
     public const string NoticiasUrl = Repo + "noticias.txt";
     public const string ManifiestoUrl = Repo + "actualizaciones/manifiesto.txt";
+    // El launcher se actualiza solo: launcher/version.txt dice la última versión y la huella de su .exe, que está en la
+    // Release de GitHub con la etiqueta v<versión>. VersionUrl vacío = no se actualiza.
+    public const string VersionUrl = Repo + "launcher/version.txt";
+    public const string ExeUrl = "https://github.com/IgnacioCantoni/LauncherAmericaRP/releases/download/v{0}/AmericaRP.exe";
+    public const string DescargasUrl = "https://github.com/IgnacioCantoni/LauncherAmericaRP/releases/latest";
+    // DirectX 9 de junio de 2010, el instalador oficial de Microsoft (100.275.120 bytes, firmado por Microsoft). Trae las
+    // d3dx9 que piden samp.dll (d3dx9_25) y el ENB (d3dx9_43), y que Windows 10 y 11 no traen. Vacío = no se ofrece.
+    public const string DirectXUrl = "https://download.microsoft.com/download/8/4/A/84A35BF1-DAFE-4AE8-82AF-AD2AE20B6B14/directx_Jun2010_redist.exe";
+    public const string DirectXSha = "053f76dcbb28802e23341b6a787e3b0791c0fa5c8d4d011b1044172dbf89c73b";
     // GTA Full: gráficos ENB, opcionales (se activan en MI JUEGO). La licencia de ENBSeries no deja repartir su d3d9.dll
     // por un launcher: cada jugador baja el zip oficial y el launcher lo instala desde ahí. Lo que sí se reparte es el
     // preset del server (.ini y .fx) en paquetes/enb. EnbUrl vacío = no aparece.
@@ -352,7 +363,7 @@ static class Actualizador
     }
 
     // Descarga con avance, para archivos grandes.
-    static void Bajar(string url, string destino, string texto, Action<string, int> progreso)
+    public static void Bajar(string url, string destino, string texto, Action<string, int> progreso)
     {
         using (WebResponse respuesta = WebRequest.Create(url).GetResponse())
         using (Stream entrada = respuesta.GetResponseStream())
@@ -416,6 +427,100 @@ static class Actualizador
         }
         progreso(pendientes.Count == 0 ? "Todo al día." : "Actualizado: " + pendientes.Count + " archivo(s).", 100);
         return r;
+    }
+}
+
+// El launcher se actualiza solo (ver Config.VersionUrl).
+static class Autoactualizacion
+{
+    // launcher/version.txt: "1.2.0 <sha256 del AmericaRP.exe>".
+    public static KeyValuePair<Version, string> Leer(string texto)
+    {
+        string[] p = texto.Trim().Split(' ');
+        Version v;
+        if (p.Length != 2 || !Version.TryParse(p[0], out v) || !Regex.IsMatch(p[1], "^[0-9a-f]{64}$"))
+            throw new InvalidDataException("launcher/version.txt no tiene el formato esperado.");
+        return new KeyValuePair<Version, string>(v, p[1]);
+    }
+
+    public static string Linea(string exe) { return Config.Version + " " + Actualizador.Sha256(exe) + "\n"; }
+
+    // Windows deja renombrar un .exe que está corriendo pero no pisarlo: el actual pasa a .viejo y el nuevo toma su lugar.
+    public static void Reemplazar(string exe, string nuevo)
+    {
+        string viejo = exe + ".viejo";
+        if (File.Exists(viejo)) File.Delete(viejo);
+        File.Move(exe, viejo);
+        try { File.Move(nuevo, exe); }
+        catch (Exception) { File.Move(viejo, exe); throw; }
+    }
+
+    // El .viejo queda hasta el próximo arranque, porque mientras corría no se podía borrar.
+    public static void BorrarViejo(string exe) { try { File.Delete(exe + ".viejo"); } catch (Exception) { } }
+
+    public static void Instalar(string exe, Version v, string sha, Action<string, int> progreso)
+    {
+        string nuevo = exe + ".nuevo";
+        try
+        {
+            Actualizador.Bajar(string.Format(Config.ExeUrl, v), nuevo, "Bajando el launcher " + v, progreso);
+            if (Actualizador.Sha256(nuevo) != sha) throw new InvalidDataException("El launcher bajado no es el esperado.");
+            Reemplazar(exe, nuevo);
+        }
+        finally { if (File.Exists(nuevo)) File.Delete(nuevo); }
+    }
+}
+
+// DirectX 9: Windows trae d3d9.dll pero no las d3dx9_*.dll, que vienen con el instalador de junio de 2010.
+static class DirectX
+{
+    // Las que faltan, ni en el sistema ni en la carpeta del GTA. samp.dll pide d3dx9_25 y el ENB d3dx9_43.
+    public static List<string> Faltan(string sistema, string carpetaGta, bool enb)
+    {
+        var dlls = new List<string> { "d3dx9_25.dll" };
+        if (enb) dlls.Add("d3dx9_43.dll");
+        return dlls.Where(d => !File.Exists(Path.Combine(sistema, d)) && (carpetaGta.Length == 0 || !File.Exists(Path.Combine(carpetaGta, d)))).ToList();
+    }
+
+    // El GTA es de 32 bits: en un Windows de 64 sus DLL del sistema están en SysWOW64.
+    public static string Sistema() { return Environment.GetFolderPath(Environment.SpecialFolder.SystemX86); }
+
+    public static void Instalar(Action<string, int> progreso)
+    {
+        string carpeta = Path.Combine(Path.GetTempPath(), "AmericaRP-directx"), exe = carpeta + ".exe";
+        try
+        {
+            Actualizador.Bajar(Config.DirectXUrl, exe, "Bajando DirectX 9", progreso);
+            if (Actualizador.Sha256(exe) != Config.DirectXSha) throw new InvalidDataException("El instalador de DirectX bajado no es el esperado.");
+            progreso("Instalando DirectX 9...", 100);
+            if (Directory.Exists(carpeta)) Directory.Delete(carpeta, true);
+            Correr(exe, "/Q /T:\"" + carpeta + "\"", false);
+            Correr(Path.Combine(carpeta, "DXSETUP.exe"), "/silent", true);
+        }
+        finally
+        {
+            try { File.Delete(exe); } catch (Exception) { }
+            try { if (Directory.Exists(carpeta)) Directory.Delete(carpeta, true); } catch (Exception) { }
+        }
+    }
+
+    static void Correr(string exe, string argumentos, bool administrador)
+    {
+        var psi = new ProcessStartInfo(exe, argumentos) { UseShellExecute = true };
+        if (administrador) psi.Verb = "runas";
+        try
+        {
+            using (Process p = Process.Start(psi))
+            {
+                p.WaitForExit();
+                if (p.ExitCode != 0) throw new IOException(Path.GetFileName(exe) + " terminó con el código " + p.ExitCode + ".");
+            }
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            if (ex.NativeErrorCode == 1223) throw new IOException("Hace falta el permiso de administrador para instalarlo.");
+            throw;
+        }
     }
 }
 
@@ -498,7 +603,7 @@ class Ventana : Form
     string pestana = "inicio", noticias = "Cargando noticias...", estado = "Listo para jugar.", mods = "";
     int progreso, scroll;
     Actualizador.Revision revision;
-    List<string> faltantes = new List<string>();
+    List<string> faltantes = new List<string>(), faltaDx = new List<string>();
     bool gta10;
 
     public Ventana()
@@ -536,6 +641,7 @@ class Ventana : Form
             RefrescarServer();
             CargarNoticias();
             RevisarMods();
+            BuscarVersion();
         };
     }
 
@@ -551,6 +657,7 @@ class Ventana : Form
     {
         faltantes = Instalacion.Faltantes(Carpeta());
         gta10 = File.Exists(Path.Combine(Carpeta(), "gta_sa.exe")) && Instalacion.PareceGta10(Carpeta());
+        faltaDx = Config.DirectXUrl.Length == 0 ? new List<string>() : DirectX.Faltan(DirectX.Sistema(), Carpeta(), EnbActivo());
     }
 
     void Avisar(string texto, int porcentaje)
@@ -587,6 +694,30 @@ class Ventana : Form
             mods = revision.Entradas.Count == 0 ? "Todavía no hay mods ni archivos del server." : "";
         }
         catch (Exception ex) { revision = null; mods = "No se pudieron revisar los archivos: " + ex.Message; }
+    }
+
+    async void BuscarVersion()
+    {
+        if (Config.VersionUrl.Length == 0) return;
+        KeyValuePair<Version, string> r;
+        try { r = Autoactualizacion.Leer(await Task.Run(() => Web.Texto(Config.VersionUrl))); }
+        catch (Exception) { return; } // sin internet o sin version.txt: se sigue con este
+        if (r.Key <= new Version(Config.Version) || ocupado) return;
+        if (MessageBox.Show(this, "Hay una versión nueva del launcher (" + r.Key + "). Se baja en unos segundos y se vuelve a abrir solo.\n\n¿Actualizar ahora?",
+            "AMERICA RP", MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes || ocupado) return;
+        Ocupar(true);
+        string exe = Application.ExecutablePath;
+        try { await Task.Run(() => Autoactualizacion.Instalar(exe, r.Key, r.Value, Avisar)); }
+        catch (Exception ex)
+        {
+            Ocupar(false);
+            Avisar("No se pudo actualizar el launcher.", 0);
+            if (MessageBox.Show(this, "No se pudo actualizar el launcher: " + ex.Message + "\n\n¿Abrir la página para bajarlo a mano?", "AMERICA RP",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes) Abrir(Config.DescargasUrl);
+            return;
+        }
+        Process.Start(exe);
+        Application.Exit();
     }
 
     // ---------- acciones ----------
@@ -654,7 +785,36 @@ class Ventana : Form
                 Abrir(Config.DescargaSampUrl);
             return false;
         }
+        if (faltaDx.Count > 0 && !await OfrecerDirectX()) return false;
         if (!gta10) Avisar("Tu gta_sa.exe no parece la versión 1.0. Si el juego se cierra al conectar, instalá la 1.0.", 100);
+        return true;
+    }
+
+    // Devuelve false si el jugador quiso instalarlo y no se pudo. Si dice que no, se juega igual: puede que lo tenga en otro lado.
+    async Task<bool> OfrecerDirectX()
+    {
+        string sinEso = faltaDx.Contains("d3dx9_25.dll") ? "el SA-MP no abre" : "el ENB no carga";
+        if (MessageBox.Show(this, "A tu Windows le falta DirectX 9 (" + string.Join(", ", faltaDx) + "). Sin eso " + sinEso + ".\n\n" +
+            "¿Instalarlo ahora? Se baja de Microsoft (96 MB) y Windows te va a pedir permiso de administrador.",
+            "DirectX 9", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+        {
+            Avisar("Falta DirectX 9: si el juego no abre, instalalo desde MI JUEGO.", 0);
+            return true;
+        }
+        try { await Task.Run(() => DirectX.Instalar(Avisar)); }
+        catch (Exception ex)
+        {
+            Avisar("No se pudo instalar DirectX 9.", 0);
+            MessageBox.Show(this, "No se pudo instalar DirectX 9: " + ex.Message, "DirectX 9", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+        RevisarInstalacion();
+        if (faltaDx.Count > 0)
+        {
+            MessageBox.Show(this, "Se instaló DirectX 9 pero sigue faltando " + string.Join(", ", faltaDx) + ".", "DirectX 9", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+        Avisar("DirectX 9 instalado.", 100);
         return true;
     }
 
@@ -938,6 +1098,7 @@ class Ventana : Form
         {
             new[] { "GTA San Andreas 1.0", !hayGta ? "FALTA" : gta10 ? "OK" : "REVISAR", !hayGta ? "mal" : gta10 ? "ok" : "ojo" },
             new[] { "SA-MP 0.3.7", haySamp ? "OK" : "FALTA", haySamp ? "ok" : "mal" },
+            new[] { "DirectX 9", faltaDx.Count == 0 ? "OK" : "FALTA", faltaDx.Count == 0 ? "ok" : "mal" },
             new[] { "Archivos del server", pend < 0 ? "-" : pend == 0 ? "AL DÍA" : pend + " POR BAJAR", pend < 0 ? "nada" : pend == 0 ? "ok" : "ojo" },
         };
     }
@@ -1177,6 +1338,14 @@ static class Programa
         // Windows 7/8 no usan TLS 1.2 por defecto y GitHub lo exige.
         ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;
         if (args.Length == 1 && args[0] == "--prueba") return Prueba.Correr();
+        if (args.Length == 1 && args[0] == "--publicar")
+        {
+            string salida = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "launcher", "version.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(salida));
+            File.WriteAllText(salida, Autoactualizacion.Linea(Application.ExecutablePath), new UTF8Encoding(false));
+            Console.WriteLine("Escrito " + salida + ": " + File.ReadAllText(salida).Trim());
+            return 0;
+        }
         if (args.Length == 2 && args[0] == "--manifiesto")
         {
             string salida = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[1]).TrimEnd(Path.DirectorySeparatorChar)), Actualizador.NombreManifiesto);
@@ -1184,6 +1353,7 @@ static class Programa
             Console.WriteLine("Manifiesto escrito en " + salida);
             return 0;
         }
+        Autoactualizacion.BorrarViejo(Application.ExecutablePath);
         Application.EnableVisualStyles();
         Application.Run(new Ventana());
         return 0;
@@ -1301,6 +1471,36 @@ static class Prueba
         vid.AddRange(BitConverter.GetBytes(999));
         Ver(Video.Desde(vid.ToArray()).Cuadros == 2, "video: lee solo los cuadros completos");
         Ver(Tira(() => Video.Desde(Encoding.ASCII.GetBytes("cualquier cosa nada"))), "video: rechaza archivo que no es video");
+
+        string sha64 = new string('a', 64);
+        var ver = Autoactualizacion.Leer("1.2.0 " + sha64 + "\r\n");
+        Ver(ver.Key == new Version(1, 2, 0) && ver.Value == sha64 && new Version("1.10.0") > new Version("1.9.0"), "version.txt: se lee y compara");
+        Ver(Tira(() => Autoactualizacion.Leer("1.2.0")) && Tira(() => Autoactualizacion.Leer("uno " + sha64)) && Tira(() => Autoactualizacion.Leer("1.2.0 " + sha64.ToUpperInvariant())), "version.txt: rechaza formatos raros");
+        carpeta = Path.Combine(Path.GetTempPath(), "amrp-exe-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(carpeta);
+        try
+        {
+            string exe = Path.Combine(carpeta, "AmericaRP.exe"), nuevo = exe + ".nuevo";
+            File.WriteAllText(exe, "viejo");
+            File.WriteAllText(exe + ".viejo", "de antes");
+            File.WriteAllText(nuevo, "nuevo");
+            Autoactualizacion.Reemplazar(exe, nuevo);
+            Ver(File.ReadAllText(exe) == "nuevo" && File.ReadAllText(exe + ".viejo") == "viejo" && !File.Exists(nuevo), "launcher: el nuevo toma el lugar del viejo");
+            bool fallo = false;
+            try { Autoactualizacion.Reemplazar(exe, Path.Combine(carpeta, "no-existe.exe")); } catch (Exception) { fallo = true; }
+            Ver(fallo && File.ReadAllText(exe) == "nuevo", "launcher: si falla, queda el que estaba");
+            Autoactualizacion.BorrarViejo(exe);
+            Ver(!File.Exists(exe + ".viejo"), "launcher: borra el .viejo al arrancar");
+
+            string sis = Path.Combine(carpeta, "sys"), gtaDx = Path.Combine(carpeta, "gta");
+            Directory.CreateDirectory(sis);
+            Directory.CreateDirectory(gtaDx);
+            Ver(DirectX.Faltan(sis, gtaDx, true).Count == 2 && DirectX.Faltan(sis, gtaDx, false).SequenceEqual(new[] { "d3dx9_25.dll" }), "DirectX: detecta las que faltan");
+            File.WriteAllText(Path.Combine(sis, "d3dx9_25.dll"), "x");
+            File.WriteAllText(Path.Combine(gtaDx, "d3dx9_43.dll"), "x");
+            Ver(DirectX.Faltan(sis, gtaDx, true).Count == 0 && DirectX.Faltan(sis, "", true).SequenceEqual(new[] { "d3dx9_43.dll" }), "DirectX: vale en el sistema o en la carpeta del GTA");
+        }
+        finally { Directory.Delete(carpeta, true); }
 
         Ver(Instalacion.NickValido.IsMatch("Juan_Perez") && !Instalacion.NickValido.IsMatch("ab") && !Instalacion.NickValido.IsMatch("con espacio"), "nick");
         Console.WriteLine(fallas == 0 ? "Todo bien." : fallas + " falla(s).");
