@@ -2533,7 +2533,7 @@ class Ventana : Lienzo
         DibujarClientes(g);
         int y = Contenido.Bottom - 150;
         Escribir(g, "SERVIDOR DE ROLEPLAY EN ESPAÑOL", Fuentes.Negrita(10f), Acento, 44, y);
-        Escribir(g, "BIENVENIDO A AMERICA RP", Fuentes.Titulo(58f), Texto, 40, y + 18);
+        Escribir(g, "TU HISTORIA EMPIEZA ACÁ", Fuentes.Titulo(58f), Texto, 40, y + 18);
         Noticia ultima = listaNoticias.FirstOrDefault();
         string primera = ultima == null ? "" : ultima.Titulo.Length > 0 ? ultima.Titulo : ultima.Lineas.FirstOrDefault(l => l.Trim().Length > 0 && !l.Contains("Bienvenido")) ?? "";
         using (var b = new SolidBrush(Color.FromArgb(220, Texto)))
@@ -2551,7 +2551,7 @@ class Ventana : Lienzo
         bool oficial = Registro.Cliente != "custom", enb = Config.EnbUrl.Length > 0 && EnbActivo();
         var clientes = new[]
         {
-            new { Id = "liviano", Nombre = "AMERICA RP", Etiqueta = oficial && enb ? "OFICIAL · ENB" : "OFICIAL", Estado = hayP ? "Listo" : "Sin elegir", Color = hayP ? Verde : Gris,
+            new { Id = "liviano", Nombre = "OFICIAL", Etiqueta = oficial && enb ? "ENB" : "", Estado = hayP ? "Listo" : "Sin elegir", Color = hayP ? Verde : Gris,
                 Texto = "Tu GTA con los archivos del server." },
             new { Id = "custom", Nombre = "CUSTOM", Etiqueta = !oficial && enb ? "ENB" : "", Estado = hayC ? "Listo" : "Sin elegir", Color = hayC ? Verde : Gris,
                 Texto = hayC ? "Carpeta: " + Path.GetDirectoryName(custom) : "Tu propio GTA, con los mods y aportes que quieras." },
@@ -2883,7 +2883,7 @@ class Ventana : Lienzo
 
         // Qué cliente se va a abrir; el detalle de lo que falta está en la tarjeta del cliente, en INICIO.
         Escribir(g, "CLIENTE", Fuentes.Negrita(9.5f), Gris, x, t.Y + 320);
-        string cliente = Registro.Cliente == "custom" ? "CUSTOM" : "AMERICA RP";
+        string cliente = Registro.Cliente == "custom" ? "CUSTOM" : "OFICIAL";
         Escribir(g, cliente, Fuentes.Negrita(13f), Texto, x, t.Y + 340);
         var cambiar = new Rectangle(t.Right - 28 - 80, t.Y + 334, 80, 30);
         if (pestana != "inicio") Chip(g, cambiar, "CAMBIAR", false, delegate { Pestana("inicio"); });
