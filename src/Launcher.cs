@@ -1186,7 +1186,7 @@ static class DirectX
     }
 }
 
-// Tipografías propias (SIL OFL, ver fuentes/): Montserrat Bold Italic para títulos (la del video) y Barlow para el resto.
+// Tipografías propias (SIL OFL, ver fuentes/): Montserrat Bold Italic para títulos y Barlow para el resto.
 // Van dentro del .exe como recursos; si no cargan, se usa Segoe UI.
 static class Fuentes
 {
@@ -1685,11 +1685,12 @@ class Explorador : Lienzo
     }
 }
 
-// La ventana principal se dibuja entera a mano y se repinta ~30 veces por segundo por el fondo animado.
+// La ventana principal se dibuja entera a mano. Se repinta sola cada cuarto de segundo (estado, server) y cuando algo se anima.
 class Ventana : Lienzo
 {
-    // 5:3 como el video de fondo; 720 de alto entra en notebooks de 1366x768.
-    const int Ancho = 1200, Alto = 720;
+    // 16:9 como la imagen de fondo: 1440x810 si entra en la pantalla; si no, 1280x720 (notebooks de 1366x768).
+    static readonly bool Grande = Screen.PrimaryScreen.WorkingArea.Width >= 1500 && Screen.PrimaryScreen.WorkingArea.Height >= 860;
+    static readonly int Ancho = Grande ? 1440 : 1280, Alto = Grande ? 810 : 720;
     static readonly Rectangle Tarjeta = new Rectangle(Ancho - 356, 92, 316, Alto - 140), Contenido = new Rectangle(40, 92, Ancho - 428, Alto - 140);
 
     readonly TextBox nick = new TextBox();
@@ -1697,7 +1698,7 @@ class Ventana : Lienzo
     readonly NotifyIcon bandeja = new NotifyIcon();
     readonly Timer reloj = new Timer(), cuadros = new Timer();
     readonly Stopwatch tiempo = Stopwatch.StartNew();
-    readonly Video video = Video.Cargar();
+    readonly Bitmap fondo = Fondo.Cargar(Ancho, Alto);
     bool consultando, ocupado, tapada;
     Rectangle menuJuego = Rectangle.Empty;
     double cambioPestana = -1000;
@@ -1753,7 +1754,7 @@ class Ventana : Lienzo
         RevisarInstalacion();
         reloj.Interval = 15000;
         reloj.Tick += delegate { RefrescarServer(); };
-        cuadros.Interval = 33;
+        cuadros.Interval = 250;
         cuadros.Tick += delegate { if (WindowState != FormWindowState.Minimized) Invalidate(); };
         Shown += delegate
         {
@@ -2347,7 +2348,7 @@ class Ventana : Lienzo
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
         zonas.Clear();
 
-        if (video != null) video.Dibujar(g, tiempo.Elapsed.TotalSeconds, Ancho, Alto);
+        if (fondo != null) g.DrawImageUnscaled(fondo, 0, 0);
         Sombra(g, new Rectangle(0, 0, Ancho, 140), 200, 0, 90f);
         Sombra(g, new Rectangle(0, Alto - 300, Tarjeta.X + 16, 300), 0, 235, 90f);
         Sombra(g, new Rectangle(0, 0, 520, Alto), 150, 0, 0f);
@@ -2355,6 +2356,7 @@ class Ventana : Lienzo
         DibujarArriba(g);
         // Al cambiar de pestaña, el contenido entra subiendo un poco y aclarándose (~200 ms).
         float t = Math.Min(1f, (float)(tiempo.Elapsed.TotalMilliseconds - cambioPestana) / 200f), k = 1 - (1 - t) * (1 - t) * (1 - t);
+        if (t < 1) BeginInvoke(new Action(Invalidate));
         var estado0 = g.Save();
         g.TranslateTransform(0, 12 * (1 - k));
         if (pestana == "noticias") DibujarNoticias(g);
@@ -2782,71 +2784,31 @@ static class Web
     }
 }
 
-// Fondo en video: fondo/video.bin va dentro del .exe (lo arma fondo/armar_video.py) y se repite en bucle.
-// Son JPEG ya del tamaño de la ventana; se descomprime solo el cuadro que toca, así no ocupa cientos de MB.
-class Video
+// Imagen de fondo (fondo/fondo.jpg dentro del .exe), escalada una sola vez al tamaño de la ventana y recortada sin deformar.
+// Sin la imagen (compilado sin el recurso o rota) el fondo queda liso.
+static class Fondo
 {
-    readonly byte[] datos;
-    readonly List<int> inicios = new List<int>(), largos = new List<int>();
-    readonly int fps;
-    int actual = -1;
-    Image cuadro;
-
-    Video(byte[] datos)
-    {
-        this.datos = datos;
-        if (datos.Length < 16 || Encoding.ASCII.GetString(datos, 0, 8) != "AMRPVID1") throw new InvalidDataException("video.bin inválido");
-        fps = Math.Max(1, BitConverter.ToInt32(datos, 8));
-        int n = BitConverter.ToInt32(datos, 12), pos = 16;
-        for (int i = 0; i < n && pos + 4 <= datos.Length; i++)
-        {
-            int largo = BitConverter.ToInt32(datos, pos);
-            if (largo <= 0 || pos + 4 + largo > datos.Length) break;
-            inicios.Add(pos + 4);
-            largos.Add(largo);
-            pos += 4 + largo;
-        }
-        if (inicios.Count == 0) throw new InvalidDataException("video.bin sin cuadros");
-    }
-
-    public int Cuadros { get { return inicios.Count; } }
-
-    public static Video Desde(byte[] datos) { return new Video(datos); }
-
-    // Sin video (compilado sin el recurso o roto) el fondo queda liso.
-    public static Video Cargar()
+    public static Bitmap Cargar(int ancho, int alto)
     {
         try
         {
-            using (Stream s = typeof(Video).Assembly.GetManifestResourceStream("video.bin"))
+            using (Stream s = typeof(Ventana).Assembly.GetManifestResourceStream("fondo.jpg"))
             {
                 if (s == null) return null;
-                var ms = new MemoryStream();
-                s.CopyTo(ms);
-                return new Video(ms.ToArray());
+                using (Image img = Image.FromStream(s))
+                {
+                    var b = new Bitmap(ancho, alto);
+                    using (Graphics g = Graphics.FromImage(b))
+                    {
+                        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                        float escala = Math.Max((float)ancho / img.Width, (float)alto / img.Height), w = ancho / escala, h = alto / escala;
+                        g.DrawImage(img, new Rectangle(0, 0, ancho, alto), new RectangleF((img.Width - w) / 2, (img.Height - h) / 2, w, h), GraphicsUnit.Pixel);
+                    }
+                    return b;
+                }
             }
         }
         catch (Exception) { return null; }
-    }
-
-    public void Dibujar(Graphics g, double t, int ancho, int alto)
-    {
-        int i = (int)(t * fps) % inicios.Count;
-        if (i != actual)
-        {
-            try
-            {
-                Image nuevo;
-                using (var ms = new MemoryStream(datos, inicios[i], largos[i])) using (Image img = Image.FromStream(ms)) nuevo = new Bitmap(img);
-                if (cuadro != null) cuadro.Dispose();
-                cuadro = nuevo;
-            }
-            catch (Exception) { }
-            actual = i;
-        }
-        if (cuadro == null) return;
-        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
-        g.DrawImage(cuadro, 0, 0, ancho, alto);
     }
 }
 
@@ -2977,14 +2939,6 @@ static class Prueba
             Ver(Tira(() => Actualizador.ExtraerCef(gta, malo)) && !File.Exists(Path.Combine(carpeta, "afuera.txt")), "zip CEF: rechaza rutas de afuera");
         }
         finally { Directory.Delete(carpeta, true); }
-
-        var vid = new List<byte>(Encoding.ASCII.GetBytes("AMRPVID1"));
-        vid.AddRange(BitConverter.GetBytes(24));
-        vid.AddRange(BitConverter.GetBytes(5)); // dice 5 cuadros pero trae 2 y uno cortado
-        for (int i = 0; i < 2; i++) { vid.AddRange(BitConverter.GetBytes(3)); vid.AddRange(new byte[] { 1, 2, 3 }); }
-        vid.AddRange(BitConverter.GetBytes(999));
-        Ver(Video.Desde(vid.ToArray()).Cuadros == 2, "video: lee solo los cuadros completos");
-        Ver(Tira(() => Video.Desde(Encoding.ASCII.GetBytes("cualquier cosa nada"))), "video: rechaza archivo que no es video");
 
         string sha64 = new string('a', 64);
         var ver = Autoactualizacion.Leer("1.2.0 " + sha64 + "\r\n");

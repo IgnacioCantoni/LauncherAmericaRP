@@ -8,6 +8,7 @@
 - Noticias desplegables y una sección con los parches del server.
 - Estas novedades.
 - Diseño nuevo, más simple: ventana más grande y redondeada, interruptores, y los avisos y la búsqueda de carpetas con el estilo del launcher en vez de los cuadros de Windows.
+- Fondo nuevo y ventana más grande (1440x810 en pantallas que la aguantan). El launcher pesa mucho menos.
 - Las descargas muestran cuántos MB van, la velocidad y cuánto falta.
 - Botones e interruptores que se iluminan de a poco y pestañas que cambian con un fundido.
 
