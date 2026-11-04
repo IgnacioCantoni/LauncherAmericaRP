@@ -4,7 +4,7 @@
 # el tamanio de cada cuadro y despues los JPEG seguidos.
 import glob, os, struct, subprocess, sys, tempfile
 
-ANCHO, ALTO, FPS = 1024, 512, 24  # 1024x512 (potencia de 2); la ASI lo vuelve a 16:9 al dibujarlo
+ANCHO, ALTO, FPS = 1280, 720, 24  # mejor el tamaño del video original; más grande pesa mucho más
 raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 origen = sys.argv[1] if len(sys.argv) > 1 else os.path.join(raiz, "cliente", "carga.mp4")
 destino = os.path.join(raiz, "actualizaciones", "archivos", "americarp", "carga.bin")
@@ -12,7 +12,7 @@ destino = os.path.join(raiz, "actualizaciones", "archivos", "americarp", "carga.
 with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(["ffmpeg", "-v", "error", "-i", origen, "-an", "-vf",
                     "fps=%d,scale=%d:%d:flags=lanczos,format=yuvj420p" % (FPS, ANCHO, ALTO),
-                    "-q:v", "5", os.path.join(tmp, "%04d.jpg")], check=True)
+                    "-q:v", "3", os.path.join(tmp, "%04d.jpg")], check=True)
     cuadros = [open(f, "rb").read() for f in sorted(glob.glob(os.path.join(tmp, "*.jpg")))]
 
 datos = b"ARV1" + struct.pack("<4I", len(cuadros), ANCHO, ALTO, FPS)

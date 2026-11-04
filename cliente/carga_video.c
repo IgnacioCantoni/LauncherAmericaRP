@@ -1,7 +1,8 @@
 // carga_video.asi (AMERICA RP)
 // Cambia la pantalla de carga del GTA (las imagenes de loadscs.txd que se van fundiendo)
 // por el video del server, y saca la barra de carga gris: el video ya trae su circulo de carga.
-// El video va en americarp\carga.bin al lado de esta ASI (lo arma cliente/armar_carga.py).
+// El video va en americarp\carga.bin al lado de esta ASI (lo arma cliente/armar_carga.py),
+// en cuadros JPEG del tamanio original (1280x720).
 // Si el archivo falta o esta roto, se ven las pantallas de siempre, sin barra.
 // Direcciones de GTA SA 1.0 US (plugin-sdk y gta-reversed).
 #include <windows.h>
@@ -48,13 +49,29 @@ static DWORD arranque;
 static Sprite cuadro;
 static char carpeta[MAX_PATH];
 
+// Deja en americarp\carga.log qué pasó en la última carga, para revisar si el video no aparece.
+static void anotar(const char *texto)
+{
+    char ruta[MAX_PATH + 32];
+    static int abierto;
+    lstrcpyA(ruta, carpeta);
+    lstrcatA(ruta, "americarp\\carga.log");
+    HANDLE f = CreateFileA(ruta, FILE_APPEND_DATA, FILE_SHARE_READ, NULL, abierto ? OPEN_ALWAYS : CREATE_ALWAYS, 0, NULL);
+    if (f == INVALID_HANDLE_VALUE) return;
+    abierto = 1;
+    DWORD n;
+    WriteFile(f, texto, lstrlenA(texto), &n, NULL);
+    WriteFile(f, "\r\n", 2, &n, NULL);
+    CloseHandle(f);
+}
+
 static void cargar(void)
 {
     char ruta[MAX_PATH + 32];
     lstrcpyA(ruta, carpeta);
     lstrcatA(ruta, "americarp\\carga.bin");
     HANDLE f = CreateFileA(ruta, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
-    if (f == INVALID_HANDLE_VALUE) return;
+    if (f == INVALID_HANDLE_VALUE) { anotar("no esta americarp\\carga.bin"); return; }
     DWORD largo = GetFileSize(f, NULL), leido = 0;
     unsigned char *d = (largo > 20 && largo < 200u << 20) ? malloc(largo) : NULL;
     if (d && ReadFile(f, d, largo, &leido, NULL) && leido == largo && !memcmp(d, "ARV1", 4)) {
@@ -69,6 +86,9 @@ static void cargar(void)
     }
     CloseHandle(f);
     free(d);
+    char t[128];
+    wsprintfA(t, video ? "video: %u cuadros de %ux%u a %u por segundo" : "carga.bin roto", cuadros, vancho, valto, fps);
+    anotar(t);
 }
 
 // Pasa el cuadro n del video a la textura. Devuelve 0 si no se pudo.
@@ -76,12 +96,13 @@ static int poner(unsigned int n)
 {
     int w, h, canales;
     unsigned char *rgba = stbi_load_from_memory(video + inicios[n], (int)tamanios[n], &w, &h, &canales, 4);
-    if (!rgba) return 0;
+    if (!rgba) { anotar("un cuadro no se pudo leer"); return 0; }
     int ok = 0;
     if ((unsigned)w == vancho && (unsigned)h == valto) {
         if (!cuadro.textura) {
             Raster *r = RasterCrear(w, h, 32, 0x04 | 0x0500); // textura, 8888
             if (r) cuadro.textura = TexturaCrear(r);
+            anotar(cuadro.textura ? "textura creada" : "no se pudo crear la textura");
         }
         Raster *r = cuadro.textura ? ((Textura *)cuadro.textura)->raster : NULL;
         unsigned char *p = r ? RasterTrabar(r, 0, 1) : NULL;
@@ -92,7 +113,7 @@ static int poner(unsigned int n)
             }
             RasterDestrabar(r);
             ok = 1;
-        }
+        } else if (r) anotar("no se pudo escribir la textura");
     }
     stbi_image_free(rgba);
     return ok;
@@ -108,7 +129,10 @@ static void pantalla(void)
 
     if (video) {
         unsigned int n = (unsigned int)((unsigned long long)(GetTickCount() - arranque) * fps / 1000 % cuadros);
-        if ((int)n != mostrado && poner(n)) mostrado = (int)n;
+        if ((int)n != mostrado && poner(n)) {
+            if (mostrado < 0) anotar("primer cuadro dibujado");
+            mostrado = (int)n;
+        }
     }
     if (video && cuadro.textura && mostrado >= 0) {
         // El video es 16:9: en pantallas de otra forma se recorta lo que sobra, sin deformarlo.
@@ -147,14 +171,15 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD motivo, LPVOID r)
     if (motivo != DLL_PROCESS_ATTACH) return TRUE;
     DisableThreadLibraryCalls(h);
     // Solo GTA SA 1.0 US: ahi RenderSplash empieza con "sub esp,18h; call CSprite2d::InitPerFrame".
-    if (memcmp((void *)RenderSplash, "\x83\xEC\x18\xE8", 4) || *(unsigned char *)RenderLoadingBar != 0x83) return TRUE;
     GetModuleFileNameA(h, carpeta, MAX_PATH);
     char *barra = strrchr(carpeta, '\\');
     if (barra) barra[1] = 0; else carpeta[0] = 0;
+    if (memcmp((void *)RenderSplash, "\x83\xEC\x18\xE8", 4) || *(unsigned char *)RenderLoadingBar != 0x83) { anotar("no es GTA SA 1.0 US o ya lo cambio otro mod: no se toca nada"); return TRUE; }
     unsigned char salto[5] = { 0xE9 };
     *(DWORD *)(salto + 1) = (DWORD)pantalla - (RenderSplash + 5);
     escribir(RenderSplash, salto, 5);
     unsigned char volver = 0xC3;
     escribir(RenderLoadingBar, &volver, 1);
+    anotar("plugin cargado");
     return TRUE;
 }
