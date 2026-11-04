@@ -1219,8 +1219,22 @@ class Ventana : Form
 {
     static readonly Color Acento = Color.FromArgb(245, 166, 35), Texto = Color.FromArgb(244, 241, 234), Gris = Color.FromArgb(168, 172, 186),
         Oscuro = Color.FromArgb(8, 10, 16), Verde = Color.FromArgb(110, 220, 140), Rojo = Color.FromArgb(240, 96, 96), Ambar = Color.FromArgb(245, 196, 80);
-    const int Ancho = 1100, Alto = 660;
-    static readonly Rectangle Tarjeta = new Rectangle(744, 92, 316, 520), Contenido = new Rectangle(40, 92, 672, 520);
+    // 5:3 como el video de fondo; 720 de alto entra en notebooks de 1366x768.
+    const int Ancho = 1200, Alto = 720;
+    static readonly Rectangle Tarjeta = new Rectangle(Ancho - 356, 92, 316, Alto - 140), Contenido = new Rectangle(40, 92, Ancho - 428, Alto - 140);
+
+    [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr v, int atributo, ref int valor, int largo);
+    [DllImport("gdi32.dll")] static extern IntPtr CreateRoundRectRgn(int x1, int y1, int x2, int y2, int ancho, int alto);
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        // Windows 11 redondea las puntas con suavizado; en Windows 10 la API falla y se recorta la ventana.
+        int redondo = 2;
+        bool ok;
+        try { ok = DwmSetWindowAttribute(Handle, 33, ref redondo, 4) == 0; } catch (Exception) { ok = false; }
+        if (!ok) Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, Ancho + 1, Alto + 1, 16, 16));
+    }
 
     class Zona { public Rectangle R; public Action Click; }
     readonly List<Zona> zonas = new List<Zona>();
@@ -1883,9 +1897,9 @@ class Ventana : Form
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
         zonas.Clear();
 
-        if (video != null) video.Dibujar(g, tiempo.Elapsed.TotalSeconds);
+        if (video != null) video.Dibujar(g, tiempo.Elapsed.TotalSeconds, Ancho, Alto);
         Sombra(g, new Rectangle(0, 0, Ancho, 140), 200, 0, 90f);
-        Sombra(g, new Rectangle(0, Alto - 300, 760, 300), 0, 235, 90f);
+        Sombra(g, new Rectangle(0, Alto - 300, Tarjeta.X + 16, 300), 0, 235, 90f);
         Sombra(g, new Rectangle(0, 0, 520, Alto), 150, 0, 0f);
 
         DibujarArriba(g);
@@ -2435,7 +2449,7 @@ class Video
         catch (Exception) { return null; }
     }
 
-    public void Dibujar(Graphics g, double t)
+    public void Dibujar(Graphics g, double t, int ancho, int alto)
     {
         int i = (int)(t * fps) % inicios.Count;
         if (i != actual)
@@ -2452,7 +2466,7 @@ class Video
         }
         if (cuadro == null) return;
         g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
-        g.DrawImage(cuadro, 0, 0, 1100, 660);
+        g.DrawImage(cuadro, 0, 0, ancho, alto);
     }
 }
 
