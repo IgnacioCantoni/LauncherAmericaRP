@@ -8,6 +8,8 @@
 - Noticias desplegables y una sección con los parches del server.
 - Estas novedades.
 - Diseño nuevo, más simple: ventana más grande y redondeada, interruptores, y los avisos y la búsqueda de carpetas con el estilo del launcher en vez de los cuadros de Windows.
+- Las descargas muestran cuántos MB van, la velocidad y cuánto falta.
+- Botones e interruptores que se iluminan de a poco y pestañas que cambian con un fundido.
 
 ## 2026-11-04 | Launcher | 1.3.2
 - Reconoce un ENB que ya estaba instalado, y activarlo o desactivarlo es al instante.

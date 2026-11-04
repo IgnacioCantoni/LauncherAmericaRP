@@ -587,6 +587,7 @@ static class Mudanza
             if (libre < total + (100L << 20)) throw new InvalidDataException("No hay lugar: hacen falta " + (total >> 20) + " MB y quedan " + (libre >> 20) + " MB.");
         }
         catch (ArgumentException) { } // una unidad de red: se prueba igual
+        var reloj = Stopwatch.StartNew();
         foreach (string f in archivos)
         {
             string destino = nueva + f.Substring(origen.Length);
@@ -594,7 +595,7 @@ static class Mudanza
             File.Copy(f, destino, false);
             if (new FileInfo(destino).Length != new FileInfo(f).Length) throw new IOException("No se copió bien " + f + ".");
             hecho += new FileInfo(f).Length;
-            progreso("Copiando el GTA: " + (hecho >> 20) + " de " + (total >> 20) + " MB", total == 0 ? 100 : (int)(100 * hecho / total));
+            progreso("Copiando el GTA: " + Actualizador.Detalle(hecho, total, reloj.Elapsed.TotalSeconds), total == 0 ? 100 : (int)(100 * hecho / total));
         }
         return nueva;
     }
@@ -1009,25 +1010,51 @@ static class Actualizador
     // Descarga con avance, para archivos grandes.
     public static void Bajar(string url, string destino, string texto, Action<string, int> progreso)
     {
+        Bajar(url, destino, (leido, total, detalle) => progreso(texto + ": " + detalle, total > 0 ? (int)(100 * leido / total) : 0));
+    }
+
+    // Avisa cada cuarto de segundo (y al terminar) con lo bajado, el total (0 si no se sabe) y el detalle para mostrar.
+    public static void Bajar(string url, string destino, Action<long, long, string> avance)
+    {
         using (WebResponse respuesta = WebRequest.Create(url).GetResponse())
         using (Stream entrada = respuesta.GetResponseStream())
         using (FileStream salida = File.Create(destino))
         {
-            long total = respuesta.ContentLength, leido = 0;
+            long total = Math.Max(0, respuesta.ContentLength), leido = 0, proximo = 0;
+            var reloj = Stopwatch.StartNew();
             byte[] buffer = new byte[81920];
-            int n, ultimo = -1;
+            int n;
             while ((n = entrada.Read(buffer, 0, buffer.Length)) > 0)
             {
                 salida.Write(buffer, 0, n);
                 leido += n;
-                int porcentaje = total > 0 ? (int)(100 * leido / total) : 0;
-                if (porcentaje != ultimo)
+                if (reloj.ElapsedMilliseconds >= proximo || leido == total)
                 {
-                    ultimo = porcentaje;
-                    progreso(texto + ": " + (leido >> 20) + (total > 0 ? " de " + (total >> 20) : "") + " MB", porcentaje);
+                    proximo = reloj.ElapsedMilliseconds + 250;
+                    avance(leido, total, Detalle(leido, total, reloj.Elapsed.TotalSeconds));
                 }
             }
         }
+    }
+
+    // "12,5 de 40,0 MB · 2,3 MB/s · faltan 12 s". La velocidad y lo que falta aparecen después del primer segundo.
+    public static string Detalle(long hecho, long total, double segundos)
+    {
+        string s = Mb(hecho) + (total > 0 ? " de " + Mb(total) : "") + " MB";
+        if (segundos < 1 || hecho <= 0) return s;
+        double velocidad = hecho / segundos;
+        s += " · " + Mb((long)velocidad) + " MB/s";
+        if (total > hecho)
+        {
+            int falta = (int)Math.Ceiling((total - hecho) / velocidad);
+            s += " · faltan " + (falta < 60 ? falta + " s" : (falta + 59) / 60 + " min");
+        }
+        return s;
+    }
+
+    static string Mb(long bytes)
+    {
+        return (bytes / 1048576.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture).Replace('.', ',');
     }
 
     // Devuelve lo que revisó; en Pendientes queda lo que bajó. Si algo falla, tira la excepción y no deja archivos a medias.
@@ -1035,16 +1062,18 @@ static class Actualizador
     {
         Revision r = Revisar(carpetaGta, manifiestoUrl, progreso);
         var pendientes = r.Entradas.Where(e => r.Pendientes.Contains(e.Value)).ToList();
-        using (var web = new WebClient())
         {
             for (int i = 0; i < pendientes.Count; i++)
             {
                 string ruta = pendientes[i].Value, destino = RutaSegura(carpetaGta, ruta), temporal = destino + ".descarga";
-                progreso("Bajando " + ruta + " (" + (i + 1) + " de " + pendientes.Count + ")", 100 * i / pendientes.Count);
+                string cual = "Bajando " + ruta + (pendientes.Count > 1 ? " (" + (i + 1) + " de " + pendientes.Count + ")" : "");
+                progreso(cual, 100 * i / pendientes.Count);
                 Directory.CreateDirectory(Path.GetDirectoryName(destino));
                 try
                 {
-                    web.DownloadFile(UrlArchivo(manifiestoUrl, ruta), temporal);
+                    int hechos = i;
+                    Bajar(UrlArchivo(manifiestoUrl, ruta), temporal, (leido, total, detalle) =>
+                        progreso(cual + " · " + detalle, (int)(100 * (hechos + (total > 0 ? (double)leido / total : 0)) / pendientes.Count)));
                     if (!File.Exists(temporal))
                         throw new IOException("El antivirus borró " + ruta + " apenas se bajó. Si confiás en el server, permitilo en el historial de protección de Windows.");
                     if (Sha256(temporal) != pendientes[i].Key)
@@ -1227,6 +1256,34 @@ class Lienzo : Form
     protected int altoArrastre = 76;
     Point arrastre;
     bool arrastrando;
+    readonly Stopwatch reloj = Stopwatch.StartNew();
+    readonly Dictionary<object, float[]> animaciones = new Dictionary<object, float[]>(); // clave -> [valor, último ms]
+
+    // Lleva de a poco un valor de 0 a 1 hacia su objetivo (~150 ms) y repinta mientras se mueve.
+    protected float Animar(object clave, bool encendido)
+    {
+        float ahora = reloj.ElapsedMilliseconds, objetivo = encendido ? 1f : 0f;
+        float[] a;
+        if (!animaciones.TryGetValue(clave, out a)) animaciones[clave] = a = new[] { objetivo, ahora };
+        float paso = (ahora - a[1]) / 150f;
+        a[1] = ahora;
+        a[0] = a[0] < objetivo ? Math.Min(objetivo, a[0] + paso) : Math.Max(objetivo, a[0] - paso);
+        if (a[0] != objetivo) BeginInvoke(new Action(Invalidate));
+        // Lo que dejó de dibujarse (por ejemplo, filas que se fueron con el scroll) se olvida.
+        if (animaciones.Count > 300)
+            foreach (object k in animaciones.Where(p => ahora - p.Value[1] > 2000).Select(p => p.Key).ToList()) animaciones.Remove(k);
+        return a[0];
+    }
+
+    protected float Brillo(Rectangle r)
+    {
+        return Animar(r, r.Contains(mouse));
+    }
+
+    protected static Color Mezcla(Color a, Color b, float k)
+    {
+        return Color.FromArgb((int)(a.A + (b.A - a.A) * k), (int)(a.R + (b.R - a.R) * k), (int)(a.G + (b.G - a.G) * k), (int)(a.B + (b.B - a.B) * k));
+    }
 
     public Lienzo(int ancho, int alto)
     {
@@ -1297,8 +1354,8 @@ class Lienzo : Form
 
     protected void Boton(Graphics g, Rectangle r, string texto, bool principal, Action click)
     {
-        bool sobre = r.Contains(mouse) && click != null;
-        Color fondo = click == null ? Color.FromArgb(14, 255, 255, 255) : principal ? (sobre ? Color.FromArgb(255, 186, 72) : Acento) : Color.FromArgb(sobre ? 40 : 20, 255, 255, 255);
+        float k = click == null ? 0 : Brillo(r);
+        Color fondo = click == null ? Color.FromArgb(14, 255, 255, 255) : principal ? Mezcla(Acento, Color.FromArgb(255, 196, 92), k) : Color.FromArgb((int)(20 + 22 * k), 255, 255, 255);
         Relleno(g, r, fondo, 10);
         Centrado(g, texto, Fuentes.Negrita(11.5f), click == null ? Color.FromArgb(110, Texto) : principal ? Oscuro : Texto, r);
         if (click != null) zonas.Add(new Zona { R = r, Click = click });
@@ -1307,7 +1364,7 @@ class Lienzo : Form
     // Píldora para elegir entre opciones (filtros, secciones).
     protected void Chip(Graphics g, Rectangle r, string texto, bool elegido, Action click)
     {
-        Relleno(g, r, elegido ? Acento : Color.FromArgb(r.Contains(mouse) ? 40 : 18, 255, 255, 255), r.Height / 2);
+        Relleno(g, r, elegido ? Acento : Color.FromArgb((int)(18 + 24 * Brillo(r)), 255, 255, 255), r.Height / 2);
         Centrado(g, texto, Fuentes.Negrita(9.5f), elegido ? Oscuro : Texto, r);
         zonas.Add(new Zona { R = r, Click = click });
     }
@@ -1315,17 +1372,17 @@ class Lienzo : Form
     // Interruptor de prendido y apagado (44x24).
     protected void Interruptor(Graphics g, Rectangle r, bool activo, Action click)
     {
-        bool sobre = r.Contains(mouse);
-        Relleno(g, r, activo ? (sobre ? Color.FromArgb(255, 186, 72) : Acento) : Color.FromArgb(sobre ? 70 : 50, 255, 255, 255), r.Height / 2);
+        float k = Brillo(r), lado = Animar("interruptor" + r, activo);
+        Relleno(g, r, Mezcla(Color.FromArgb((int)(50 + 20 * k), 255, 255, 255), Mezcla(Acento, Color.FromArgb(255, 196, 92), k), lado), r.Height / 2);
         int d = r.Height - 6;
-        using (var b = new SolidBrush(activo ? Oscuro : Texto)) g.FillEllipse(b, activo ? r.Right - d - 3 : r.X + 3, r.Y + 3, d, d);
+        using (var b = new SolidBrush(Mezcla(Texto, Oscuro, lado))) g.FillEllipse(b, r.X + 3 + (r.Width - d - 6) * lado, r.Y + 3, d, d);
         zonas.Add(new Zona { R = r, Click = click });
     }
 
     protected void Linea(Graphics g, Rectangle r, bool cruz, Action click)
     {
-        bool sobre = r.Contains(mouse);
-        if (sobre) Relleno(g, r, Color.FromArgb(cruz ? 200 : 40, cruz ? Rojo : Color.White), 8);
+        float k = Brillo(r);
+        if (k > 0) Relleno(g, r, Color.FromArgb((int)((cruz ? 200 : 40) * k), cruz ? Rojo : Color.White), 8);
         using (var p = new Pen(Texto, 1.6f))
         {
             int cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
@@ -1589,7 +1646,7 @@ class Explorador : Lienzo
             string[] fila = filas[i];
             bool carpeta = fila[2] == "d", esMarcado = fila[1] == marcado;
             if (esMarcado) Relleno(g, r, Color.FromArgb(60, Acento), 8);
-            else if (r.Contains(mouse) && Lista.Contains(mouse)) Relleno(g, r, Color.FromArgb(22, 255, 255, 255), 8);
+            else Relleno(g, r, Color.FromArgb((int)(22 * Animar(fila[1], r.Contains(mouse) && Lista.Contains(mouse))), 255, 255, 255), 8);
             // Ícono: carpeta naranja o archivo claro.
             var icono = new Rectangle(r.X + 12, r.Y + 10, 18, 14);
             if (carpeta) { Relleno(g, new Rectangle(icono.X, icono.Y - 3, 8, 5), Color.FromArgb(200, Acento), 2); Relleno(g, icono, Color.FromArgb(200, Acento), 3); }
@@ -1643,6 +1700,7 @@ class Ventana : Lienzo
     readonly Video video = Video.Cargar();
     bool consultando, ocupado, tapada;
     Rectangle menuJuego = Rectangle.Empty;
+    double cambioPestana = -1000;
 
     EstadoServidor server = new EstadoServidor();
     bool serverConsultado;
@@ -2207,7 +2265,7 @@ class Ventana : Lienzo
         {
             var r = new Rectangle(caja.X + 6, caja.Y + 6 + i * 42, caja.Width - 12, 42);
             Action a = items[i].Value;
-            if (a != null && r.Contains(mouse)) Relleno(g, r, Color.FromArgb(28, 255, 255, 255), 10);
+            if (a != null) Relleno(g, r, Color.FromArgb((int)(28 * Brillo(r)), 255, 255, 255), 10);
             Escribir(g, items[i].Key, Fuentes.Texto(12f), a != null ? Texto : Color.FromArgb(110, Gris), r.X + 14, r.Y + 11);
             if (a != null) zonas.Add(new Zona { R = r, Click = a, Menu = true });
         }
@@ -2246,6 +2304,7 @@ class Ventana : Lienzo
 
     void Pestana(string p)
     {
+        if (p != pestana) cambioPestana = tiempo.Elapsed.TotalMilliseconds;
         pestana = p;
         scroll = 0;
         detalle.Visible = p == "soporte";
@@ -2294,6 +2353,10 @@ class Ventana : Lienzo
         Sombra(g, new Rectangle(0, 0, 520, Alto), 150, 0, 0f);
 
         DibujarArriba(g);
+        // Al cambiar de pestaña, el contenido entra subiendo un poco y aclarándose (~200 ms).
+        float t = Math.Min(1f, (float)(tiempo.Elapsed.TotalMilliseconds - cambioPestana) / 200f), k = 1 - (1 - t) * (1 - t) * (1 - t);
+        var estado0 = g.Save();
+        g.TranslateTransform(0, 12 * (1 - k));
         if (pestana == "noticias") DibujarNoticias(g);
         else if (pestana == "mods") DibujarMods(g);
         else if (pestana == "juego") DibujarJuego(g);
@@ -2301,6 +2364,8 @@ class Ventana : Lienzo
         else if (pestana == "soporte") DibujarSoporte(g);
         else if (pestana == "novedades") DibujarNovedades(g);
         else DibujarInicio(g);
+        if (k < 1 && pestana != "inicio") Relleno(g, Contenido, Color.FromArgb((int)(220 * (1 - k)), 12, 14, 20), 16);
+        g.Restore(estado0);
         DibujarTarjeta(g);
         DibujarPie(g);
         DibujarMenu(g);
@@ -2318,8 +2383,8 @@ class Ventana : Lienzo
             Font f = Fuentes.Titulo(19f);
             int w = Medir(g, p[1], f);
             var r = new Rectangle(x - 8, 20, w + 16, 40);
-            bool activa = pestana == p[0], sobre = r.Contains(mouse);
-            Escribir(g, p[1], f, activa || sobre ? Texto : Gris, x, 26);
+            bool activa = pestana == p[0];
+            Escribir(g, p[1], f, activa ? Texto : Mezcla(Gris, Texto, Brillo(r)), x, 26);
             if (activa) Relleno(g, new Rectangle(x, 56, 18, 3), Acento, 2);
             string cap = p[0];
             zonas.Add(new Zona { R = r, Click = delegate { Pestana(cap); } });
@@ -2444,7 +2509,7 @@ class Ventana : Lienzo
             string m = Soporte.Motivos[i];
             var r = new Rectangle(area.X + (i % 2) * (ancho + 10), area.Y + 22 + (i / 2) * 38, ancho, 32);
             bool elegido = motivo == m;
-            Relleno(g, r, elegido ? Color.FromArgb(55, Acento) : Color.FromArgb(r.Contains(mouse) ? 36 : 16, 255, 255, 255), 10);
+            Relleno(g, r, elegido ? Color.FromArgb(55, Acento) : Color.FromArgb((int)(16 + 20 * Brillo(r)), 255, 255, 255), 10);
             Punto(g, r.X + 14, r.Y + 16, elegido ? Acento : Gris);
             Escribir(g, m, Fuentes.Negrita(11.5f), Texto, r.X + 26, r.Y + 7);
             zonas.Add(new Zona { R = r, Click = delegate { motivo = m; Invalidate(); } });
@@ -2661,8 +2726,7 @@ class Ventana : Lienzo
         }
 
         var jugar = new Rectangle(x, t.Bottom - 92, t.Width - 56, 64);
-        bool sobre = jugar.Contains(mouse) && !ocupado;
-        Relleno(g, jugar, ocupado ? Color.FromArgb(120, Acento) : sobre ? Color.FromArgb(255, 186, 72) : Acento, 14);
+        Relleno(g, jugar, ocupado ? Color.FromArgb(120, Acento) : Mezcla(Acento, Color.FromArgb(255, 196, 92), Brillo(jugar)), 14);
         Centrado(g, ocupado ? "ESPERÁ..." : "JUGAR", Fuentes.Titulo(34f), Oscuro, jugar);
         if (!ocupado) zonas.Add(new Zona { R = jugar, Click = Jugar });
     }
@@ -2671,7 +2735,7 @@ class Ventana : Lienzo
     {
         using (var b = new SolidBrush(Color.FromArgb(40, 255, 255, 255))) g.FillRectangle(b, 0, Alto - 3, Ancho, 3);
         if (progreso > 0) using (var b = new SolidBrush(Acento)) g.FillRectangle(b, 0, Alto - 3, Ancho * progreso / 100, 3);
-        Escribir(g, Recortar(g, (ocupado ? "● " : "") + estado, 640, Fuentes.Texto(11f)), Fuentes.Texto(11f), Gris, 40, Alto - 36);
+        Escribir(g, Recortar(g, (ocupado ? "● " : "") + estado, Tarjeta.X - 80, Fuentes.Texto(11f)), Fuentes.Texto(11f), Gris, 40, Alto - 36);
 
         int x = Tarjeta.Right;
         for (int i = Config.Redes.Length - 1; i >= 0; i--)
@@ -3140,6 +3204,9 @@ static class Prueba
             Ver(nueva == Path.Combine(carpeta, "nuevo", "GTA San Andreas") && File.ReadAllText(Path.Combine(nueva, "models", "gta3.img")) == "img" && File.Exists(Path.Combine(viejo, "gta_sa.exe")), "mover: copia todo y no borra la vieja");
             Ver(Tira(() => Mudanza.Copiar(viejo, Path.Combine(carpeta, "nuevo"), delegate { })), "mover: no pisa una carpeta con archivos");
             Ver(Tira(() => Mudanza.Copiar(viejo, viejo, delegate { })), "mover: no se mete adentro de sí misma");
+            Ver(Actualizador.Detalle(5 << 20, 0, 0.5) == "5,0 MB", "detalle: sin total ni velocidad al principio");
+            Ver(Actualizador.Detalle(10 << 20, 40 << 20, 5) == "10,0 de 40,0 MB · 2,0 MB/s · faltan 15 s", "detalle: velocidad y lo que falta");
+            Ver(Actualizador.Detalle(10 << 20, 1000L << 20, 10).EndsWith("faltan 17 min"), "detalle: más de un minuto en minutos");
         }
         finally { Directory.Delete(carpeta, true); }
 
