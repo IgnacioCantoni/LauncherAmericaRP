@@ -1,0 +1,4 @@
+# Archivos que no pueden estar en el GTA. El launcher los saca (los mueve a _prohibidos) en cada JUGAR.
+# Una línea por archivo: una ruta (cleo/aimbot.cs), un nombre en cualquier carpeta (s0beit.asi),
+# con comodines (cleo/*wallhack*) o una huella SHA-256 para atraparlo aunque le cambien el nombre.
+# El formato completo está en el README, en "Archivos prohibidos".

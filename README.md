@@ -7,7 +7,7 @@ Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe
 - **Jugar**: guarda tu nick y abre el GTA conectado directo al server. Usa los mismos datos que el cliente SA-MP (nick y carpeta del GTA en el registro, `HKCU\Software\SAMP`).
 - **Estado del server**: cada 15 segundos muestra si está en línea, los jugadores y el ping.
 - **Mi juego**: la carpeta del GTA y si están bien la versión 1.0, el SA-MP 0.3.7 (`samp.exe` y `samp.dll`) y los archivos del server. El resumen también está en la tarjeta del server, junto al botón JUGAR.
-- **Noticias**: muestra `noticias.txt` de este repo.
+- **Noticias**: muestra `noticias.txt` de este repo, cada noticia con su fecha, etiqueta y título (ver abajo).
 - **Mods**: lista los archivos de `actualizaciones/archivos/` y cuáles le faltan al jugador. Antes de jugar (o con "Actualizar") baja los que no tenga o tenga distintos.
 - **Fondo en video**: `fondo/video.bin` (armado desde el video del server) se repite en bucle detrás de todo. Va dentro del `.exe`.
 - **Se actualiza solo**: al abrir, mira `launcher/version.txt`. Si hay una versión nueva, la baja de la Release de GitHub, revisa su huella, se reemplaza y se vuelve a abrir (ver abajo).
@@ -16,6 +16,9 @@ Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe
 - **Archivos rápidos**: recuerda el tamaño y la fecha de cada archivo revisado (`%LOCALAPPDATA%\AmericaRP\huellas.txt`) y solo vuelve a leer los que cambiaron.
 - **Si el juego se cierra de golpe**: el launcher sigue al GTA. Cuando se cierra vuelve a aparecer y, si fue un crash, lo avisa con el código y deja un informe para soporte en `%LOCALAPPDATA%\AmericaRP\informes` (versión, Windows, ENB, tiempo jugado y las últimas líneas del chat de SA-MP). También cierra los procesos del CEF que quedaron colgados.
 - **Pantallas del server**: instala el cliente de CEF para el teléfono y las demás pantallas en HTML del server (ver abajo).
+- **Soporte**: en MI JUEGO, "COPIAR INFORME" copia en un solo texto la versión del launcher, el nick, Windows, la carpeta, cada revisión, el ENB y el último cierre de golpe, para pegarlo en Discord. Si `Config.Redes` tiene el link de Soporte, ofrece abrirlo.
+- **Ajustes**: pestaña AJUSTES con dos opciones que se guardan en `%LOCALAPPDATA%\AmericaRP\ajustes.txt`: esconder el launcher en la bandeja (al lado del reloj) mientras jugás, que viene activado, y actualizar el launcher sin preguntar, que viene desactivado. También abre la carpeta de informes de cierres.
+- **Archivos prohibidos**: en cada JUGAR lee `prohibidos.txt` de este repo y saca del GTA lo que coincida (ver abajo).
 - **Redes y soporte**: links de Discord, YouTube, TikTok, Instagram y Soporte en el pie; aparecen los que tengan link en `Config.Redes`.
 - **Tipografías**: Montserrat Bold Italic (títulos, la misma del video) y Barlow (textos), con licencia libre SIL OFL (ver `fuentes/`). Van dentro del `.exe`.
 
@@ -37,7 +40,29 @@ Después de cambiarlos, volvé a compilar y repartí el `.exe` nuevo.
 
 ## Publicar noticias
 
-Editá `noticias.txt`, commit y push. Los launchers la leen al abrirse.
+Editá `noticias.txt`, commit y push. Los launchers la leen al abrirse. La más nueva va arriba y su título sale también en INICIO.
+
+```
+## 2026-11-04 | Actualización | Teléfono nuevo
+Ahora el teléfono se abre con /telefono.
+- Se cierra con Esc.
+- Tiene chat y contactos.
+```
+
+Cada `## fecha | etiqueta | título` abre una noticia; las líneas de abajo son su texto y las que empiezan con `- ` salen como puntos. Las etiquetas con color propio son Actualización, Arreglo, Evento y Aviso; cualquier otra sale en gris. Un archivo sin `## ` se muestra entero, como antes.
+
+## Archivos prohibidos
+
+`prohibidos.txt` tiene un archivo por línea. Cada vez que alguien toca JUGAR, el launcher lo lee y revisa la carpeta del GTA:
+
+- `cleo/aimbot.cs`: esa ruta exacta. Con `*` y `?` de comodines: `cleo/*wallhack*`.
+- `s0beit.asi` (sin `/`): ese nombre en cualquier carpeta.
+- Una huella SHA-256 (64 letras y números, la saca `certutil -hashfile archivo SHA256`): ese archivo aunque le cambien el nombre. Se revisan solo `.cs`, `.cleo`, `.asi`, `.dll`, `.lua`, `.luac`, `.exe` y `.sf` de menos de 50 MB.
+- `#` empieza un comentario.
+
+Lo que coincide no se borra: se mueve a `<GTA>\_prohibidos\<fecha>` y el jugador ve qué se sacó. Nunca saca `gta_sa.exe`, `samp.exe`, `samp.dll` ni nada que reparta el launcher, aunque una regla lo agarre. Para sumar uno, agregá la línea, commit y push: llega en el próximo JUGAR, sin versión nueva del launcher.
+
+Solo frena a quien entra por el launcher. Quien abre `samp.exe` a mano se lo salta, así que contra trampas lo que vale es lo que controle el server.
 
 ## Modo GTA Full: ENB
 

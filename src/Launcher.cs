@@ -21,7 +21,7 @@ static class Config
 {
     // Lo que cambia de un server a otro. Después de tocarlo, volvé a compilar.
     // Versión de este launcher. Para sacar una nueva, ver "Sacar una versión nueva del launcher" en el README.
-    public const string Version = "1.2.0";
+    public const string Version = "1.3.0";
     public const string Host = "127.0.0.1";
     public const int Puerto = 7777;
     // Vacío = sin noticias / sin actualizaciones.
@@ -31,6 +31,8 @@ static class Config
     // El launcher se actualiza solo: launcher/version.txt dice la última versión y la huella de su .exe, que está en la
     // Release de GitHub con la etiqueta v<versión>. VersionUrl vacío = no se actualiza.
     public const string VersionUrl = Repo + "launcher/version.txt";
+    // Archivos que no pueden estar en el GTA (cheats, mods rotos). Se revisa en cada JUGAR. Vacío = no se revisa.
+    public const string ProhibidosUrl = Repo + "prohibidos.txt";
     public const string ExeUrl = "https://github.com/IgnacioCantoni/LauncherAmericaRP/releases/download/v{0}/AmericaRP.exe";
     public const string DescargasUrl = "https://github.com/IgnacioCantoni/LauncherAmericaRP/releases/latest";
     // DirectX 9 de junio de 2010, el instalador oficial de Microsoft (100.275.120 bytes, firmado por Microsoft). Trae las
@@ -236,6 +238,193 @@ static class Instalacion
     {
         long tam = new FileInfo(Path.Combine(carpeta, "gta_sa.exe")).Length;
         return TamanosGta10.Contains(tam);
+    }
+}
+
+// Noticias: en noticias.txt cada "## fecha | etiqueta | título" abre una noticia y las líneas que siguen son su texto
+// ("- " al principio = un punto de lista). Un archivo sin "## " se muestra entero como una sola noticia.
+class Noticia { public string Fecha = "", Etiqueta = "", Titulo = ""; public List<string> Lineas = new List<string>(); }
+
+static class Noticias
+{
+    public static List<Noticia> Leer(string texto)
+    {
+        var lista = new List<Noticia>();
+        Noticia actual = null;
+        foreach (string cruda in texto.Replace("\r", "").Split('\n'))
+        {
+            string l = cruda.TrimEnd();
+            if (l.StartsWith("## "))
+            {
+                string[] p = l.Substring(3).Split('|').Select(x => x.Trim()).ToArray();
+                actual = new Noticia();
+                if (p.Length >= 3) { actual.Fecha = p[0]; actual.Etiqueta = p[1]; actual.Titulo = string.Join(" | ", p.Skip(2)); }
+                else actual.Titulo = l.Substring(3).Trim();
+                lista.Add(actual);
+                continue;
+            }
+            if (actual == null)
+            {
+                if (l.Length == 0) continue;
+                actual = new Noticia();
+                lista.Add(actual);
+            }
+            actual.Lineas.Add(l);
+        }
+        foreach (Noticia n in lista)
+            while (n.Lineas.Count > 0 && n.Lineas[n.Lineas.Count - 1].Length == 0) n.Lineas.RemoveAt(n.Lineas.Count - 1);
+        return lista;
+    }
+}
+
+// Ajustes del jugador, en %LOCALAPPDATA%\AmericaRP\ajustes.txt (una línea clave=valor por ajuste).
+static class Ajustes
+{
+    public static string Ruta = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "ajustes.txt");
+
+    static Dictionary<string, string> Leer()
+    {
+        var d = new Dictionary<string, string>();
+        try
+        {
+            if (File.Exists(Ruta))
+                foreach (string l in File.ReadAllLines(Ruta))
+                {
+                    int i = l.IndexOf('=');
+                    if (i > 0) d[l.Substring(0, i).Trim()] = l.Substring(i + 1).Trim();
+                }
+        }
+        catch (Exception) { }
+        return d;
+    }
+
+    static bool Si(string clave, bool porDefecto)
+    {
+        string v;
+        return Leer().TryGetValue(clave, out v) ? v == "si" : porDefecto;
+    }
+
+    static void Poner(string clave, bool valor)
+    {
+        Dictionary<string, string> d = Leer();
+        d[clave] = valor ? "si" : "no";
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Ruta));
+            File.WriteAllLines(Ruta, d.Select(e => e.Key + "=" + e.Value));
+        }
+        catch (Exception) { }
+    }
+
+    // Mientras jugás el launcher se va a la bandeja (al lado del reloj) en vez de quedar minimizado.
+    public static bool Bandeja { get { return Si("bandeja", true); } set { Poner("bandeja", value); } }
+    // Si hay una versión nueva del launcher, se instala sin preguntar.
+    public static bool ActualizarSolo { get { return Si("actualizar_solo", false); } set { Poner("actualizar_solo", value); } }
+}
+
+// Informe para pegar en el canal de soporte: lo que soporte siempre pregunta, en un solo texto.
+static class Soporte
+{
+    public static string DirInformes() { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "informes"); }
+
+    // El encabezado del último informe de cierre (sin el chat), o "" si no hay.
+    public static string UltimoCierre(string dir)
+    {
+        if (!Directory.Exists(dir)) return "";
+        string ultimo = Directory.GetFiles(dir, "cierre-*.txt").OrderBy(f => Path.GetFileName(f), StringComparer.Ordinal).LastOrDefault();
+        if (ultimo == null) return "";
+        return string.Join("\n", File.ReadAllLines(ultimo).Skip(1).TakeWhile(l => l.Trim().Length > 0));
+    }
+
+    public static string Armar(List<string[]> filas, string carpeta, string nick, bool enb, string ultimoCierre)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("**AMERICA RP · informe para soporte**");
+        sb.AppendLine("Fecha: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm"));
+        sb.AppendLine("Launcher: " + Config.Version);
+        sb.AppendLine("Nick: " + (nick.Length == 0 ? "-" : nick));
+        sb.AppendLine("Windows: " + Environment.OSVersion.VersionString + (Environment.Is64BitOperatingSystem ? ", 64 bits" : ", 32 bits"));
+        sb.AppendLine("Carpeta del GTA: " + (carpeta.Length == 0 ? "sin elegir" : carpeta));
+        foreach (string[] f in filas) sb.AppendLine(f[0] + ": " + f[1]);
+        sb.AppendLine("ENB: " + (enb ? "activo" : "no"));
+        sb.AppendLine("Último cierre de golpe: " + (ultimoCierre.Length == 0 ? "ninguno" : "\n" + ultimoCierre));
+        return sb.ToString();
+    }
+}
+
+// prohibidos.txt: cada línea es una ruta dentro del GTA, con * y ? de comodines (sin "/" vale para cualquier carpeta),
+// o una huella SHA-256 de 64 letras, para atrapar el archivo aunque le cambien el nombre. "#" empieza un comentario.
+// Lo que coincide no se borra: se mueve a _prohibidos\<fecha> dentro del GTA.
+static class Prohibidos
+{
+    public const string Carpeta = "_prohibidos";
+    // Solo se les saca la huella a estos (los cheats son scripts o dll); los .img de 1 GB no se leen.
+    static readonly string[] ConHuella = { ".cs", ".cleo", ".asi", ".dll", ".lua", ".luac", ".exe", ".sf" };
+    // Lo que el juego necesita no se saca nunca, aunque una regla mal escrita lo agarre.
+    static readonly string[] Base = { "gta_sa.exe", "samp.exe", "samp.dll", "vorbisfile.dll", "vorbis.dll", "eax.dll", "ogg.dll" };
+
+    public class Lista { public List<Regex> Rutas = new List<Regex>(); public HashSet<string> Huellas = new HashSet<string>(); }
+
+    public static Lista Leer(string texto)
+    {
+        var l = new Lista();
+        foreach (string cruda in texto.Replace("\r", "").Split('\n'))
+        {
+            int c = cruda.IndexOf('#');
+            string r = (c >= 0 ? cruda.Substring(0, c) : cruda).Trim().Replace('\\', '/').TrimStart('/');
+            if (r.Length == 0 || r.Contains("..")) continue;
+            if (Regex.IsMatch(r, "^[0-9a-fA-F]{64}$")) { l.Huellas.Add(r.ToLowerInvariant()); continue; }
+            string patron = Regex.Escape(r).Replace("\\*", "[^/]*").Replace("\\?", "[^/]");
+            l.Rutas.Add(new Regex((r.Contains("/") ? "^" : "(^|/)") + patron + "$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant));
+        }
+        return l;
+    }
+
+    // Rutas (con "/", relativas al GTA) que la lista prohíbe. protegidos: lo que reparte el launcher, que nunca se saca.
+    public static List<string> Buscar(string carpetaGta, Lista lista, IEnumerable<string> protegidos)
+    {
+        var encontrados = new List<string>();
+        if (lista.Rutas.Count == 0 && lista.Huellas.Count == 0) return encontrados;
+        var cuidar = new HashSet<string>(Base.Concat(protegidos).Select(x => x.Replace('\\', '/').ToLowerInvariant()));
+        var pendientes = new Stack<string>();
+        pendientes.Push(carpetaGta);
+        while (pendientes.Count > 0)
+        {
+            string dir = pendientes.Pop();
+            string[] archivos, carpetas;
+            try { archivos = Directory.GetFiles(dir); carpetas = Directory.GetDirectories(dir); }
+            catch (Exception) { continue; }
+            foreach (string sub in carpetas)
+                if (!string.Equals(Path.GetFileName(sub), Carpeta, StringComparison.OrdinalIgnoreCase) || dir != carpetaGta) pendientes.Push(sub);
+            foreach (string f in archivos)
+            {
+                string ruta = f.Substring(carpetaGta.Length).TrimStart('\\', '/').Replace('\\', '/');
+                if (cuidar.Contains(ruta.ToLowerInvariant())) continue;
+                bool malo = lista.Rutas.Any(r => r.IsMatch(ruta));
+                if (!malo && lista.Huellas.Count > 0 && ConHuella.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                {
+                    try { malo = new FileInfo(f).Length < 50000000 && lista.Huellas.Contains(Actualizador.HuellaRapida(f)); }
+                    catch (Exception) { }
+                }
+                if (malo) encontrados.Add(ruta);
+            }
+        }
+        encontrados.Sort(StringComparer.OrdinalIgnoreCase);
+        return encontrados;
+    }
+
+    // Mueve cada archivo a _prohibidos\<fecha>\<ruta>. Devuelve la carpeta donde quedaron.
+    public static string Sacar(string carpetaGta, List<string> rutas)
+    {
+        string destino = Path.Combine(carpetaGta, Carpeta, DateTime.Now.ToString("yyyyMMdd-HHmmss"));
+        foreach (string ruta in rutas)
+        {
+            string nuevo = Path.Combine(destino, ruta.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(nuevo));
+            if (File.Exists(nuevo)) nuevo += "." + Guid.NewGuid().ToString("N").Substring(0, 6);
+            File.Move(Path.Combine(carpetaGta, ruta.Replace('/', Path.DirectorySeparatorChar)), nuevo);
+        }
+        return destino;
     }
 }
 
@@ -809,6 +998,7 @@ class Ventana : Form
     class Zona { public Rectangle R; public Action Click; }
     readonly List<Zona> zonas = new List<Zona>();
     readonly TextBox nick = new TextBox();
+    readonly NotifyIcon bandeja = new NotifyIcon();
     readonly Timer reloj = new Timer(), cuadros = new Timer();
     readonly Stopwatch tiempo = Stopwatch.StartNew();
     readonly Video video = Video.Cargar();
@@ -818,6 +1008,7 @@ class Ventana : Form
     EstadoServidor server = new EstadoServidor();
     bool serverConsultado;
     string pestana = "inicio", noticias = "Cargando noticias...", estado = "Listo para jugar.", mods = "";
+    List<Noticia> listaNoticias = Noticias.Leer("Cargando noticias...");
     int progreso, scroll;
     Actualizador.Revision revision;
     List<string> faltantes = new List<string>(), faltaDx = new List<string>();
@@ -843,6 +1034,11 @@ class Ventana : Form
         nick.Text = Registro.Nick;
         nick.TextChanged += delegate { Invalidate(); };
         Controls.Add(nick);
+
+        bandeja.Text = "AMERICA RP";
+        bandeja.Icon = Icon;
+        bandeja.MouseClick += delegate { Restaurar(); };
+        FormClosed += delegate { bandeja.Visible = false; bandeja.Dispose(); };
 
         RevisarInstalacion();
         reloj.Interval = 15000;
@@ -895,9 +1091,13 @@ class Ventana : Form
 
     async void CargarNoticias()
     {
-        if (Config.NoticiasUrl.Length == 0) { noticias = "Todavía no hay noticias."; return; }
-        try { noticias = await Task.Run(() => Web.Texto(Config.NoticiasUrl)); }
-        catch (Exception ex) { noticias = "No se pudieron cargar las noticias: " + ex.Message; }
+        if (Config.NoticiasUrl.Length == 0) noticias = "Todavía no hay noticias.";
+        else
+        {
+            try { noticias = await Task.Run(() => Web.Texto(Config.NoticiasUrl)); }
+            catch (Exception ex) { noticias = "No se pudieron cargar las noticias: " + ex.Message; }
+        }
+        listaNoticias = Noticias.Leer(noticias);
     }
 
     async void RevisarMods()
@@ -920,8 +1120,9 @@ class Ventana : Form
         try { r = Autoactualizacion.Leer(await Task.Run(() => Web.Texto(Config.VersionUrl))); }
         catch (Exception) { return; } // sin internet o sin version.txt: se sigue con este
         if (r.Key <= new Version(Config.Version) || ocupado) return;
-        if (MessageBox.Show(this, "Hay una versión nueva del launcher (" + r.Key + "). Se baja en unos segundos y se vuelve a abrir solo.\n\n¿Actualizar ahora?",
-            "AMERICA RP", MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes || ocupado) return;
+        if (!Ajustes.ActualizarSolo && MessageBox.Show(this, "Hay una versión nueva del launcher (" + r.Key + "). Se baja en unos segundos y se vuelve a abrir solo.\n\n¿Actualizar ahora?",
+            "AMERICA RP", MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes) return;
+        if (ocupado) return;
         Ocupar(true);
         string exe = Application.ExecutablePath;
         try { await Task.Run(() => Autoactualizacion.Instalar(exe, r.Key, r.Value, Avisar)); }
@@ -969,9 +1170,10 @@ class Ventana : Form
             if (MessageBox.Show(this, problema[1] + "\n\n¿Seguir igual?", "Carpeta del GTA", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return false;
         }
+        var repartidos = new List<string>();
         if (Config.ManifiestoUrl.Length > 0 && File.Exists(Path.Combine(carpeta, "gta_sa.exe")))
         {
-            try { await Task.Run(() => Actualizador.Aplicar(carpeta, Config.ManifiestoUrl, Avisar)); }
+            try { repartidos.AddRange((await Task.Run(() => Actualizador.Aplicar(carpeta, Config.ManifiestoUrl, Avisar))).Entradas.Select(e => e.Value)); }
             catch (Exception ex)
             {
                 Avisar("No se pudo actualizar.", 0);
@@ -998,6 +1200,28 @@ class Ventana : Form
                 File.WriteAllText(EnbArchivo(), Actualizador.Huellas(carpeta, rutas));
             }
             catch (Exception ex) { Avisar("No se pudo instalar el ENB: " + ex.Message, 0); }
+        }
+        if (Config.ProhibidosUrl.Length > 0 && File.Exists(Path.Combine(carpeta, "gta_sa.exe")))
+        {
+            if (EnbActivo())
+                try { repartidos.AddRange(Actualizador.LeerManifiesto(File.ReadAllText(EnbArchivo())).Select(e => e.Value)); } catch (Exception) { }
+            try
+            {
+                Avisar("Revisando archivos prohibidos...", 0);
+                List<string> malos = await Task.Run(() => Prohibidos.Buscar(carpeta, Prohibidos.Leer(Web.Texto(Config.ProhibidosUrl)), repartidos));
+                if (malos.Count > 0)
+                {
+                    string donde = await Task.Run(() => Prohibidos.Sacar(carpeta, malos));
+                    MessageBox.Show(this, "Saqué del GTA estos archivos, que no se pueden usar en el server:\n\n" + string.Join("\n", malos.Take(15)) +
+                        (malos.Count > 15 ? "\n... y " + (malos.Count - 15) + " más" : "") + "\n\nNo se borraron: quedaron en " + donde,
+                        "Archivos prohibidos", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Sin internet o con un archivo trabado no se frena el juego: el server es el que controla de verdad.
+                Avisar("No se pudieron revisar los archivos prohibidos: " + ex.Message, 0);
+            }
         }
         RevisarInstalacion();
         if (faltantes.Count > 0)
@@ -1130,7 +1354,12 @@ class Ventana : Form
             DateTime inicio = DateTime.Now;
             Process.Start(new ProcessStartInfo(Path.Combine(carpeta, "samp.exe"), Config.Host + ":" + Config.Puerto) { WorkingDirectory = carpeta });
             Avisar("Abriendo el GTA...", 100);
-            WindowState = FormWindowState.Minimized;
+            if (Ajustes.Bandeja)
+            {
+                bandeja.Visible = true;
+                Hide();
+            }
+            else WindowState = FormWindowState.Minimized;
             Vigilar(carpeta, inicio);
         }
         catch (Exception ex) { MessageBox.Show(this, "No se pudo abrir el juego: " + ex.Message, "AMERICA RP", MessageBoxButtons.OK, MessageBoxIcon.Error); }
@@ -1143,10 +1372,9 @@ class Ventana : Form
         Juego.Cierre c;
         try { c = await Task.Run(() => Juego.Esperar(carpeta, inicio)); }
         catch (Exception) { return; }
-        if (c == null) { Avisar("No se vio abrir el GTA. Si no abrió, probá de nuevo.", 0); return; }
+        if (c == null) { Restaurar(); Avisar("No se vio abrir el GTA. Si no abrió, probá de nuevo.", 0); return; }
         try { await Task.Run(() => Juego.CerrarCefColgado(carpeta)); } catch (Exception) { }
-        WindowState = FormWindowState.Normal;
-        Activate();
+        Restaurar();
         if (c.Bien) { Avisar("Listo para jugar.", 100); return; }
         string informe;
         try { informe = Juego.GuardarInforme(c, carpeta, EnbActivo()); }
@@ -1158,6 +1386,26 @@ class Ventana : Form
         {
             try { Process.Start("explorer.exe", "/select,\"" + informe + "\""); } catch (Exception) { }
         }
+    }
+
+    void Restaurar()
+    {
+        bandeja.Visible = false;
+        Show();
+        WindowState = FormWindowState.Normal;
+        Activate();
+    }
+
+    void CopiarInforme()
+    {
+        string texto = Soporte.Armar(Revisiones(), Carpeta(), nick.Text.Trim(), EnbActivo(), Soporte.UltimoCierre(Soporte.DirInformes()));
+        try { Clipboard.SetText(texto); }
+        catch (Exception ex) { MessageBox.Show(this, "No se pudo copiar el informe: " + ex.Message, "Soporte", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+        string soporte = Config.Redes.Where(r => r.Key == "Soporte").Select(r => r.Value).FirstOrDefault() ?? "";
+        Avisar("Informe copiado. Pegalo con Ctrl+V en el canal de soporte.", 100);
+        if (MessageBox.Show(this, "Copié el informe. Pegalo con Ctrl+V en el canal de soporte del Discord y contá qué te pasa." +
+            (soporte.Length > 0 ? "\n\n¿Abrir el soporte ahora?" : ""), "Soporte",
+            soporte.Length > 0 ? MessageBoxButtons.YesNo : MessageBoxButtons.OK, MessageBoxIcon.Information) == DialogResult.Yes) Abrir(soporte);
     }
 
     static void Abrir(string url)
@@ -1231,6 +1479,7 @@ class Ventana : Form
         if (pestana == "noticias") DibujarNoticias(g);
         else if (pestana == "mods") DibujarMods(g);
         else if (pestana == "juego") DibujarJuego(g);
+        else if (pestana == "ajustes") DibujarAjustes(g);
         else DibujarInicio(g);
         DibujarTarjeta(g);
         DibujarPie(g);
@@ -1242,7 +1491,7 @@ class Ventana : Form
         Neon(g, "America RP", Fuentes.Titulo(34f), 76, 20);
 
         int x = 300;
-        foreach (string[] p in new[] { new[] { "inicio", "INICIO" }, new[] { "noticias", "NOTICIAS" }, new[] { "mods", "MODS" }, new[] { "juego", "MI JUEGO" } })
+        foreach (string[] p in new[] { new[] { "inicio", "INICIO" }, new[] { "noticias", "NOTICIAS" }, new[] { "mods", "MODS" }, new[] { "juego", "MI JUEGO" }, new[] { "ajustes", "AJUSTES" } })
         {
             Font f = Fuentes.Titulo(19f);
             int w = Medir(g, p[1], f);
@@ -1264,7 +1513,8 @@ class Ventana : Form
         int y = Contenido.Bottom - 150;
         Escribir(g, "SERVIDOR DE ROLEPLAY EN ESPAÑOL", Fuentes.Negrita(10f), Acento, 44, y);
         Escribir(g, "BIENVENIDO A AMERICA RP", Fuentes.Titulo(58f), Texto, 40, y + 18);
-        string primera = noticias.Replace("\r", "").Split('\n').FirstOrDefault(l => l.Trim().Length > 0 && !l.Contains("Bienvenido")) ?? "";
+        Noticia ultima = listaNoticias.FirstOrDefault();
+        string primera = ultima == null ? "" : ultima.Titulo.Length > 0 ? ultima.Titulo : ultima.Lineas.FirstOrDefault(l => l.Trim().Length > 0 && !l.Contains("Bienvenido")) ?? "";
         using (var b = new SolidBrush(Color.FromArgb(220, Texto)))
             g.DrawString(primera, Fuentes.Texto(13f), b, new RectangleF(44, y + 104, 600, 50));
     }
@@ -1279,15 +1529,81 @@ class Ventana : Form
     void DibujarNoticias(Graphics g)
     {
         Rectangle area = Hoja(g, "NOTICIAS");
-        Font f = Fuentes.Texto(13f);
-        using (var b = new SolidBrush(Texto))
+        Font texto = Fuentes.Texto(12.5f), titulo = Fuentes.Titulo(24f), chica = Fuentes.Negrita(9.5f);
+        g.SetClip(area);
+        int y = area.Y - scroll;
+        foreach (Noticia n in listaNoticias)
         {
-            int alto = (int)g.MeasureString(noticias, f, area.Width).Height;
-            scroll = Math.Min(scroll, Math.Max(0, alto - area.Height));
-            g.SetClip(area);
-            g.DrawString(noticias, f, b, new RectangleF(area.X, area.Y - scroll, area.Width, alto + 20));
-            g.ResetClip();
+            if (n.Etiqueta.Length > 0 || n.Fecha.Length > 0)
+            {
+                int x = area.X;
+                if (n.Etiqueta.Length > 0)
+                {
+                    string e = n.Etiqueta.ToUpperInvariant();
+                    int w = Medir(g, e, chica) + 16;
+                    using (var b = new SolidBrush(ColorEtiqueta(n.Etiqueta))) g.FillRectangle(b, x, y, w, 20);
+                    Escribir(g, e, chica, Oscuro, x + 8, y + 3);
+                    x += w + 10;
+                }
+                Escribir(g, n.Fecha, chica, Gris, x, y + 3);
+                y += 26;
+            }
+            if (n.Titulo.Length > 0) { Escribir(g, n.Titulo, titulo, Texto, area.X, y); y += 38; }
+            foreach (string l in n.Lineas)
+            {
+                bool punto = l.StartsWith("- ");
+                string t = punto ? l.Substring(2) : l;
+                int sangria = punto ? 18 : 0;
+                int alto = t.Length == 0 ? 10 : (int)g.MeasureString(t, texto, area.Width - sangria).Height;
+                if (punto) Punto(g, area.X + 5, y + 11, Acento);
+                using (var b = new SolidBrush(Color.FromArgb(225, Texto))) g.DrawString(t, texto, b, new RectangleF(area.X + sangria, y, area.Width - sangria, alto + 4));
+                y += alto + 2;
+            }
+            y += 14;
+            using (var p = new Pen(Color.FromArgb(28, 255, 255, 255))) g.DrawLine(p, area.X, y, area.Right, y);
+            y += 18;
         }
+        g.ResetClip();
+        int total = y + scroll - area.Y;
+        scroll = Math.Min(scroll, Math.Max(0, total - area.Height));
+    }
+
+    Color ColorEtiqueta(string etiqueta)
+    {
+        string e = etiqueta.ToLowerInvariant();
+        if (e.StartsWith("actualiz")) return Acento;
+        if (e.StartsWith("arreglo") || e.StartsWith("fix")) return Verde;
+        if (e.StartsWith("evento")) return Color.FromArgb(110, 170, 255);
+        if (e.StartsWith("aviso")) return Rojo;
+        return Gris;
+    }
+
+    void DibujarAjustes(Graphics g)
+    {
+        Rectangle area = Hoja(g, "AJUSTES");
+        int y = area.Y;
+        FilaAjuste(g, area, ref y, "ESCONDER EL LAUNCHER MIENTRAS JUGÁS", "Se va a la bandeja, al lado del reloj, y vuelve solo cuando cerrás el GTA. Si no, queda minimizado.",
+            Ajustes.Bandeja, delegate { Ajustes.Bandeja = !Ajustes.Bandeja; });
+        FilaAjuste(g, area, ref y, "ACTUALIZAR EL LAUNCHER SIN PREGUNTAR", "Cuando sale una versión nueva, se instala sola al abrirlo. Si no, te pregunta antes.",
+            Ajustes.ActualizarSolo, delegate { Ajustes.ActualizarSolo = !Ajustes.ActualizarSolo; });
+        Escribir(g, "INFORMES DE CIERRES DEL GTA", Fuentes.Negrita(13f), Texto, area.X, y + 10);
+        Boton(g, new Rectangle(area.Right - 150, y + 4, 150, 34), "ABRIR", false, delegate
+        {
+            Directory.CreateDirectory(Soporte.DirInformes());
+            Abrir(Soporte.DirInformes());
+        });
+        Escribir(g, "Si el juego se cerró de golpe, acá queda lo que pasó. Soporte te lo puede pedir.", Fuentes.Texto(11f), Gris, area.X, y + 40);
+        Escribir(g, "VERSIÓN DEL LAUNCHER " + Config.Version, Fuentes.Negrita(10f), Gris, area.X, area.Bottom - 20);
+    }
+
+    void FilaAjuste(Graphics g, Rectangle area, ref int y, string nombre, string detalle, bool activo, Action cambiar)
+    {
+        Escribir(g, nombre, Fuentes.Negrita(13f), Texto, area.X, y + 10);
+        // El botón muestra cómo está y lo cambia al tocarlo: naranja = activado.
+        Boton(g, new Rectangle(area.Right - 150, y + 4, 150, 34), activo ? "ACTIVADO" : "DESACTIVADO", activo, cambiar);
+        Escribir(g, detalle, Fuentes.Texto(11f), Gris, area.X, y + 40);
+        using (var p = new Pen(Color.FromArgb(28, 255, 255, 255))) g.DrawLine(p, area.X, y + 66, area.Right, y + 66);
+        y += 76;
     }
 
     void DibujarMods(Graphics g)
@@ -1345,6 +1661,7 @@ class Ventana : Form
             y += 66;
         }
         Boton(g, new Rectangle(area.X, y + 24, 200, 40), "REVISAR Y ACTUALIZAR", true, Actualizar);
+        Boton(g, new Rectangle(area.X + 216, y + 24, 200, 40), "COPIAR INFORME", false, CopiarInforme);
     }
 
     // [nombre, valor, ok|ojo|mal|nada]
@@ -1836,6 +2153,61 @@ static class Prueba
             Actualizador.OlvidarHuellas();
             Directory.Delete(carpeta, true);
         }
+
+        var nots = Noticias.Leer("## 2026-11-04 | Actualización | Teléfono nuevo\r\nAhora el teléfono se abre con /telefono.\n- Se cierra con Esc\n- Anda el chat\n\n## 2026-11-01 | Evento | Carrera | con premio\nTexto\n## Sin partes\n");
+        Ver(nots.Count == 3 && nots[0].Fecha == "2026-11-04" && nots[0].Etiqueta == "Actualización" && nots[0].Titulo == "Teléfono nuevo"
+            && nots[0].Lineas.Count == 3 && nots[0].Lineas[1] == "- Se cierra con Esc" && nots[1].Titulo == "Carrera | con premio" && nots[2].Titulo == "Sin partes" && nots[2].Etiqueta == "", "noticias con formato");
+        var viejas = Noticias.Leer("Hola\n\nchau");
+        Ver(viejas.Count == 1 && viejas[0].Titulo == "" && viejas[0].Lineas.SequenceEqual(new[] { "Hola", "", "chau" }), "noticias en texto plano siguen andando");
+
+        carpeta = Path.Combine(Path.GetTempPath(), "amrp-e3-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(carpeta);
+        string ajustesAntes = Ajustes.Ruta;
+        try
+        {
+            Ajustes.Ruta = Path.Combine(carpeta, "ajustes.txt");
+            Ver(Ajustes.Bandeja && !Ajustes.ActualizarSolo, "ajustes: valores de fábrica");
+            Ajustes.Bandeja = false;
+            Ajustes.ActualizarSolo = true;
+            Ver(!Ajustes.Bandeja && Ajustes.ActualizarSolo && File.ReadAllLines(Ajustes.Ruta).Length == 2, "ajustes: se guardan");
+            File.WriteAllText(Ajustes.Ruta, "basura\n=x\nbandeja=si\n");
+            Ver(Ajustes.Bandeja && !Ajustes.ActualizarSolo, "ajustes: un archivo raro no rompe");
+
+            Ver(Soporte.UltimoCierre(Path.Combine(carpeta, "no-existe")) == "", "soporte: sin informes");
+            File.WriteAllText(Path.Combine(carpeta, "cierre-20261101-100000.txt"), "AMERICA RP\nCódigo de salida: viejo\n\nchat");
+            File.WriteAllText(Path.Combine(carpeta, "cierre-20261104-100000.txt"), "AMERICA RP: el GTA se cerró de golpe\nCódigo de salida: 0xC0000005\nTiempo jugado: 3 min\n\nÚltimas líneas\nhola");
+            string uc = Soporte.UltimoCierre(carpeta);
+            Ver(uc == "Código de salida: 0xC0000005\nTiempo jugado: 3 min", "soporte: toma el último cierre sin el chat");
+            string inf = Soporte.Armar(new List<string[]> { new[] { "DirectX 9", "OK", "ok" } }, "D:\\GTA", "Juan_Perez", false, uc);
+            Ver(inf.Contains("Launcher: " + Config.Version) && inf.Contains("DirectX 9: OK") && inf.Contains("Nick: Juan_Perez") && inf.Contains("0xC0000005") && !inf.Contains("hola"), "soporte: arma el informe");
+        }
+        finally
+        {
+            Ajustes.Ruta = ajustesAntes;
+            Directory.Delete(carpeta, true);
+        }
+
+        carpeta = Path.Combine(Path.GetTempPath(), "amrp-p-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(carpeta, "cleo"));
+            Directory.CreateDirectory(Path.Combine(carpeta, "_prohibidos", "viejo", "cleo"));
+            File.WriteAllText(Path.Combine(carpeta, "cleo", "Aimbot_v2.cs"), "x");
+            File.WriteAllText(Path.Combine(carpeta, "cleo", "fps.cs"), "x");
+            File.WriteAllText(Path.Combine(carpeta, "cleo", "renombrado.cs"), "abc");
+            File.WriteAllText(Path.Combine(carpeta, "s0beit.asi"), "x");
+            File.WriteAllText(Path.Combine(carpeta, "samp.dll"), "x");
+            File.WriteAllText(Path.Combine(carpeta, "salida_limpia.asi"), "x");
+            File.WriteAllText(Path.Combine(carpeta, "_prohibidos", "viejo", "s0beit.asi"), "x");
+            var lista = Prohibidos.Leer("# comentario\r\ncleo/*aimbot*   # trampa\n*.asi\nsamp.dll\n../fuera\nBA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD\n");
+            Ver(lista.Rutas.Count == 3 && lista.Huellas.Count == 1, "prohibidos: lee la lista");
+            List<string> malos = Prohibidos.Buscar(carpeta, lista, new[] { "salida_limpia.asi" });
+            Ver(malos.SequenceEqual(new[] { "cleo/Aimbot_v2.cs", "cleo/renombrado.cs", "s0beit.asi" }), "prohibidos: encuentra por nombre y huella, y cuida lo del server (" + string.Join(",", malos) + ")");
+            string donde = Prohibidos.Sacar(carpeta, malos);
+            Ver(!File.Exists(Path.Combine(carpeta, "s0beit.asi")) && File.Exists(Path.Combine(donde, "cleo", "Aimbot_v2.cs")) && File.Exists(Path.Combine(carpeta, "cleo", "fps.cs"))
+                && Prohibidos.Buscar(carpeta, lista, new[] { "salida_limpia.asi" }).Count == 0, "prohibidos: los mueve sin borrar");
+        }
+        finally { Directory.Delete(carpeta, true); }
 
         Ver(Instalacion.NickValido.IsMatch("Juan_Perez") && !Instalacion.NickValido.IsMatch("ab") && !Instalacion.NickValido.IsMatch("con espacio"), "nick");
         Console.WriteLine(fallas == 0 ? "Todo bien." : fallas + " falla(s).");
