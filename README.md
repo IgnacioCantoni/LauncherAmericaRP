@@ -75,6 +75,8 @@ La licencia de ENBSeries prohíbe repartir sus archivos a través de un launcher
 
 Para cambiar cómo se ve (el preset del server), poné los `.ini` o `.fx` modificados en `paquetes/enb/archivos/` (nunca `.dll` ni `.asi` del ENB), corré `generar-manifiesto.bat` y hacé commit y push. Se instalan encima del ENB de cada jugador que lo tenga activado.
 
+El preset del server hoy cambia dos cosas: `enblocal.ini` pide ventana sin bordes, y `enbseries.ini` apaga las sombras complejas (`EnableComplexShadow=false`), porque con `ShadowResolution=1` parpadeaban al mover la cámara (confirmado el 4/11/2026).
+
 ## CLEO
 
 Todos los jugadores reciben CLEO 5.5.0 (licencia MIT, de github.com/cleolibrary/CLEO5) con las actualizaciones: `CLEO.asi` y la carpeta `cleo/`, que carga el mismo `dinput8.dll` del ENB. Si anda, en el menú principal del GTA aparece "CLEO" abajo a la izquierda. No se reparten el plugin de audio (`SA.Audio.cleo`) ni su `bass.dll`, porque el GTA ya tiene el `bass.dll` del SA-MP, ni NewOpcodes. Tampoco `SA.Text.cleo` (textos en pantalla): ningún script del server lo usa y Windows Defender lo marca como Trojan:Win32/Wacatac.H!ml, un falso positivo que lo borra apenas se baja.
