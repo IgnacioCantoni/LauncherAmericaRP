@@ -1460,6 +1460,17 @@ class Lienzo : Form
         using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(cola.X - 1, cy - 1, cola.Width + 2, 2), Color.FromArgb(0, 255, 255, 255), Color.FromArgb(230, 255, 255, 255), 0f))
             g.FillRectangle(b, cola.X + largo / 3, cy - 1, largo - largo / 3, 2);
 
+        if (viva)
+        {
+            // Estela que recorre la parte llena una y otra vez (la misma de la pantalla de carga).
+            float paso = (float)(ms % 900 / 900), punta = pista.X + paso * (cabeza - pista.X + 90);
+            int desde = (int)Math.Max(pista.X, punta - 90), hasta = (int)Math.Min(cabeza, punta);
+            if (hasta - desde > 1)
+                using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle((int)punta - 91, pista.Y, 92, pista.Height), Color.FromArgb(0, 255, 236, 200), Color.FromArgb(230, 255, 236, 200), 0f))
+                using (var camino = Redondo(new Rectangle(desde, pista.Y, hasta - desde, pista.Height), radio))
+                    g.FillPath(b, camino);
+        }
+
         float pulso = viva ? 0.85f + 0.15f * (float)Math.Sin(ms / 110) : 1f;
         int halo = (int)(pista.Height * 3.4f * pulso);
         using (var camino = new System.Drawing.Drawing2D.GraphicsPath())
