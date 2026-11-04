@@ -36,7 +36,7 @@ Para probar la lógica sin abrir la ventana: `AmericaRP.exe --prueba` (en Linux,
 
 Arriba de `src/Launcher.cs`, en `Config`:
 
-- `Servidores`: los servers que se eligen en INICIO (nombre, IP o dominio y puerto). Hoy OFICIAL está en `127.0.0.1:7777`, que solo sirve en la PC donde corre el server, y DESARROLLO en `127.0.0.1:7778` hasta tener su dirección. El launcher consulta todos cada 15 segundos y muestra si están en línea y su ping; JUGAR entra al elegido.
+- `Servidores`: los servers que se eligen en INICIO (nombre, IP o dominio y puerto). Hoy DESARROLLO está en `127.0.0.1:7777` (el server de la PC del staff) y OFICIAL todavía no tiene IP: aparece como "Todavía sin IP" y no se puede elegir hasta completarla. El launcher consulta todos cada 15 segundos y muestra si están en línea y su ping; JUGAR entra al elegido.
 - `Redes`: los links del pie.
 - `NoticiasUrl`, `ManifiestoUrl` y `EnbUrl`: apuntan a este repo. Si se dejan vacías, esa función se apaga.
 
