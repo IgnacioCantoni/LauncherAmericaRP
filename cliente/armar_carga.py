@@ -12,7 +12,7 @@ destino = os.path.join(raiz, "actualizaciones", "archivos", "americarp", "carga.
 with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(["ffmpeg", "-v", "error", "-i", origen, "-an", "-vf",
                     "fps=%d,scale=%d:%d:flags=lanczos,format=yuvj420p" % (FPS, ANCHO, ALTO),
-                    "-q:v", "3", os.path.join(tmp, "%04d.jpg")], check=True)
+                    "-q:v", "4", os.path.join(tmp, "%04d.jpg")], check=True)
     cuadros = [open(f, "rb").read() for f in sorted(glob.glob(os.path.join(tmp, "*.jpg")))]
 
 datos = b"ARV1" + struct.pack("<4I", len(cuadros), ANCHO, ALTO, FPS)
