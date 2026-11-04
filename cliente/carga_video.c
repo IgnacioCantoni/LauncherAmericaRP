@@ -14,7 +14,7 @@
 #define STBI_NO_LINEAR
 #include "stb_image.h"
 
-typedef struct { float x1, y1, x2, y2; } Rect;   // CRect: izquierda, arriba, derecha, abajo
+typedef struct { float x1, y1, x2, y2; } Rect;   // CRect: izquierda, abajo, derecha, arriba (y1 es la de abajo)
 typedef struct { unsigned char r, g, b, a; } Rgba;
 typedef struct { void *textura; } Sprite;          // CSprite2d: solo el RwTexture*
 typedef struct { void *padre; unsigned char *pixeles; void *paleta; int ancho, alto, prof, paso; } Raster;
@@ -102,7 +102,7 @@ static void pantalla(void)
 {
     if (!probado) { probado = 1; cargar(); arranque = GetTickCount(); }
     PorCuadro();
-    Rect todo = { -5, -5, Ancho + 5.0f, Alto + 5.0f };
+    Rect todo = { -5, Alto + 5.0f, Ancho + 5.0f, -5 };
     Rgba blanco = { 255, 255, 255, 255 };
     if (ParaBorrar && !Fundiendo) return;
 
@@ -114,8 +114,8 @@ static void pantalla(void)
         // El video es 16:9: en pantallas de otra forma se recorta lo que sobra, sin deformarlo.
         float w = (float)Ancho, h = (float)Alto;
         Rect r = todo;
-        if (w / h < 16.0f / 9) { float a = h * 16 / 9; r.x1 = (w - a) / 2; r.x2 = r.x1 + a; r.y1 = 0; r.y2 = h; }
-        else { float a = w * 9 / 16; r.y1 = (h - a) / 2; r.y2 = r.y1 + a; r.x1 = 0; r.x2 = w; }
+        if (w / h < 16.0f / 9) { float a = h * 16 / 9; r.x1 = (w - a) / 2; r.x2 = r.x1 + a; r.y1 = h; r.y2 = 0; }
+        else { float a = w * 9 / 16; r.y2 = (h - a) / 2; r.y1 = r.y2 + a; r.x1 = 0; r.x2 = w; }
         SpriteDibujar(&cuadro, &r, &blanco);
     } else {
         // Sin video: las pantallas de siempre, con el mismo fundido que el original.
