@@ -3001,8 +3001,22 @@ class Arranque : Lienzo
         Escribir(g, "America RP", f, Color.FromArgb((int)(140 * aparece), 0, 0, 0), x + 66, 106);
         Escribir(g, "America RP", f, Color.FromArgb((int)(255 * aparece), Texto), x + 64, 104);
 
-        Estela(g, new Rectangle((ClientSize.Width - 240) / 2, 204, 240, 6), k, reloj.ElapsedMilliseconds, true);
-        Centrado(g, "I N I C I A N D O . . .", Fuentes.Negrita(8.5f), Color.FromArgb(210, Texto), new Rectangle(0, 226, ClientSize.Width, 24));
+        // Barra mínima: una línea fina que se llena en blanco, con un brillo suave en la punta.
+        var barra = new Rectangle((ClientSize.Width - 200) / 2, 210, 200, 2);
+        Relleno(g, barra, Color.FromArgb(45, 255, 255, 255), 1);
+        int lleno = (int)(barra.Width * k);
+        if (lleno > 2)
+        {
+            using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(barra.X - 1, barra.Y, lleno + 2, 2), Color.FromArgb(60, 255, 255, 255), Color.FromArgb(255, 255, 255, 255), 0f))
+                g.FillRectangle(b, barra.X, barra.Y, lleno, 2);
+            using (var camino = new System.Drawing.Drawing2D.GraphicsPath())
+            {
+                camino.AddEllipse(barra.X + lleno - 10, barra.Y - 9, 20, 20);
+                using (var b = new System.Drawing.Drawing2D.PathGradientBrush(camino) { CenterColor = Color.FromArgb(110, 255, 255, 255), SurroundColors = new[] { Color.FromArgb(0, 255, 255, 255) } })
+                    g.FillPath(b, camino);
+            }
+        }
+        Centrado(g, "Iniciando", Fuentes.Texto(9f), Color.FromArgb(170, Texto), new Rectangle(0, 222, ClientSize.Width, 22));
     }
 }
 
