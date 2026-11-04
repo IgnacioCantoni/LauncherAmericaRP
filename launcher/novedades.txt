@@ -1,0 +1,29 @@
+# Qué trae cada versión del launcher. Se ve en AJUSTES > NOVEDADES DEL LAUNCHER. La más nueva arriba.
+# Formato: "## fecha | Launcher | versión" y abajo los cambios, cada uno con "- ".
+
+## 2026-11-04 | Launcher | 1.4.0
+- Pestaña MODS nueva: mods opcionales elegidos por el staff, que se instalan y se sacan con un clic.
+- Soporte: elegís qué te pasa, contás qué pasó y el launcher arma el mensaje para Discord, con el informe técnico si querés.
+- MI JUEGO > OPCIONES: abrir la carpeta del GTA, reparar archivos y mover la carpeta a otro lugar.
+- Noticias desplegables y una sección con los parches del server.
+- Estas novedades.
+
+## 2026-11-04 | Launcher | 1.3.2
+- Reconoce un ENB que ya estaba instalado, y activarlo o desactivarlo es al instante.
+
+## 2026-11-04 | Launcher | 1.3.1
+- Con dos monitores, el cuadro para elegir pantalla del GTA aparece adelante.
+- Si un GTA quedó trabado, ofrece cerrarlo.
+
+## 2026-11-04 | Launcher | 1.3.0
+- Pestaña AJUSTES: esconder el launcher al lado del reloj mientras jugás y actualizarse sin preguntar.
+- Noticias con fecha y etiqueta.
+- Saca del GTA los archivos que no se pueden usar en el server.
+
+## 2026-11-04 | Launcher | 1.2.0
+- Avisa si el GTA se cerró de golpe y deja un informe para soporte.
+- Revisa los archivos más rápido y prepara el GTA para el ENB.
+
+## 2026-11-04 | Launcher | 1.1.0
+- El launcher se actualiza solo.
+- Instala DirectX 9 si falta.

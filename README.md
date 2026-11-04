@@ -8,7 +8,7 @@ Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe
 - **Estado del server**: cada 15 segundos muestra si está en línea, los jugadores y el ping.
 - **Mi juego**: la carpeta del GTA y si están bien la versión 1.0, el SA-MP 0.3.7 (`samp.exe` y `samp.dll`) y los archivos del server. El resumen también está en la tarjeta del server, junto al botón JUGAR.
 - **Noticias**: muestra `noticias.txt` de este repo, cada noticia con su fecha, etiqueta y título (ver abajo).
-- **Mods**: lista los archivos de `actualizaciones/archivos/` y cuáles le faltan al jugador. Antes de jugar (o con "Actualizar") baja los que no tenga o tenga distintos.
+- **Mods**: catálogo de mods opcionales que elige el staff (ver "Mods opcionales"). Cada jugador instala y saca los que quiera con un clic. Los archivos que el server reparte a todos (`actualizaciones/archivos/`) se bajan solos antes de jugar, y su estado está en MI JUEGO.
 - **Fondo en video**: `fondo/video.bin` (armado desde el video del server) se repite en bucle detrás de todo. Va dentro del `.exe`.
 - **Se actualiza solo**: al abrir, mira `launcher/version.txt`. Si hay una versión nueva, la baja de la Release de GitHub, revisa su huella, se reemplaza y se vuelve a abrir (ver abajo).
 - **DirectX 9**: antes de jugar revisa que estén `d3dx9_25.dll` (la pide el SA-MP) y, con el ENB activo, `d3dx9_43.dll`. Si faltan, ofrece bajar el instalador oficial de Microsoft de junio de 2010, revisa su huella y lo instala en silencio (Windows pide permiso de administrador). Visual C++ no hace falta: CEF, CLEO y el cargador de ASI no lo usan.
@@ -16,7 +16,9 @@ Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe
 - **Archivos rápidos**: recuerda el tamaño y la fecha de cada archivo revisado (`%LOCALAPPDATA%\AmericaRP\huellas.txt`) y solo vuelve a leer los que cambiaron.
 - **Si el juego se cierra de golpe**: el launcher sigue al GTA. Cuando se cierra vuelve a aparecer y, si fue un crash, lo avisa con el código y deja un informe para soporte en `%LOCALAPPDATA%\AmericaRP\informes` (versión, Windows, ENB, tiempo jugado y las últimas líneas del chat de SA-MP). También cierra los procesos del CEF que quedaron colgados.
 - **Pantallas del server**: instala el cliente de CEF para el teléfono y las demás pantallas en HTML del server (ver abajo).
-- **Soporte**: en MI JUEGO, "COPIAR INFORME" copia en un solo texto la versión del launcher, el nick, Windows, la carpeta, cada revisión, el ENB y el último cierre de golpe, para pegarlo en Discord. Si `Config.Redes` tiene el link de Soporte, ofrece abrirlo.
+- **Soporte**: en MI JUEGO, SOPORTE abre un formulario como el de NewGamers: elegís qué te pasa (no abre, se cierra solo, no conecta, descarga o instalación, otra cosa), contás qué pasó y "COPIAR PARA DISCORD" arma el mensaje, con el informe técnico si lo dejás marcado (versión del launcher, nick, Windows, carpeta, cada revisión, el ENB y el último cierre de golpe). Si `Config.Redes` tiene el link de Soporte, ofrece abrirlo.
+- **Opciones del juego**: en MI JUEGO, OPCIONES abre la carpeta del GTA, repara archivos (borra la memoria de huellas y revisa todo de cero), mueve la carpeta a otro lugar (la copia entera, la revisa y cambia la ruta; la vieja no se borra hasta que el jugador lo decida) o elige otra.
+- **Novedades del launcher**: AJUSTES > NOVEDADES muestra `launcher/novedades.txt`, con el mismo formato que las noticias.
 - **Dos monitores**: con más de un monitor el GTA abre el cuadro "Device Selection" (elegir pantalla), que no tiene botón en la barra de tareas. El launcher no se esconde hasta que aparece la primera ventana del GTA y la trae al frente, así ese cuadro no queda tapado.
 - **Ajustes**: pestaña AJUSTES con dos opciones que se guardan en `%LOCALAPPDATA%\AmericaRP\ajustes.txt`: esconder el launcher en la bandeja (al lado del reloj) mientras jugás, que viene activado, y actualizar el launcher sin preguntar, que viene desactivado. También abre la carpeta de informes de cierres.
 - **Archivos prohibidos**: en cada JUGAR lee `prohibidos.txt` de este repo y saca del GTA lo que coincida (ver abajo).
@@ -41,7 +43,7 @@ Después de cambiarlos, volvé a compilar y repartí el `.exe` nuevo.
 
 ## Publicar noticias
 
-Editá `noticias.txt`, commit y push. Los launchers la leen al abrirse. La más nueva va arriba y su título sale también en INICIO.
+Editá `noticias.txt`, commit y push. Los launchers la leen al abrirse. Las noticias se despliegan: la primera viene abierta y las demás muestran su título hasta tocarlas. Los cambios del server van aparte, en `parches.txt` (mismo formato): si tiene alguno, NOTICIAS muestra arriba la opción PARCHES DEL SERVER. En `parches.txt` y `launcher/novedades.txt`, las líneas con `#` antes de la primera entrada son comentarios. La más nueva va arriba y su título sale también en INICIO.
 
 ```
 ## 2026-11-04 | Actualización | Teléfono nuevo
@@ -120,6 +122,26 @@ Cada launcher compara la huella de cada archivo con la de su copia y baja solo l
 Para instalar el SA-MP solo, subí `samp.exe`, `samp.dll` y el resto de los archivos del cliente 0.3.7 a `actualizaciones/archivos/`.
 
 Límite: GitHub no acepta archivos de más de 100 MB en el repo.
+
+## Mods opcionales
+
+Los mods de la pestaña MODS los publica el staff desde este repo. Los jugadores no suben mods desde el launcher: un mod puede traer un `.asi` o un `.dll`, que es código que corre en la PC de cada jugador, así que solo entra lo que revisó un moderador. Si un jugador quiere sumar uno, lo pasa por Discord.
+
+Para sumar un mod:
+
+1. Elegí un id en minúsculas, sin espacios (por ejemplo `hud-limpio`).
+2. Copiá sus archivos en `mods/<id>/archivos/`, con las mismas carpetas que van dentro del GTA (`mods/hud-limpio/archivos/models/hud.txd`).
+3. Opcional: una foto en `mods/<id>/imagen.jpg` (se ve en 150x86, conviene 16:9).
+4. Agregalo en `mods/catalogo.txt`: `## hud-limpio | HUD limpio | Interfaz | Autor` y abajo la descripción.
+5. Doble clic en `generar-manifiesto.bat`, commit y push.
+
+Para actualizarlo, cambiá sus archivos y repetí el paso 5: a quien lo tenga le aparece ACTUALIZAR. Para sacarlo del catálogo, borrá su entrada (a quien ya lo tenga no se le borra).
+
+Protecciones:
+- Cada archivo se baja y se revisa contra su huella SHA-256 antes de ponerlo. Ninguna ruta puede salir de la carpeta del GTA.
+- Un mod nunca pisa archivos del server (`actualizaciones`, el ENB, `gta_sa.exe`, `samp.exe`, `samp.dll`...) ni archivos de otro mod instalado. En esos casos no se instala y avisa por qué.
+- Lo que el mod reemplaza del jugador se guarda en `%LOCALAPPDATA%\AmericaRP\mods\<id>\` y vuelve a su lugar al sacarlo. Si una instalación nueva falla a mitad de camino, la carpeta queda como estaba.
+- `prohibidos.txt` no saca archivos de mods instalados.
 
 ## Repartir el launcher
 
