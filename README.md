@@ -24,7 +24,7 @@ Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe
 - **Ajustes**: pestaña AJUSTES con dos opciones que se guardan en `%LOCALAPPDATA%\AmericaRP\ajustes.txt`: esconder el launcher en la bandeja (al lado del reloj) mientras jugás, que viene activado, y actualizar el launcher sin preguntar, que viene desactivado. También abre la carpeta de informes de cierres.
 - **Archivos prohibidos**: en cada JUGAR lee `prohibidos.txt` de este repo y saca del GTA lo que coincida (ver abajo).
 - **Redes y soporte**: links de Discord, YouTube, TikTok, Instagram y Soporte en el pie; aparecen los que tengan link en `Config.Redes`.
-- **Tipografías**: Montserrat Bold Italic (títulos, la misma del video) y Barlow (textos), con licencia libre SIL OFL (ver `fuentes/`). Van dentro del `.exe`.
+- **Tipografía**: Inter (ExtraBold en títulos, SemiBold en negritas y Regular en textos), la misma del teléfono del server, con licencia libre SIL OFL (ver `fuentes/`). Va dentro del `.exe`.
 
 ## Compilar
 

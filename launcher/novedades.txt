@@ -7,7 +7,7 @@
 - En INICIO elegís el cliente (el oficial de AMERICA RP o tu propio GTA en CUSTOM), y sus opciones prenden el ENB, abren la carpeta, reparan archivos o la mueven a otro lugar. MI JUEGO ya no hace falta.
 - Noticias desplegables y una sección con los parches del server.
 - Estas novedades.
-- Diseño nuevo, más simple: ventana más grande y redondeada, interruptores, y los avisos y la búsqueda de carpetas con el estilo del launcher en vez de los cuadros de Windows.
+- Diseño nuevo, más simple y con letra Inter: ventana más grande y redondeada, interruptores, y los avisos y la búsqueda de carpetas con el estilo del launcher en vez de los cuadros de Windows.
 - Fondo nuevo y ventana más grande (1440x810 en pantallas que la aguantan). El launcher pesa mucho menos.
 - Pantalla de carga al abrir el launcher, con cielo de noche, estrellas y una estrella fugaz.
 - Las descargas muestran cuántos MB van, la velocidad y cuánto falta, en una barra más gruesa con estela de estrella fugaz.

@@ -1199,17 +1199,17 @@ static class DirectX
     }
 }
 
-// Tipografías propias (SIL OFL, ver fuentes/): Montserrat Bold Italic para títulos y Barlow para el resto.
+// Tipografía propia (SIL OFL, ver fuentes/): Inter ExtraBold para títulos, SemiBold para negritas y Regular para el resto.
 // Van dentro del .exe como recursos; si no cargan, se usa Segoe UI.
 static class Fuentes
 {
     static readonly System.Drawing.Text.PrivateFontCollection coleccion = new System.Drawing.Text.PrivateFontCollection();
     static readonly Dictionary<string, Font> cache = new Dictionary<string, Font>();
-    static FontFamily titulo, cuerpo;
+    static FontFamily titulo, cuerpo, semi;
 
     static Fuentes()
     {
-        foreach (string nombre in new[] { "Montserrat-BoldItalic.ttf", "Barlow-Regular.ttf", "Barlow-Bold.ttf" })
+        foreach (string nombre in new[] { "Inter-Regular.ttf", "Inter-SemiBold.ttf", "Inter-ExtraBold.ttf" })
         {
             try
             {
@@ -1230,8 +1230,9 @@ static class Fuentes
         }
         foreach (FontFamily f in coleccion.Families)
         {
-            if (f.Name == "Montserrat") titulo = f;
-            if (f.Name == "Barlow") cuerpo = f;
+            if (f.Name == "Inter ExtraBold") titulo = f;
+            if (f.Name == "Inter SemiBold") semi = f;
+            if (f.Name == "Inter") cuerpo = f;
         }
     }
 
@@ -1249,10 +1250,10 @@ static class Fuentes
         return f;
     }
 
-    // Los tamaños de la interfaz se pensaron para una letra angosta; Montserrat es más ancha, así que se achica acá.
-    public static Font Titulo(float tam) { return Pedir(titulo, tam * 0.6f, FontStyle.Bold | FontStyle.Italic); }
-    public static Font Texto(float tam) { return Pedir(cuerpo, tam, FontStyle.Regular); }
-    public static Font Negrita(float tam) { return Pedir(cuerpo, tam, FontStyle.Bold); }
+    // Inter (la misma letra del teléfono del server). Los tamaños se pensaron para letras más angostas, así que se achican acá.
+    public static Font Titulo(float tam) { return Pedir(titulo, tam * 0.6f, FontStyle.Regular); }
+    public static Font Texto(float tam) { return Pedir(cuerpo, tam * 0.9f, FontStyle.Regular); }
+    public static Font Negrita(float tam) { return Pedir(semi, tam * 0.9f, FontStyle.Regular); }
 
     // Íconos de Windows 10/11 (Segoe MDL2 Assets). Sin esa fuente devuelve null y se dibuja sin íconos.
     static FontFamily iconos;
