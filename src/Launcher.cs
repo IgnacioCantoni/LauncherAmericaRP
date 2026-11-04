@@ -1435,6 +1435,49 @@ class Lienzo : Form
         using (var camino = Redondo(r, radio)) using (var b = new SolidBrush(c)) g.FillPath(b, camino);
     }
 
+    // Barra de avance con forma de estrella fugaz: cola que se desvanece hacia atrás y cabeza brillante con destellos.
+    protected static void Estela(Graphics g, Rectangle pista, float k, double ms, bool viva)
+    {
+        int radio = pista.Height / 2;
+        Relleno(g, pista, Color.FromArgb(28, 255, 255, 255), radio);
+        if (k <= 0.002f) return;
+        int cabeza = pista.X + (int)(pista.Width * Math.Min(1f, k)), cy = pista.Y + radio;
+        Relleno(g, new Rectangle(pista.X, pista.Y, cabeza - pista.X, pista.Height), Color.FromArgb(60, Acento), radio);
+
+        int largo = Math.Max(2, Math.Min(cabeza - pista.X, 280));
+        var cola = new Rectangle(cabeza - largo, pista.Y, largo, pista.Height);
+        // El pincel es 2 px más ancho para que no repita el color del otro extremo en el borde.
+        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(cola.X - 1, cola.Y, cola.Width + 2, cola.Height), Color.Transparent, Acento, 0f))
+        {
+            b.InterpolationColors = new System.Drawing.Drawing2D.ColorBlend
+            {
+                Colors = new[] { Color.FromArgb(0, Acento), Color.FromArgb(230, Acento), Color.FromArgb(255, 255, 226, 180) },
+                Positions = new[] { 0f, 0.7f, 1f }
+            };
+            using (var camino = Redondo(cola, radio)) g.FillPath(b, camino);
+        }
+        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(cola.X - 1, cy - 1, cola.Width + 2, 2), Color.FromArgb(0, 255, 255, 255), Color.FromArgb(230, 255, 255, 255), 0f))
+            g.FillRectangle(b, cola.X + largo / 3, cy - 1, largo - largo / 3, 2);
+
+        float pulso = viva ? 0.85f + 0.15f * (float)Math.Sin(ms / 110) : 1f;
+        int halo = (int)(pista.Height * 3.4f * pulso);
+        using (var camino = new System.Drawing.Drawing2D.GraphicsPath())
+        {
+            camino.AddEllipse(cabeza - halo, cy - halo, halo * 2, halo * 2);
+            using (var b = new System.Drawing.Drawing2D.PathGradientBrush(camino) { CenterColor = Color.FromArgb(170, 255, 205, 130), SurroundColors = new[] { Color.FromArgb(0, Acento) } })
+                g.FillPath(b, camino);
+        }
+        if (viva)
+            for (int i = 0; i < 6; i++)
+            {
+                // Chispas que se quedan atrás de la cabeza y se apagan; salen del reloj, así no hace falta guardar estado.
+                double fase = (ms / 900 + i / 6.0) % 1;
+                float x = cabeza - (float)(fase * largo * 0.8), y = cy + (float)Math.Sin(i * 2.3 + ms / 260) * pista.Height * 0.9f, s = 3.4f * (float)(1 - fase) + 1f;
+                using (var b = new SolidBrush(Color.FromArgb((int)(210 * (1 - fase)), 255, 220, 170))) g.FillEllipse(b, x - s / 2, y - s / 2, s, s);
+            }
+        Ventana.Estrella(g, cabeza, cy, (int)Math.Round(pista.Height * 1.6f * pulso), Color.FromArgb(255, 255, 246, 230));
+    }
+
     protected static void Borde(Graphics g, Rectangle r, Color c, int radio, float ancho)
     {
         using (var camino = Redondo(r, radio)) using (var p = new Pen(c, ancho)) g.DrawPath(p, camino);
@@ -1744,6 +1787,7 @@ class Ventana : Lienzo
     HashSet<string> modsViejos = new HashSet<string>();
     readonly Dictionary<string, Image> fotosMods = new Dictionary<string, Image>();
     int progreso, scroll;
+    float avance;
     Actualizador.Revision revision;
     List<string> faltantes = new List<string>(), faltaDx = new List<string>();
     bool gta10;
@@ -1786,7 +1830,8 @@ class Ventana : Lienzo
         reloj.Interval = 15000;
         reloj.Tick += delegate { RefrescarServer(); };
         cuadros.Interval = 250;
-        cuadros.Tick += delegate { if (WindowState != FormWindowState.Minimized) Invalidate(); };
+        // Mientras baja o revisa, más cuadros por segundo para que la estela se mueva fluida.
+        cuadros.Tick += delegate { cuadros.Interval = ocupado ? 33 : 250; if (WindowState != FormWindowState.Minimized) Invalidate(); };
         Shown += delegate
         {
             ActiveControl = nick;
@@ -2850,9 +2895,11 @@ class Ventana : Lienzo
 
     void DibujarPie(Graphics g)
     {
-        using (var b = new SolidBrush(Color.FromArgb(40, 255, 255, 255))) g.FillRectangle(b, 0, Alto - 3, Ancho, 3);
-        if (progreso > 0) using (var b = new SolidBrush(Acento)) g.FillRectangle(b, 0, Alto - 3, Ancho * progreso / 100, 3);
-        Escribir(g, Recortar(g, (ocupado ? "● " : "") + estado, Tarjeta.X - 80, Fuentes.Texto(11f)), Fuentes.Texto(11f), Gris, 40, Alto - 36);
+        // La barra avanza suave hacia el porcentaje real (llega cada 250 ms); si vuelve a empezar, salta.
+        float objetivo = progreso / 100f;
+        avance = objetivo < avance ? objetivo : avance + (objetivo - avance) * 0.2f;
+        Estela(g, new Rectangle(40, Alto - 14, Ancho - 80, 6), avance, tiempo.Elapsed.TotalMilliseconds, ocupado);
+        Escribir(g, Recortar(g, (ocupado ? "● " : "") + estado, Tarjeta.X - 80, Fuentes.Texto(11f)), Fuentes.Texto(11f), Gris, 40, Alto - 42);
 
         int x = Tarjeta.Right;
         for (int i = Config.Redes.Length - 1; i >= 0; i--)
@@ -2861,8 +2908,8 @@ class Ventana : Lienzo
             string t = Config.Redes[i].Key.ToUpperInvariant(), url = Config.Redes[i].Value;
             int w = Medir(g, t, Fuentes.Titulo(17f));
             x -= w;
-            var r = new Rectangle(x - 4, Alto - 40, w + 8, 30);
-            Escribir(g, t, Fuentes.Titulo(17f), r.Contains(mouse) ? Acento : Gris, x, Alto - 37);
+            var r = new Rectangle(x - 4, Alto - 46, w + 8, 30);
+            Escribir(g, t, Fuentes.Titulo(17f), r.Contains(mouse) ? Acento : Gris, x, Alto - 43);
             zonas.Add(new Zona { R = r, Click = delegate { Abrir(url); } });
             x -= 22;
         }
@@ -2930,9 +2977,7 @@ class Arranque : Lienzo
         Ventana.Estrella(g, x + 20, 128, 22, Color.FromArgb((int)(255 * aparece), Acento));
         Escribir(g, "America RP", f, Color.FromArgb((int)(255 * aparece), Texto), x + 56, 104);
 
-        var barra = new Rectangle((ClientSize.Width - 200) / 2, 206, 200, 3);
-        Relleno(g, barra, Color.FromArgb(30, 255, 255, 255), 2);
-        if (k > 0.02f) Relleno(g, new Rectangle(barra.X, barra.Y, (int)(barra.Width * k), barra.Height), Acento, 2);
+        Estela(g, new Rectangle((ClientSize.Width - 240) / 2, 204, 240, 6), k, reloj.ElapsedMilliseconds, true);
         Centrado(g, "I N I C I A N D O . . .", Fuentes.Negrita(8.5f), Gris, new Rectangle(0, 226, ClientSize.Width, 24));
     }
 }
