@@ -43,7 +43,7 @@ static class Config
     // d3dx9 que piden samp.dll (d3dx9_25) y el ENB (d3dx9_43), y que Windows 10 y 11 no traen. Vacío = no se ofrece.
     public const string DirectXUrl = "https://download.microsoft.com/download/8/4/A/84A35BF1-DAFE-4AE8-82AF-AD2AE20B6B14/directx_Jun2010_redist.exe";
     public const string DirectXSha = "053f76dcbb28802e23341b6a787e3b0791c0fa5c8d4d011b1044172dbf89c73b";
-    // GTA Full: gráficos ENB, opcionales (cliente AMERICA RP FULL). La licencia de ENBSeries no deja repartir su d3d9.dll
+    // GTA Full: gráficos ENB, opcionales (opciones del cliente en INICIO). La licencia de ENBSeries no deja repartir su d3d9.dll
     // por un launcher: cada jugador baja el zip oficial y el launcher lo instala desde ahí. Lo que sí se reparte es el
     // preset del server (.ini y .fx) en paquetes/enb. EnbUrl vacío = no aparece.
     public const string EnbUrl = Repo + "paquetes/enb/manifiesto.txt";
@@ -175,7 +175,7 @@ static class Registro
     // La de SA-MP: es el GTA que abre samp.exe, o sea el del cliente elegido.
     public static string GtaExe { get { return Leer("gta_sa_exe"); } set { Guardar("gta_sa_exe", value); } }
 
-    // Clientes: "liviano" y "completo" (con ENB) usan el GTA principal; "custom" es otra carpeta del jugador.
+    // Clientes: "liviano" es el oficial (el GTA principal); "custom" es otra carpeta del jugador, con sus aportes.
     public static string Cliente { get { string c = Leer(Propia, "cliente"); return c.Length == 0 ? "liviano" : c; } set { Guardar(Propia, "cliente", value); } }
     public static string GtaPrincipal { get { return Leer(Propia, "gta_principal"); } set { Guardar(Propia, "gta_principal", value); } }
     public static string GtaCustom { get { return Leer(Propia, "gta_custom"); } set { Guardar(Propia, "gta_custom", value); } }
@@ -1826,9 +1826,6 @@ class Ventana : Lienzo
         RevisarInstalacion();
         RevisarMods();
         if (Carpeta().Length == 0) { ElegirCarpeta(); return; }
-        // Liviano y completo comparten el GTA: la diferencia es el ENB prendido o apagado.
-        if (c == "completo" && !EnbActivo()) CambiarEnb();
-        else if (c == "liviano" && EnbActivo()) CambiarEnb();
     }
 
     string Carpeta()
@@ -2315,6 +2312,7 @@ class Ventana : Lienzo
             Tuple.Create("Ver estado del juego", "\uE946", (Action)VerEstado),
             Tuple.Create("Revisar archivos del server", "\uE895", hay ? (Action)Actualizar : null),
             Tuple.Create("Reparar archivos (revisar todo de cero)", "\uE90F", hay ? (Action)delegate { if (ocupado) return; Actualizador.BorrarHuellas(); Actualizar(); } : null),
+            Tuple.Create(EnbActivo() ? "Desactivar gráficos ENB" : "Activar gráficos ENB", "\uE706", hay && Config.EnbUrl.Length > 0 ? (Action)CambiarEnb : null),
             Tuple.Create("Mover ubicación del juego", "\uE8DE", hay ? (Action)MoverCarpeta : null),
             Tuple.Create("Abrir carpeta del juego", "\uE838", hay ? (Action)delegate { Abrir(Carpeta()); } : null),
             Tuple.Create("Elegir otra carpeta", "\uE8DA", (Action)delegate { ElegirCarpeta(); }),
@@ -2500,17 +2498,15 @@ class Ventana : Lienzo
         int x = 40, y = 100, ancho = 440;
         Escribir(g, "ELEGÍ TU CLIENTE", Fuentes.Negrita(10f), Gris, x + 4, y);
         y += 24;
-        string principal = Registro.GtaPrincipal, custom = Registro.GtaCustom, dir = principal.Length == 0 ? "" : Path.GetDirectoryName(principal);
+        string principal = Registro.GtaPrincipal, custom = Registro.GtaCustom;
         bool hayP = principal.Length > 0 && File.Exists(principal), hayC = custom.Length > 0 && File.Exists(custom);
-        bool hayEnb = hayP && (File.Exists(Path.Combine(dir, "enbseries.asi")) || File.Exists(Path.Combine(dir, AsiApagado)));
+        bool oficial = Registro.Cliente != "custom", enb = Config.EnbUrl.Length > 0 && EnbActivo();
         var clientes = new[]
         {
-            new { Id = "liviano", Nombre = "AMERICA RP", Etiqueta = "LIVIANO", Estado = hayP ? "Listo" : "Sin elegir", Color = hayP ? Verde : Gris,
-                Texto = "Tu GTA con los archivos del server. Anda en cualquier PC." },
-            new { Id = "completo", Nombre = "AMERICA RP FULL", Etiqueta = "ENB", Estado = !hayP ? "Sin elegir" : hayEnb ? "Listo" : "Falta bajar el ENB", Color = !hayP ? Gris : hayEnb ? Verde : Ambar,
-                Texto = "Con gráficos ENB: luces y colores mejorados. Pide más PC." },
-            new { Id = "custom", Nombre = "GTA PERSONALIZADO", Etiqueta = "", Estado = hayC ? "Listo" : "Sin elegir", Color = hayC ? Verde : Gris,
-                Texto = hayC ? "Carpeta: " + Path.GetDirectoryName(custom) : "Otra carpeta tuya, con tus propios mods." },
+            new { Id = "liviano", Nombre = "AMERICA RP", Etiqueta = oficial && enb ? "OFICIAL · ENB" : "OFICIAL", Estado = hayP ? "Listo" : "Sin elegir", Color = hayP ? Verde : Gris,
+                Texto = "Tu GTA con los archivos del server." },
+            new { Id = "custom", Nombre = "GTA PERSONALIZADO", Etiqueta = !oficial && enb ? "ENB" : "", Estado = hayC ? "Listo" : "Sin elegir", Color = hayC ? Verde : Gris,
+                Texto = hayC ? "Carpeta: " + Path.GetDirectoryName(custom) : "Tu propio GTA, con los mods y aportes que quieras." },
         };
         string[] falta = Revisiones().FirstOrDefault(f => f[2] == "mal" || f[2] == "ojo");
         foreach (var c in clientes)
@@ -2529,15 +2525,15 @@ class Ventana : Lienzo
             using (var p = new Pen(elegido ? Acento : Gris, 1.6f)) g.DrawEllipse(p, r.X + 16, r.Y + 38, 16, 16);
             if (elegido) using (var b = new SolidBrush(Acento)) g.FillEllipse(b, r.X + 20, r.Y + 42, 8, 8);
 
-            // Ícono: estrella clara (liviano), estrella sobre naranja (full) o carpeta (personalizado).
+            // Ícono: estrella sobre naranja (oficial) o carpeta (personalizado).
             var icono = new Rectangle(r.X + 46, r.Y + 22, 48, 48);
-            Relleno(g, icono, c.Id == "completo" ? Acento : Campo, 12);
+            Relleno(g, icono, c.Id == "custom" ? Campo : Acento, 12);
             if (c.Id == "custom")
             {
                 Relleno(g, new Rectangle(icono.X + 12, icono.Y + 14, 10, 6), Acento, 2);
                 Relleno(g, new Rectangle(icono.X + 12, icono.Y + 17, 24, 18), Acento, 4);
             }
-            else Estrella(g, icono.X + 24, icono.Y + 25, 13, c.Id == "completo" ? Oscuro : Acento);
+            else Estrella(g, icono.X + 24, icono.Y + 25, 13, Oscuro);
 
             int tx = icono.Right + 14, tw = r.Right - 44 - tx;
             Escribir(g, c.Nombre, Fuentes.Negrita(13.5f), Texto, tx, r.Y + 12);
@@ -2839,7 +2835,7 @@ class Ventana : Lienzo
 
         // Qué cliente se va a abrir; el detalle de lo que falta está en la tarjeta del cliente, en INICIO.
         Escribir(g, "CLIENTE", Fuentes.Negrita(9.5f), Gris, x, t.Y + 320);
-        string cliente = Registro.Cliente == "completo" ? "AMERICA RP FULL" : Registro.Cliente == "custom" ? "GTA PERSONALIZADO" : "AMERICA RP";
+        string cliente = Registro.Cliente == "custom" ? "GTA PERSONALIZADO" : "AMERICA RP";
         Escribir(g, cliente, Fuentes.Negrita(13f), Texto, x, t.Y + 340);
         var cambiar = new Rectangle(t.Right - 28 - 80, t.Y + 334, 80, 30);
         if (pestana != "inicio") Chip(g, cambiar, "CAMBIAR", false, delegate { Pestana("inicio"); });

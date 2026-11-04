@@ -3,7 +3,7 @@ Diseño nuevo, mods, soporte y más opciones para tu GTA.
 - Launcher más simple y moderno: ventana más grande y redondeada, y los avisos y la búsqueda de carpetas con su mismo estilo.
 - Pestaña MODS: mods opcionales elegidos por el staff. Se instalan y se sacan con un clic, y lo que reemplazan vuelve a su lugar al sacarlos.
 - Soporte: elegís qué te pasa, contás qué pasó y el launcher arma el mensaje para Discord.
-- En INICIO elegís tu cliente: AMERICA RP, AMERICA RP FULL (con gráficos ENB) o tu propio GTA. Sus tres puntos abren la carpeta, reparan los archivos o la mueven a otro lugar.
+- En INICIO elegís tu cliente: el oficial de AMERICA RP o tu propio GTA personalizado. Sus tres puntos prenden los gráficos ENB, abren la carpeta, reparan los archivos o la mueven a otro lugar.
 - Los cambios del server ahora están en NOTICIAS > PARCHES DEL SERVER.
 
 ## 2026-11-04 | Actualización | Launcher 1.3.0

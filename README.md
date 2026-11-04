@@ -17,7 +17,7 @@ Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe
 - **Si el juego se cierra de golpe**: el launcher sigue al GTA. Cuando se cierra vuelve a aparecer y, si fue un crash, lo avisa con el código y deja un informe para soporte en `%LOCALAPPDATA%\AmericaRP\informes` (versión, Windows, ENB, tiempo jugado y las últimas líneas del chat de SA-MP). También cierra los procesos del CEF que quedaron colgados.
 - **Pantallas del server**: instala el cliente de CEF para el teléfono y las demás pantallas en HTML del server (ver abajo).
 - **Soporte**: la pestaña SOPORTE abre un formulario como el de NewGamers: elegís qué te pasa (no abre, se cierra solo, no conecta, descarga o instalación, otra cosa), contás qué pasó y "COPIAR PARA DISCORD" arma el mensaje, con el informe técnico si lo dejás marcado (versión del launcher, nick, Windows, carpeta, cada revisión, el ENB y el último cierre de golpe). Si `Config.Redes` tiene el link de Soporte, ofrece abrirlo.
-- **Clientes**: en INICIO se elige el cliente, como el selector de juego de NewGamers pero sin repartir el GTA: AMERICA RP (el GTA del jugador con los archivos del server, sin ENB), AMERICA RP FULL (el mismo GTA con el ENB prendido) o GTA PERSONALIZADO (otra carpeta del jugador, con sus mods; su ENB y sus mods se anotan aparte). Al elegir uno, SA-MP pasa a abrir ese GTA. La tarjeta muestra si está listo o lo primero que falta.
+- **Clientes**: en INICIO se elige el cliente, como el selector de juego de NewGamers pero sin repartir el GTA: AMERICA RP, el cliente oficial (el GTA del jugador con los archivos del server), o GTA PERSONALIZADO (otra carpeta del jugador, con los mods y aportes que quiera; su ENB y sus mods se anotan aparte). Al elegir uno, SA-MP pasa a abrir ese GTA. La tarjeta muestra si está listo o lo primero que falta.
 - **Opciones del juego**: los tres puntos del cliente elegido muestran el estado completo, abren la carpeta del GTA, repara archivos (borra la memoria de huellas y revisa todo de cero), mueve la carpeta a otro lugar (la copia entera, la revisa y cambia la ruta; la vieja no se borra hasta que el jugador lo decida) o elige otra.
 - **Novedades del launcher**: AJUSTES > NOVEDADES muestra `launcher/novedades.txt`, con el mismo formato que las noticias.
 - **Dos monitores**: con más de un monitor el GTA abre el cuadro "Device Selection" (elegir pantalla), que no tiene botón en la barra de tareas. El launcher no se esconde hasta que aparece la primera ventana del GTA y la trae al frente, así ese cuadro no queda tapado.
@@ -70,7 +70,7 @@ Solo frena a quien entra por el launcher. Quien abre `samp.exe` a mano se lo sal
 
 ## Modo GTA Full: ENB
 
-El ENB (ENBSeries v0.430 para GTA SA) es opcional: cada jugador lo prende eligiendo el cliente AMERICA RP FULL y lo apaga volviendo a AMERICA RP.
+El ENB (ENBSeries v0.430 para GTA SA) es opcional: cada jugador lo activa o lo desactiva en las opciones del cliente (los tres puntos, en INICIO).
 
 Con SA-MP 0.3.7 se usa la **versión ASI** del ENB. La versión `d3d9.dll` hace cerrar SA-MP al entrar ("An exception occurred"), y la v0.076 entra pero se ve mal (probado el 3/11/2026 con GTA 1.0 US y SA-MP 0.3.7-R5). El `.asi` lo carga el Ultimate ASI Loader (`dinput8.dll`, licencia MIT), que va en `actualizaciones/archivos/` con su licencia porque también lo usa CLEO.
 
