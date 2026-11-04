@@ -16,7 +16,9 @@ Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe
 - **Archivos rápidos**: recuerda el tamaño y la fecha de cada archivo revisado (`%LOCALAPPDATA%\AmericaRP\huellas.txt`) y solo vuelve a leer los que cambiaron.
 - **Si el juego se cierra de golpe**: el launcher sigue al GTA. Cuando se cierra vuelve a aparecer y, si fue un crash, lo avisa con el código y deja un informe para soporte en `%LOCALAPPDATA%\AmericaRP\informes` (versión, Windows, ENB, tiempo jugado y las últimas líneas del chat de SA-MP). También cierra los procesos del CEF que quedaron colgados.
 - **Pantallas del server**: instala el cliente de CEF para el teléfono y las demás pantallas en HTML del server (ver abajo).
-- **Soporte**: en MI JUEGO, "COPIAR INFORME" copia en un solo texto la versión del launcher, el nick, Windows, la carpeta, cada revisión, el ENB y el último cierre de golpe, para pegarlo en Discord. Si `Config.Redes` tiene el link de Soporte, ofrece abrirlo.
+- **Soporte**: en MI JUEGO, SOPORTE abre un formulario como el de NewGamers: elegís qué te pasa (no abre, se cierra solo, no conecta, descarga o instalación, otra cosa), contás qué pasó y "COPIAR PARA DISCORD" arma el mensaje, con el informe técnico si lo dejás marcado (versión del launcher, nick, Windows, carpeta, cada revisión, el ENB y el último cierre de golpe). Si `Config.Redes` tiene el link de Soporte, ofrece abrirlo.
+- **Opciones del juego**: en MI JUEGO, OPCIONES abre la carpeta del GTA, repara archivos (borra la memoria de huellas y revisa todo de cero), mueve la carpeta a otro lugar (la copia entera, la revisa y cambia la ruta; la vieja no se borra hasta que el jugador lo decida) o elige otra.
+- **Novedades del launcher**: AJUSTES > NOVEDADES muestra `launcher/novedades.txt`, con el mismo formato que las noticias.
 - **Dos monitores**: con más de un monitor el GTA abre el cuadro "Device Selection" (elegir pantalla), que no tiene botón en la barra de tareas. El launcher no se esconde hasta que aparece la primera ventana del GTA y la trae al frente, así ese cuadro no queda tapado.
 - **Ajustes**: pestaña AJUSTES con dos opciones que se guardan en `%LOCALAPPDATA%\AmericaRP\ajustes.txt`: esconder el launcher en la bandeja (al lado del reloj) mientras jugás, que viene activado, y actualizar el launcher sin preguntar, que viene desactivado. También abre la carpeta de informes de cierres.
 - **Archivos prohibidos**: en cada JUGAR lee `prohibidos.txt` de este repo y saca del GTA lo que coincida (ver abajo).
@@ -41,7 +43,7 @@ Después de cambiarlos, volvé a compilar y repartí el `.exe` nuevo.
 
 ## Publicar noticias
 
-Editá `noticias.txt`, commit y push. Los launchers la leen al abrirse. La más nueva va arriba y su título sale también en INICIO.
+Editá `noticias.txt`, commit y push. Los launchers la leen al abrirse. Las noticias se despliegan: la primera viene abierta y las demás muestran su título hasta tocarlas. Los cambios del server van aparte, en `parches.txt` (mismo formato): si tiene alguno, NOTICIAS muestra arriba la opción PARCHES DEL SERVER. En `parches.txt` y `launcher/novedades.txt`, las líneas con `#` antes de la primera entrada son comentarios. La más nueva va arriba y su título sale también en INICIO.
 
 ```
 ## 2026-11-04 | Actualización | Teléfono nuevo

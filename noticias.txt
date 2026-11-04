@@ -1,7 +1,14 @@
+## 2026-11-04 | Actualización | Launcher 1.4.0
+Mods, soporte y más opciones para tu GTA.
+- Pestaña MODS: mods opcionales elegidos por el staff. Se instalan y se sacan con un clic, y lo que reemplazan vuelve a su lugar al sacarlos.
+- Soporte: elegís qué te pasa, contás qué pasó y el launcher arma el mensaje para Discord.
+- En MI JUEGO, OPCIONES abre la carpeta del GTA, repara los archivos o la mueve a otro lugar.
+- Los cambios del server ahora están en NOTICIAS > PARCHES DEL SERVER.
+
 ## 2026-11-04 | Actualización | Launcher 1.3.0
 Ajustes, soporte y noticias nuevas.
 - Pestaña AJUSTES: el launcher se esconde al lado del reloj mientras jugás y puede actualizarse sin preguntar.
-- En MI JUEGO, "Copiar informe" arma todo lo que soporte necesita para ayudarte. Pegalo en Discord.
+- En MI JUEGO, SOPORTE arma todo lo que el staff necesita para ayudarte. Pegalo en Discord.
 - Antes de jugar se sacan del GTA los archivos que no se pueden usar en el server. No se borran: quedan en la carpeta _prohibidos.
 
 ## 2026-11-04 | Arreglo | El GTA ya no se cierra con error al salir

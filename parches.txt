@@ -1,0 +1,11 @@
+# Cambios del server para los jugadores. Se ven en NOTICIAS > PARCHES DEL SERVER. El más nuevo arriba.
+# Formato: "## fecha | Parche | versión: título" y abajo los cambios, cada uno con "- ". Sin cosas técnicas ni del staff.
+
+## 2026-11-01 | Parche | 0.6.12: Pescador
+- Los botes del pescador esperan un poco más afuera del muelle.
+
+## 2026-11-01 | Parche | 0.6.11: Reputación y niveles sin tope
+- Reputación por ciudad (Los Santos, San Fierro y Las Venturas): trabajar la sube y asaltar a alguien dormido la baja. /reputacion muestra la tuya.
+- Cada trabajo avisa cada punto de habilidad que sumás.
+- Los niveles de trabajo ya no terminan en el 10.
+- Todos los trabajos suben a un ritmo parecido, unos 20 puntos por hora.

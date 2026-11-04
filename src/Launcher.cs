@@ -27,6 +27,8 @@ static class Config
     // Vacío = sin noticias / sin actualizaciones.
     const string Repo = "https://raw.githubusercontent.com/IgnacioCantoni/LauncherAmericaRP/main/";
     public const string NoticiasUrl = Repo + "noticias.txt";
+    public const string ParchesUrl = Repo + "parches.txt";            // cambios del server, mismo formato que las noticias
+    public const string NovedadesUrl = Repo + "launcher/novedades.txt"; // qué trae cada versión del launcher
     public const string ManifiestoUrl = Repo + "actualizaciones/manifiesto.txt";
     // El launcher se actualiza solo: launcher/version.txt dice la última versión y la huella de su .exe, que está en la
     // Release de GitHub con la etiqueta v<versión>. VersionUrl vacío = no se actualiza.
@@ -338,6 +340,18 @@ static class Soporte
         return string.Join("\n", File.ReadAllLines(ultimo).Skip(1).TakeWhile(l => l.Trim().Length > 0));
     }
 
+    public static readonly string[] Motivos = { "El juego no abre", "Se cierra solo", "No conecta al server", "Descarga o instalación", "Otra cosa" };
+
+    // El mensaje para el canal de soporte: qué pasa, lo que contó el jugador y, si quiere, el informe técnico.
+    public static string Pedido(string motivo, string detalle, string informe)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("**Pedido de soporte · " + motivo + "**");
+        if (detalle.Trim().Length > 0) sb.AppendLine(detalle.Trim());
+        if (informe.Length > 0) sb.AppendLine().Append(informe);
+        return sb.ToString();
+    }
+
     public static string Armar(List<string[]> filas, string carpeta, string nick, bool enb, string ultimoCierre)
     {
         var sb = new StringBuilder();
@@ -550,6 +564,39 @@ static class Mods
             File.Copy(f, destino, true);
         }
         Directory.Delete(resp, true);
+    }
+}
+
+// Mover la carpeta del GTA: se copia entera al lugar nuevo y se revisa. La vieja no se borra: la borra el jugador cuando
+// compruebe que anda, así nunca se pierde nada si algo falla a mitad de camino.
+static class Mudanza
+{
+    public static string Copiar(string origen, string destinoPadre, Action<string, int> progreso)
+    {
+        origen = Path.GetFullPath(origen).TrimEnd(Path.DirectorySeparatorChar);
+        string nueva = Path.Combine(Path.GetFullPath(destinoPadre), Path.GetFileName(origen));
+        if (nueva.Equals(origen, StringComparison.OrdinalIgnoreCase) || nueva.StartsWith(origen + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Elegí un lugar fuera de la carpeta actual del GTA.");
+        if (Directory.Exists(nueva) && Directory.EnumerateFileSystemEntries(nueva).Any())
+            throw new InvalidDataException("Ya existe " + nueva + " y tiene archivos. Elegí otro lugar.");
+        string[] archivos = Directory.GetFiles(origen, "*", SearchOption.AllDirectories);
+        long total = archivos.Sum(f => new FileInfo(f).Length), hecho = 0;
+        try
+        {
+            long libre = new DriveInfo(Path.GetPathRoot(nueva)).AvailableFreeSpace;
+            if (libre < total + (100L << 20)) throw new InvalidDataException("No hay lugar: hacen falta " + (total >> 20) + " MB y quedan " + (libre >> 20) + " MB.");
+        }
+        catch (ArgumentException) { } // una unidad de red: se prueba igual
+        foreach (string f in archivos)
+        {
+            string destino = nueva + f.Substring(origen.Length);
+            Directory.CreateDirectory(Path.GetDirectoryName(destino));
+            File.Copy(f, destino, false);
+            if (new FileInfo(destino).Length != new FileInfo(f).Length) throw new IOException("No se copió bien " + f + ".");
+            hecho += new FileInfo(f).Length;
+            progreso("Copiando el GTA: " + (hecho >> 20) + " de " + (total >> 20) + " MB", total == 0 ? 100 : (int)(100 * hecho / total));
+        }
+        return nueva;
     }
 }
 
@@ -787,6 +834,16 @@ static class Actualizador
     }
 
     public static void OlvidarHuellas() { lock (candado) cache = null; }
+
+    // Para "Reparar archivos": la próxima revisión vuelve a leer todo de cero.
+    public static void BorrarHuellas()
+    {
+        lock (candado)
+        {
+            cache = null;
+            try { File.Delete(CacheRuta); } catch (Exception) { }
+        }
+    }
 
     static Dictionary<string, string> LeerCache()
     {
@@ -1168,6 +1225,7 @@ class Ventana : Form
     class Zona { public Rectangle R; public Action Click; }
     readonly List<Zona> zonas = new List<Zona>();
     readonly TextBox nick = new TextBox();
+    readonly TextBox detalle = new TextBox();
     readonly NotifyIcon bandeja = new NotifyIcon();
     readonly Timer reloj = new Timer(), cuadros = new Timer();
     readonly Stopwatch tiempo = Stopwatch.StartNew();
@@ -1180,6 +1238,10 @@ class Ventana : Form
     string pestana = "inicio", noticias = "Cargando noticias...", estado = "Listo para jugar.";
     List<Noticia> listaNoticias = Noticias.Leer("Cargando noticias...");
     List<ModOpcional> catalogo = new List<ModOpcional>();
+    List<Noticia> listaParches = new List<Noticia>(), listaNovedades = new List<Noticia>();
+    bool verParches, conInforme = true;
+    string motivo = "";
+    readonly Dictionary<string, bool> abiertas = new Dictionary<string, bool>();
     string catalogoTexto = "Cargando mods...", filtroMods = "";
     HashSet<string> modsViejos = new HashSet<string>();
     readonly Dictionary<string, Image> fotosMods = new Dictionary<string, Image>();
@@ -1207,6 +1269,17 @@ class Ventana : Form
         nick.SetBounds(Tarjeta.X + 36, Tarjeta.Y + 262, Tarjeta.Width - 72, 26);
         nick.Text = Registro.Nick;
         nick.TextChanged += delegate { Invalidate(); };
+
+        detalle.Multiline = true;
+        detalle.BorderStyle = BorderStyle.None;
+        detalle.BackColor = Color.FromArgb(20, 22, 30);
+        detalle.ForeColor = Texto;
+        detalle.Font = new Font("Segoe UI", 11f);
+        detalle.MaxLength = 1000;
+        detalle.ScrollBars = ScrollBars.Vertical;
+        detalle.SetBounds(Contenido.X + 36, Contenido.Y + 238, Contenido.Width - 72, 120);
+        detalle.Visible = false;
+        Controls.Add(detalle);
         Controls.Add(nick);
 
         bandeja.Text = "AMERICA RP";
@@ -1333,6 +1406,17 @@ class Ventana : Form
             catch (Exception ex) { noticias = "No se pudieron cargar las noticias: " + ex.Message; }
         }
         listaNoticias = Noticias.Leer(noticias);
+        listaParches = await Lista(Config.ParchesUrl);
+        listaNovedades = await Lista(Config.NovedadesUrl);
+        Invalidate();
+    }
+
+    // Una lista opcional con el formato de las noticias. Si no hay o no se puede bajar, queda vacía.
+    static async Task<List<Noticia>> Lista(string url)
+    {
+        if (url.Length == 0) return new List<Noticia>();
+        try { return Noticias.Leer(await Task.Run(() => Web.Texto(url))).Where(n => n.Titulo.Length > 0).ToList(); }
+        catch (Exception) { return new List<Noticia>(); }
     }
 
     // Cuántos archivos del server le faltan al jugador (fila "Archivos del server" de MI JUEGO).
@@ -1680,16 +1764,60 @@ class Ventana : Form
         Activate();
     }
 
-    void CopiarInforme()
+    void EnviarSoporte()
     {
-        string texto = Soporte.Armar(Revisiones(), Carpeta(), nick.Text.Trim(), EnbActivo(), Soporte.UltimoCierre(Soporte.DirInformes()));
+        if (motivo.Length == 0) { MessageBox.Show(this, "Elegí qué te pasa.", "Soporte", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        string informe = conInforme ? Soporte.Armar(Revisiones(), Carpeta(), nick.Text.Trim(), EnbActivo(), Soporte.UltimoCierre(Soporte.DirInformes())) : "";
+        string texto = Soporte.Pedido(motivo, detalle.Text, informe);
         try { Clipboard.SetText(texto); }
-        catch (Exception ex) { MessageBox.Show(this, "No se pudo copiar el informe: " + ex.Message, "Soporte", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+        catch (Exception ex) { MessageBox.Show(this, "No se pudo copiar el mensaje: " + ex.Message, "Soporte", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
         string soporte = Config.Redes.Where(r => r.Key == "Soporte").Select(r => r.Value).FirstOrDefault() ?? "";
-        Avisar("Informe copiado. Pegalo con Ctrl+V en el canal de soporte.", 100);
-        if (MessageBox.Show(this, "Copié el informe. Pegalo con Ctrl+V en el canal de soporte del Discord y contá qué te pasa." +
+        Avisar("Mensaje copiado. Pegalo con Ctrl+V en el canal de soporte.", 100);
+        if (MessageBox.Show(this, "Copié el mensaje. Pegalo con Ctrl+V en el canal de soporte del Discord y el staff te responde ahí." +
             (soporte.Length > 0 ? "\n\n¿Abrir el soporte ahora?" : ""), "Soporte",
             soporte.Length > 0 ? MessageBoxButtons.YesNo : MessageBoxButtons.OK, MessageBoxIcon.Information) == DialogResult.Yes) Abrir(soporte);
+    }
+
+    void MenuJuego(Rectangle r)
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Abrir la carpeta del GTA", null, delegate { if (Carpeta().Length > 0) Abrir(Carpeta()); });
+        menu.Items.Add("Reparar archivos (revisar todo de cero)", null, delegate { if (ocupado) return; Actualizador.BorrarHuellas(); Actualizar(); });
+        menu.Items.Add("Mover la carpeta a otro lugar", null, delegate { MoverCarpeta(); });
+        menu.Items.Add("Elegir otra carpeta", null, delegate { ElegirCarpeta(); });
+        bool hay = Carpeta().Length > 0;
+        for (int i = 0; i < 3; i++) menu.Items[i].Enabled = hay;
+        menu.Closed += delegate { BeginInvoke(new Action(menu.Dispose)); };
+        menu.Show(this, new Point(r.X, r.Bottom + 4));
+    }
+
+    async void MoverCarpeta()
+    {
+        if (ocupado || Carpeta().Length == 0) return;
+        if (Juego.Abierto()) { MessageBox.Show(this, "Cerrá el GTA antes de moverlo.", "Mover la carpeta", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        string origen = Carpeta(), destino;
+        using (var d = new FolderBrowserDialog { Description = "Elegí dónde poner la carpeta del GTA. Lejos de Archivos de programa, el Escritorio y OneDrive; por ejemplo, C:\\Juegos." })
+        {
+            if (d.ShowDialog(this) != DialogResult.OK) return;
+            destino = d.SelectedPath;
+        }
+        Ocupar(true);
+        try
+        {
+            string nueva = await Task.Run(() => Mudanza.Copiar(origen, destino, Avisar));
+            Registro.GtaExe = Path.Combine(nueva, "gta_sa.exe");
+            RevisarInstalacion();
+            RevisarMods();
+            Avisar("El GTA ahora está en " + nueva + ".", 100);
+            MessageBox.Show(this, "Listo, el GTA ahora está en:\n" + nueva + "\n\nLa carpeta vieja no se borró. Cuando compruebes que el juego anda, borrala vos:\n" + origen,
+                "Mover la carpeta", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            Avisar("No se pudo mover el GTA.", 0);
+            MessageBox.Show(this, ex.Message + "\n\nEl GTA sigue en " + origen + ", sin cambios.", "Mover la carpeta", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally { Ocupar(false); }
     }
 
     static void Abrir(string url)
@@ -1701,6 +1829,7 @@ class Ventana : Form
     {
         pestana = p;
         scroll = 0;
+        detalle.Visible = p == "soporte";
     }
 
     // ---------- mouse ----------
@@ -1764,6 +1893,8 @@ class Ventana : Form
         else if (pestana == "mods") DibujarMods(g);
         else if (pestana == "juego") DibujarJuego(g);
         else if (pestana == "ajustes") DibujarAjustes(g);
+        else if (pestana == "soporte") DibujarSoporte(g);
+        else if (pestana == "novedades") DibujarNovedades(g);
         else DibujarInicio(g);
         DibujarTarjeta(g);
         DibujarPie(g);
@@ -1813,11 +1944,46 @@ class Ventana : Form
     void DibujarNoticias(Graphics g)
     {
         Rectangle area = Hoja(g, "NOTICIAS");
-        Font texto = Fuentes.Texto(12.5f), titulo = Fuentes.Titulo(24f), chica = Fuentes.Negrita(9.5f);
+        if (listaParches.Count > 0)
+        {
+            // Como el título no es un botón, la elección va a la derecha del título.
+            int x = Contenido.Right - 28;
+            foreach (string[] o in new[] { new[] { "p", "PARCHES DEL SERVER" }, new[] { "n", "NOTICIAS" } })
+            {
+                Font chica = Fuentes.Negrita(9.5f);
+                var r = new Rectangle(x - Medir(g, o[1], chica) - 20, Contenido.Y + 30, Medir(g, o[1], chica) + 20, 24);
+                bool elegido = verParches == (o[0] == "p");
+                if (elegido) using (var b2 = new SolidBrush(Acento)) g.FillRectangle(b2, r);
+                else using (var pen = new Pen(Color.FromArgb(r.Contains(mouse) ? 200 : 90, 255, 255, 255))) g.DrawRectangle(pen, r);
+                Escribir(g, o[1], chica, elegido ? Oscuro : Texto, r.X + 10, r.Y + 5);
+                bool parches = o[0] == "p";
+                zonas.Add(new Zona { R = r, Click = delegate { verParches = parches; scroll = 0; Invalidate(); } });
+                x = r.X - 8;
+            }
+        }
+        Feed(g, area, verParches ? listaParches : listaNoticias, verParches ? "p" : "n");
+    }
+
+    void DibujarNovedades(Graphics g)
+    {
+        Rectangle area = Hoja(g, "NOVEDADES DEL LAUNCHER");
+        if (listaNovedades.Count == 0) { Escribir(g, "Todavía no hay novedades cargadas.", Fuentes.Texto(13f), Gris, area.X, area.Y); return; }
+        Feed(g, area, listaNovedades, "v");
+    }
+
+    // Lista de noticias desplegables: la primera viene abierta y las demás muestran solo su título hasta tocarlas.
+    void Feed(Graphics g, Rectangle area, List<Noticia> lista, string clave)
+    {
+        Font texto = Fuentes.Texto(12.5f), titulo = Fuentes.Titulo(22f), chica = Fuentes.Negrita(9.5f);
         g.SetClip(area);
         int y = area.Y - scroll;
-        foreach (Noticia n in listaNoticias)
+        for (int i = 0; i < lista.Count; i++)
         {
+            Noticia n = lista[i];
+            string k = clave + i;
+            bool abierta;
+            if (!abiertas.TryGetValue(k, out abierta)) abierta = i == 0 || n.Titulo.Length == 0;
+            int arriba = y;
             if (n.Etiqueta.Length > 0 || n.Fecha.Length > 0)
             {
                 int x = area.X;
@@ -1832,24 +1998,67 @@ class Ventana : Form
                 Escribir(g, n.Fecha, chica, Gris, x, y + 3);
                 y += 26;
             }
-            if (n.Titulo.Length > 0) { Escribir(g, n.Titulo, titulo, Texto, area.X, y); y += 38; }
-            foreach (string l in n.Lineas)
+            if (n.Titulo.Length > 0)
             {
-                bool punto = l.StartsWith("- ");
-                string t = punto ? l.Substring(2) : l;
-                int sangria = punto ? 18 : 0;
-                int alto = t.Length == 0 ? 10 : (int)g.MeasureString(t, texto, area.Width - sangria).Height;
-                if (punto) Punto(g, area.X + 5, y + 11, Acento);
-                using (var b = new SolidBrush(Color.FromArgb(225, Texto))) g.DrawString(t, texto, b, new RectangleF(area.X + sangria, y, area.Width - sangria, alto + 4));
-                y += alto + 2;
+                Escribir(g, Recortar(g, n.Titulo, area.Width - 40, titulo), titulo, Texto, area.X, y);
+                Escribir(g, abierta ? "–" : "+", Fuentes.Titulo(22f), Acento, area.Right - 18, y);
+                y += 36;
+                var cabeza = Rectangle.Intersect(new Rectangle(area.X, arriba, area.Width, y - arriba), area);
+                if (cabeza.Height > 0)
+                {
+                    bool estaba = abierta;
+                    zonas.Add(new Zona { R = cabeza, Click = delegate { abiertas[k] = !estaba; Invalidate(); } });
+                }
             }
-            y += 14;
+            if (abierta)
+                foreach (string l in n.Lineas)
+                {
+                    bool punto = l.StartsWith("- ");
+                    string t = punto ? l.Substring(2) : l;
+                    int sangria = punto ? 18 : 0;
+                    int alto = t.Length == 0 ? 10 : (int)g.MeasureString(t, texto, area.Width - sangria).Height;
+                    if (punto) Punto(g, area.X + 5, y + 11, Acento);
+                    using (var b = new SolidBrush(Color.FromArgb(225, Texto))) g.DrawString(t, texto, b, new RectangleF(area.X + sangria, y, area.Width - sangria, alto + 4));
+                    y += alto + 2;
+                }
+            y += abierta ? 14 : 6;
             using (var p = new Pen(Color.FromArgb(28, 255, 255, 255))) g.DrawLine(p, area.X, y, area.Right, y);
-            y += 18;
+            y += 16;
         }
         g.ResetClip();
         int total = y + scroll - area.Y;
         scroll = Math.Min(scroll, Math.Max(0, total - area.Height));
+    }
+
+    void DibujarSoporte(Graphics g)
+    {
+        Rectangle area = Hoja(g, "SOPORTE");
+        Escribir(g, "¿QUÉ TE PASA?", Fuentes.Negrita(10f), Gris, area.X, area.Y);
+        int ancho = (area.Width - 10) / 2;
+        for (int i = 0; i < Soporte.Motivos.Length; i++)
+        {
+            string m = Soporte.Motivos[i];
+            var r = new Rectangle(area.X + (i % 2) * (ancho + 10), area.Y + 22 + (i / 2) * 38, ancho, 32);
+            bool elegido = motivo == m;
+            using (var b = new SolidBrush(elegido ? Color.FromArgb(60, Acento) : Color.FromArgb(r.Contains(mouse) ? 50 : 25, 255, 255, 255))) g.FillRectangle(b, r);
+            if (elegido) using (var p = new Pen(Acento, 1.5f)) g.DrawRectangle(p, r);
+            Punto(g, r.X + 14, r.Y + 16, elegido ? Acento : Gris);
+            Escribir(g, m, Fuentes.Negrita(11.5f), Texto, r.X + 26, r.Y + 7);
+            zonas.Add(new Zona { R = r, Click = delegate { motivo = m; Invalidate(); } });
+        }
+        var caja = new Rectangle(detalle.Left - 8, detalle.Top - 6, detalle.Width + 16, detalle.Height + 12);
+        Escribir(g, "CONTANOS QUÉ PASÓ: QUÉ ESTABAS HACIENDO, QUÉ VISTE, DESDE CUÁNDO", Fuentes.Negrita(10f), Gris, area.X, caja.Y - 22);
+        using (var b = new SolidBrush(detalle.BackColor)) g.FillRectangle(b, caja);
+        using (var p = new Pen(detalle.Focused ? Acento : Color.FromArgb(60, 255, 255, 255))) g.DrawRectangle(p, caja);
+
+        var marca = new Rectangle(area.X, caja.Bottom + 16, 18, 18);
+        using (var p = new Pen(conInforme ? Acento : Gris, 1.5f)) g.DrawRectangle(p, marca);
+        if (conInforme) using (var b = new SolidBrush(Acento)) g.FillRectangle(b, marca.X + 4, marca.Y + 4, 11, 11);
+        Escribir(g, "Sumar el informe técnico (versión, Windows, revisiones y último cierre del GTA)", Fuentes.Texto(11f), Texto, marca.Right + 10, marca.Y);
+        zonas.Add(new Zona { R = new Rectangle(marca.X, marca.Y, area.Width, 20), Click = delegate { conInforme = !conInforme; Invalidate(); } });
+
+        Boton(g, new Rectangle(area.X, area.Bottom - 44, 240, 40), "COPIAR PARA DISCORD", true, EnviarSoporte);
+        Escribir(g, "Se copia el mensaje: pegalo con Ctrl+V en el canal de soporte.", Fuentes.Texto(10.5f), Gris, area.X + 256, area.Bottom - 32);
     }
 
     Color ColorEtiqueta(string etiqueta)
@@ -1870,6 +2079,11 @@ class Ventana : Form
             Ajustes.Bandeja, delegate { Ajustes.Bandeja = !Ajustes.Bandeja; });
         FilaAjuste(g, area, ref y, "ACTUALIZAR EL LAUNCHER SIN PREGUNTAR", "Cuando sale una versión nueva, se instala sola al abrirlo. Si no, te pregunta antes.",
             Ajustes.ActualizarSolo, delegate { Ajustes.ActualizarSolo = !Ajustes.ActualizarSolo; });
+        Escribir(g, "NOVEDADES DEL LAUNCHER", Fuentes.Negrita(13f), Texto, area.X, y + 10);
+        Boton(g, new Rectangle(area.Right - 150, y + 4, 150, 34), "VER", false, delegate { Pestana("novedades"); });
+        Escribir(g, "Qué trajo cada versión del launcher.", Fuentes.Texto(11f), Gris, area.X, y + 40);
+        using (var p = new Pen(Color.FromArgb(28, 255, 255, 255))) g.DrawLine(p, area.X, y + 66, area.Right, y + 66);
+        y += 76;
         Escribir(g, "INFORMES DE CIERRES DEL GTA", Fuentes.Negrita(13f), Texto, area.X, y + 10);
         Boton(g, new Rectangle(area.Right - 150, y + 4, 150, 34), "ABRIR", false, delegate
         {
@@ -1967,7 +2181,8 @@ class Ventana : Form
         string carpeta = Carpeta();
         Escribir(g, "CARPETA DEL GTA SAN ANDREAS", Fuentes.Negrita(10f), Gris, area.X, area.Y);
         Escribir(g, carpeta.Length == 0 ? "Sin elegir" : Recortar(g, carpeta, area.Width - 200, Fuentes.Texto(13f)), Fuentes.Texto(13f), Texto, area.X, area.Y + 20);
-        Boton(g, new Rectangle(area.Right - 170, area.Y + 6, 170, 38), "CAMBIAR CARPETA", false, delegate { ElegirCarpeta(); });
+        var opciones = new Rectangle(area.Right - 170, area.Y + 6, 170, 38);
+        Boton(g, opciones, "OPCIONES ▾", false, delegate { MenuJuego(opciones); });
 
         int y = area.Y + 80;
         foreach (string[] fila in Revisiones())
@@ -1988,7 +2203,7 @@ class Ventana : Form
             y += 66;
         }
         Boton(g, new Rectangle(area.X, y + 24, 200, 40), "REVISAR Y ACTUALIZAR", true, Actualizar);
-        Boton(g, new Rectangle(area.X + 216, y + 24, 200, 40), "COPIAR INFORME", false, CopiarInforme);
+        Boton(g, new Rectangle(area.X + 216, y + 24, 200, 40), "SOPORTE", false, delegate { Pestana("soporte"); });
     }
 
     // [nombre, valor, ok|ojo|mal|nada]
@@ -2578,6 +2793,25 @@ static class Prueba
             Mods.Dir = modsAntes;
             Directory.Delete(carpeta, true);
         }
+
+        string ayuda = Soporte.Pedido("Se cierra solo", "  Al entrar al taxi.  ", "INFORME");
+        Ver(ayuda.StartsWith("**Pedido de soporte · Se cierra solo**") && ayuda.Contains("Al entrar al taxi.") && !ayuda.Contains("  Al") && ayuda.TrimEnd().EndsWith("INFORME")
+            && !Soporte.Pedido("Otra cosa", "", "").Contains("INFORME"), "soporte: arma el pedido");
+
+        carpeta = Path.Combine(Path.GetTempPath(), "amrp-mover-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string viejo = Path.Combine(carpeta, "viejo", "GTA San Andreas");
+            Directory.CreateDirectory(Path.Combine(viejo, "models"));
+            File.WriteAllText(Path.Combine(viejo, "gta_sa.exe"), "exe");
+            File.WriteAllText(Path.Combine(viejo, "models", "gta3.img"), "img");
+            Directory.CreateDirectory(Path.Combine(carpeta, "nuevo"));
+            string nueva = Mudanza.Copiar(viejo, Path.Combine(carpeta, "nuevo"), delegate { });
+            Ver(nueva == Path.Combine(carpeta, "nuevo", "GTA San Andreas") && File.ReadAllText(Path.Combine(nueva, "models", "gta3.img")) == "img" && File.Exists(Path.Combine(viejo, "gta_sa.exe")), "mover: copia todo y no borra la vieja");
+            Ver(Tira(() => Mudanza.Copiar(viejo, Path.Combine(carpeta, "nuevo"), delegate { })), "mover: no pisa una carpeta con archivos");
+            Ver(Tira(() => Mudanza.Copiar(viejo, viejo, delegate { })), "mover: no se mete adentro de sí misma");
+        }
+        finally { Directory.Delete(carpeta, true); }
 
         Ver(Instalacion.NickValido.IsMatch("Juan_Perez") && !Instalacion.NickValido.IsMatch("ab") && !Instalacion.NickValido.IsMatch("con espacio"), "nick");
         Console.WriteLine(fallas == 0 ? "Todo bien." : fallas + " falla(s).");
