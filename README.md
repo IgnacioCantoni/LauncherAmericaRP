@@ -108,6 +108,13 @@ Dos arreglos van con las actualizaciones para todos, porque el cliente de CEF lo
 
 - `salida_limpia.asi`: el SA-MP sale con `ExitProcess`, y al descargarse `cef\client.dll` Windows corta el GTA con 0xC0000602, así que cada salida contaba como crash. Esta ASI cambia ese `ExitProcess` de samp.dll por `TerminateProcess` con el mismo código, cuando el SA-MP y el CEF ya se apagaron. Fuente en `cliente/salida_limpia.c`. Se compila con `i686-w64-mingw32-gcc -O2 -s -shared -nostdlib -e _DllMain@12 -o salida_limpia.asi salida_limpia.c -lkernel32`. Sacarla cuando omp-cef lo arregle.
 - Sin `wndmode.ini`: la ventana sin bordes del Ultimate ASI Loader se repartió un día y se sacó, porque con dos monitores el GTA crasheaba después de elegir la pantalla. `prohibidos.txt` la saca de las carpetas que la recibieron. Con el ENB activo, el `enblocal.ini` del paquete ENB (`paquetes/enb/archivos`) sigue pidiendo ventana sin bordes (`ForceBorderless` y `ForceBorderlessFullscreen`).
+## Video de la pantalla de carga del GTA
+
+Mientras el GTA carga, en vez de las imágenes de siempre (las de `loadscs.txd`) y su barra gris, se ve el video del server, que ya trae su propio círculo de carga. Lo hace `carga_video.asi`, que va con las actualizaciones junto con `americarp/carga.bin` (el video en cuadros JPEG de 1024x512, a 24 por segundo, unos 13 MB). El video se repite mientras dure la carga. Si `carga.bin` falta o está roto, se ven las pantallas de siempre, sin barra. Solo funciona con GTA SA 1.0 US; en otra versión la ASI no toca nada.
+
+- Fuente en `cliente/carga_video.c` (lee los JPEG con `cliente/stb_image.h`, de dominio público). Se compila con `i686-w64-mingw32-gcc -O2 -s -shared -static-libgcc -o carga_video.asi carga_video.c` desde `cliente/`.
+- Para cambiar el video: reemplazá `cliente/carga.mp4` (mejor 16:9), corré `python cliente/armar_carga.py` (necesita ffmpeg), después `generar-manifiesto.bat`, commit y push. El sonido del video no se usa: suena la música de carga del GTA.
+
 ## Cambiar la imagen de fondo
 
 Reemplazá `fondo/fondo.jpg` por otra imagen 16:9 (mejor de 1440x810 o más grande) y volvé a compilar. Si no es 16:9 se recorta lo que sobra, sin deformarla.
