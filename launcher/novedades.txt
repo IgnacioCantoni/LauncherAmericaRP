@@ -7,6 +7,7 @@
 - MI JUEGO > OPCIONES: abrir la carpeta del GTA, reparar archivos y mover la carpeta a otro lugar.
 - Noticias desplegables y una sección con los parches del server.
 - Estas novedades.
+- Diseño nuevo, más simple: ventana más grande y redondeada, interruptores, y los avisos y la búsqueda de carpetas con el estilo del launcher en vez de los cuadros de Windows.
 
 ## 2026-11-04 | Launcher | 1.3.2
 - Reconoce un ENB que ya estaba instalado, y activarlo o desactivarlo es al instante.
