@@ -3009,6 +3009,12 @@ class Arranque : Lienzo
         {
             using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(barra.X - 1, barra.Y, lleno + 2, 2), Color.FromArgb(60, 255, 255, 255), Color.FromArgb(255, 255, 255, 255), 0f))
                 g.FillRectangle(b, barra.X, barra.Y, lleno, 2);
+            // Estela que recorre la parte llena una y otra vez mientras carga.
+            float paso = (float)(ms % 900 / 900), punta = barra.X + paso * (lleno + 70);
+            int desde = (int)Math.Max(barra.X, punta - 70), hasta = (int)Math.Min(barra.X + lleno, punta);
+            if (hasta - desde > 1)
+                using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle((int)punta - 71, barra.Y - 1, 72, 4), Color.FromArgb(0, 255, 236, 200), Color.FromArgb(255, 255, 236, 200), 0f))
+                    g.FillRectangle(b, desde, barra.Y - 1, hasta - desde, 4);
             using (var camino = new System.Drawing.Drawing2D.GraphicsPath())
             {
                 camino.AddEllipse(barra.X + lleno - 10, barra.Y - 9, 20, 20);
