@@ -21,7 +21,7 @@ static class Config
 {
     // Lo que cambia de un server a otro. Después de tocarlo, volvé a compilar.
     // Versión de este launcher. Para sacar una nueva, ver "Sacar una versión nueva del launcher" en el README.
-    public const string Version = "1.3.0";
+    public const string Version = "1.3.1";
     public const string Host = "127.0.0.1";
     public const int Puerto = 7777;
     // Vacío = sin noticias / sin actualizaciones.
@@ -452,6 +452,16 @@ static class Juego
     }
 
     public static bool Abierto() { return Process.GetProcessesByName("gta_sa").Length > 0; }
+
+    // Para un GTA trabado (por ejemplo, en la ventana de elegir resolución escondida detrás de todo).
+    public static void Cerrar()
+    {
+        foreach (Process p in Process.GetProcessesByName("gta_sa"))
+            using (p)
+            {
+                try { p.Kill(); p.WaitForExit(5000); } catch (Exception) { }
+            }
+    }
 
     // Espera a que el samp.exe abra el GTA (hasta un minuto) y después a que se cierre. null si nunca apareció.
     public static Cierre Esperar(string carpeta, DateTime inicio)
@@ -1346,8 +1356,11 @@ class Ventana : Form
             Registro.Nick = n;
             if (Juego.Abierto())
             {
-                MessageBox.Show(this, "El GTA ya está abierto. Cerralo antes de volver a entrar.", "AMERICA RP", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
+                if (MessageBox.Show(this, "El GTA ya está abierto, aunque puede estar escondido detrás de otras ventanas (por ejemplo, la de elegir la resolución).\n\n" +
+                    "¿Cerrarlo y abrir uno nuevo? Si estás jugando, se cierra la partida.", "AMERICA RP", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                await Task.Run(() => Juego.Cerrar());
+                if (Juego.Abierto()) { Avisar("No se pudo cerrar el GTA. Cerralo desde el Administrador de tareas.", 0); return; }
+                try { await Task.Run(() => Juego.CerrarCefColgado(Carpeta())); } catch (Exception) { }
             }
             if (!await Preparar()) return;
             string carpeta = Carpeta();
