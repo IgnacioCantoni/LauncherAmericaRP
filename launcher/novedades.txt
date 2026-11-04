@@ -4,9 +4,17 @@
 ## 2026-11-04 | Launcher | 1.4.0
 - Pestaña MODS nueva: mods opcionales elegidos por el staff, que se instalan y se sacan con un clic.
 - Soporte: elegís qué te pasa, contás qué pasó y el launcher arma el mensaje para Discord, con el informe técnico si querés.
-- MI JUEGO > OPCIONES: abrir la carpeta del GTA, reparar archivos y mover la carpeta a otro lugar.
+- En INICIO elegís el cliente (OFICIAL, con los archivos del server, o tu propio GTA en CUSTOM), y sus opciones prenden el ENB, abren la carpeta, reparan archivos o la mueven a otro lugar. MI JUEGO ya no hace falta.
+- En INICIO elegís el servidor (OFICIAL o DESARROLLO): cada uno muestra con una luz verde o roja si está en línea, y su ping en ms.
+- Tu tiempo jugado abajo del nick: horas totales y cuánto duró tu última partida.
+- El launcher se actualiza solo, sin preguntar, cada vez que sale una versión nueva.
 - Noticias desplegables y una sección con los parches del server.
 - Estas novedades.
+- Diseño nuevo, más simple y con letra Inter: ventana más grande y redondeada, interruptores, y los avisos y la búsqueda de carpetas con el estilo del launcher en vez de los cuadros de Windows.
+- Fondo nuevo y ventana más grande (1440x810 en pantallas que la aguantan). El launcher pesa mucho menos.
+- Pantalla de carga al abrir el launcher: noche con montañas, la estrella dorada y una estrella fugaz.
+- Las descargas muestran cuántos MB van, la velocidad y cuánto falta, en una barra más gruesa con estela de estrella fugaz.
+- Botones e interruptores que se iluminan de a poco y pestañas que cambian con un fundido.
 
 ## 2026-11-04 | Launcher | 1.3.2
 - Reconoce un ENB que ya estaba instalado, y activarlo o desactivarlo es al instante.

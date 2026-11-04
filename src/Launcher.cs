@@ -22,8 +22,12 @@ static class Config
     // Lo que cambia de un server a otro. Después de tocarlo, volvé a compilar.
     // Versión de este launcher. Para sacar una nueva, ver "Sacar una versión nueva del launcher" en el README.
     public const string Version = "1.4.0";
-    public const string Host = "127.0.0.1";
-    public const int Puerto = 7777;
+    // Servidores que se eligen en INICIO: nombre, dirección y puerto. Sin dirección = "Todavía sin IP", no se puede elegir.
+    public static readonly Tuple<string, string, int>[] Servidores =
+    {
+        Tuple.Create("OFICIAL", "", 7777),
+        Tuple.Create("DESARROLLO", "127.0.0.1", 7777),
+    };
     // Vacío = sin noticias / sin actualizaciones.
     const string Repo = "https://raw.githubusercontent.com/IgnacioCantoni/LauncherAmericaRP/main/";
     public const string NoticiasUrl = Repo + "noticias.txt";
@@ -43,7 +47,7 @@ static class Config
     // d3dx9 que piden samp.dll (d3dx9_25) y el ENB (d3dx9_43), y que Windows 10 y 11 no traen. Vacío = no se ofrece.
     public const string DirectXUrl = "https://download.microsoft.com/download/8/4/A/84A35BF1-DAFE-4AE8-82AF-AD2AE20B6B14/directx_Jun2010_redist.exe";
     public const string DirectXSha = "053f76dcbb28802e23341b6a787e3b0791c0fa5c8d4d011b1044172dbf89c73b";
-    // GTA Full: gráficos ENB, opcionales (se activan en MI JUEGO). La licencia de ENBSeries no deja repartir su d3d9.dll
+    // GTA Full: gráficos ENB, opcionales (opciones del cliente en INICIO). La licencia de ENBSeries no deja repartir su d3d9.dll
     // por un launcher: cada jugador baja el zip oficial y el launcher lo instala desde ahí. Lo que sí se reparte es el
     // preset del server (.ini y .fx) en paquetes/enb. EnbUrl vacío = no aparece.
     public const string EnbUrl = Repo + "paquetes/enb/manifiesto.txt";
@@ -152,22 +156,57 @@ static class Registro
 {
     const string Clave = @"Software\SAMP";
 
-    static string Leer(string valor)
+    const string Propia = @"Software\AmericaRP";
+
+    static string Leer(string valor) { return Leer(Clave, valor); }
+    static void Guardar(string valor, string dato) { Guardar(Clave, valor, dato); }
+
+    static string Leer(string clave, string valor)
     {
-        using (RegistryKey k = Registry.CurrentUser.OpenSubKey(Clave))
+        using (RegistryKey k = Registry.CurrentUser.OpenSubKey(clave))
         {
             object v = k == null ? null : k.GetValue(valor);
             return v == null ? "" : v.ToString();
         }
     }
 
-    static void Guardar(string valor, string dato)
+    static void Guardar(string clave, string valor, string dato)
     {
-        using (RegistryKey k = Registry.CurrentUser.CreateSubKey(Clave)) k.SetValue(valor, dato);
+        using (RegistryKey k = Registry.CurrentUser.CreateSubKey(clave)) k.SetValue(valor, dato);
     }
 
     public static string Nick { get { return Leer("PlayerName"); } set { Guardar("PlayerName", value); } }
+    // La de SA-MP: es el GTA que abre samp.exe, o sea el del cliente elegido.
     public static string GtaExe { get { return Leer("gta_sa_exe"); } set { Guardar("gta_sa_exe", value); } }
+
+    // Clientes: "liviano" es el oficial (el GTA principal); "custom" es otra carpeta del jugador, con sus aportes.
+    public static string Cliente { get { string c = Leer(Propia, "cliente"); return c.Length == 0 ? "liviano" : c; } set { Guardar(Propia, "cliente", value); } }
+    // Tiempo jugado: minutos totales, los de la última partida y cuándo terminó (para la tarjeta del server).
+    public static int MinutosJugados { get { int n; return int.TryParse(Leer(Propia, "minutos_jugados"), out n) ? n : 0; } }
+    public static int MinutosUltima { get { int n; return int.TryParse(Leer(Propia, "minutos_ultima"), out n) ? n : 0; } }
+    public static DateTime FinUltima { get { long n; return long.TryParse(Leer(Propia, "fin_ultima"), out n) ? new DateTime(n) : DateTime.MinValue; } }
+    public static void AnotarPartida(DateTime inicio, DateTime fin)
+    {
+        int min = (int)Math.Max(0, (fin - inicio).TotalMinutes);
+        Guardar(Propia, "minutos_jugados", (MinutosJugados + min).ToString());
+        Guardar(Propia, "minutos_ultima", min.ToString());
+        Guardar(Propia, "fin_ultima", fin.Ticks.ToString());
+    }
+
+    public static int Servidor
+    {
+        get
+        {
+            int n;
+            if (int.TryParse(Leer(Propia, "servidor"), out n) && n >= 0 && n < Config.Servidores.Length && Config.Servidores[n].Item2.Length > 0) return n;
+            return Math.Max(0, Array.FindIndex(Config.Servidores, s => s.Item2.Length > 0)); // el primero que tiene dirección
+        }
+        set { Guardar(Propia, "servidor", value.ToString()); }
+    }
+    public static string GtaPrincipal { get { return Leer(Propia, "gta_principal"); } set { Guardar(Propia, "gta_principal", value); } }
+    public static string GtaCustom { get { return Leer(Propia, "gta_custom"); } set { Guardar(Propia, "gta_custom", value); } }
+    // Lo que se anota por carpeta (ENB, mods) va aparte para el personalizado.
+    public static string Sufijo { get { return Cliente == "custom" ? "-custom" : ""; } }
 }
 
 static class Instalacion
@@ -322,8 +361,6 @@ static class Ajustes
 
     // Mientras jugás el launcher se va a la bandeja (al lado del reloj) en vez de quedar minimizado.
     public static bool Bandeja { get { return Si("bandeja", true); } set { Poner("bandeja", value); } }
-    // Si hay una versión nueva del launcher, se instala sin preguntar.
-    public static bool ActualizarSolo { get { return Si("actualizar_solo", false); } set { Poner("actualizar_solo", value); } }
 }
 
 // Informe para pegar en el canal de soporte: lo que soporte siempre pregunta, en un solo texto.
@@ -587,6 +624,7 @@ static class Mudanza
             if (libre < total + (100L << 20)) throw new InvalidDataException("No hay lugar: hacen falta " + (total >> 20) + " MB y quedan " + (libre >> 20) + " MB.");
         }
         catch (ArgumentException) { } // una unidad de red: se prueba igual
+        var reloj = Stopwatch.StartNew();
         foreach (string f in archivos)
         {
             string destino = nueva + f.Substring(origen.Length);
@@ -594,7 +632,7 @@ static class Mudanza
             File.Copy(f, destino, false);
             if (new FileInfo(destino).Length != new FileInfo(f).Length) throw new IOException("No se copió bien " + f + ".");
             hecho += new FileInfo(f).Length;
-            progreso("Copiando el GTA: " + (hecho >> 20) + " de " + (total >> 20) + " MB", total == 0 ? 100 : (int)(100 * hecho / total));
+            progreso("Copiando el GTA: " + Actualizador.Detalle(hecho, total, reloj.Elapsed.TotalSeconds), total == 0 ? 100 : (int)(100 * hecho / total));
         }
         return nueva;
     }
@@ -644,6 +682,13 @@ static class Juego
     public static void AlFrente(IntPtr v) { SetForegroundWindow(v); }
 
     public class Cierre { public int? Codigo; public DateTime Inicio, Fin; public bool Bien { get { return Codigo == null || Codigo == 0; } } }
+
+    // Tiempo de juego para mostrar: "45 min", "2 h", "12 h 30 min".
+    public static string Duracion(int minutos)
+    {
+        if (minutos < 60) return minutos + " min";
+        return minutos / 60 + " h" + (minutos % 60 > 0 ? " " + minutos % 60 + " min" : "");
+    }
 
     // Ruta completa del .exe de un proceso, también de uno de 32 bits (Process.MainModule no siempre puede).
     static string Ruta(int id)
@@ -1009,25 +1054,51 @@ static class Actualizador
     // Descarga con avance, para archivos grandes.
     public static void Bajar(string url, string destino, string texto, Action<string, int> progreso)
     {
+        Bajar(url, destino, (leido, total, detalle) => progreso(texto + ": " + detalle, total > 0 ? (int)(100 * leido / total) : 0));
+    }
+
+    // Avisa cada cuarto de segundo (y al terminar) con lo bajado, el total (0 si no se sabe) y el detalle para mostrar.
+    public static void Bajar(string url, string destino, Action<long, long, string> avance)
+    {
         using (WebResponse respuesta = WebRequest.Create(url).GetResponse())
         using (Stream entrada = respuesta.GetResponseStream())
         using (FileStream salida = File.Create(destino))
         {
-            long total = respuesta.ContentLength, leido = 0;
+            long total = Math.Max(0, respuesta.ContentLength), leido = 0, proximo = 0;
+            var reloj = Stopwatch.StartNew();
             byte[] buffer = new byte[81920];
-            int n, ultimo = -1;
+            int n;
             while ((n = entrada.Read(buffer, 0, buffer.Length)) > 0)
             {
                 salida.Write(buffer, 0, n);
                 leido += n;
-                int porcentaje = total > 0 ? (int)(100 * leido / total) : 0;
-                if (porcentaje != ultimo)
+                if (reloj.ElapsedMilliseconds >= proximo || leido == total)
                 {
-                    ultimo = porcentaje;
-                    progreso(texto + ": " + (leido >> 20) + (total > 0 ? " de " + (total >> 20) : "") + " MB", porcentaje);
+                    proximo = reloj.ElapsedMilliseconds + 250;
+                    avance(leido, total, Detalle(leido, total, reloj.Elapsed.TotalSeconds));
                 }
             }
         }
+    }
+
+    // "12,5 de 40,0 MB · 2,3 MB/s · faltan 12 s". La velocidad y lo que falta aparecen después del primer segundo.
+    public static string Detalle(long hecho, long total, double segundos)
+    {
+        string s = Mb(hecho) + (total > 0 ? " de " + Mb(total) : "") + " MB";
+        if (segundos < 1 || hecho <= 0) return s;
+        double velocidad = hecho / segundos;
+        s += " · " + Mb((long)velocidad) + " MB/s";
+        if (total > hecho)
+        {
+            int falta = (int)Math.Ceiling((total - hecho) / velocidad);
+            s += " · faltan " + (falta < 60 ? falta + " s" : (falta + 59) / 60 + " min");
+        }
+        return s;
+    }
+
+    static string Mb(long bytes)
+    {
+        return (bytes / 1048576.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture).Replace('.', ',');
     }
 
     // Devuelve lo que revisó; en Pendientes queda lo que bajó. Si algo falla, tira la excepción y no deja archivos a medias.
@@ -1035,16 +1106,18 @@ static class Actualizador
     {
         Revision r = Revisar(carpetaGta, manifiestoUrl, progreso);
         var pendientes = r.Entradas.Where(e => r.Pendientes.Contains(e.Value)).ToList();
-        using (var web = new WebClient())
         {
             for (int i = 0; i < pendientes.Count; i++)
             {
                 string ruta = pendientes[i].Value, destino = RutaSegura(carpetaGta, ruta), temporal = destino + ".descarga";
-                progreso("Bajando " + ruta + " (" + (i + 1) + " de " + pendientes.Count + ")", 100 * i / pendientes.Count);
+                string cual = "Bajando " + ruta + (pendientes.Count > 1 ? " (" + (i + 1) + " de " + pendientes.Count + ")" : "");
+                progreso(cual, 100 * i / pendientes.Count);
                 Directory.CreateDirectory(Path.GetDirectoryName(destino));
                 try
                 {
-                    web.DownloadFile(UrlArchivo(manifiestoUrl, ruta), temporal);
+                    int hechos = i;
+                    Bajar(UrlArchivo(manifiestoUrl, ruta), temporal, (leido, total, detalle) =>
+                        progreso(cual + " · " + detalle, (int)(100 * (hechos + (total > 0 ? (double)leido / total : 0)) / pendientes.Count)));
                     if (!File.Exists(temporal))
                         throw new IOException("El antivirus borró " + ruta + " apenas se bajó. Si confiás en el server, permitilo en el historial de protección de Windows.");
                     if (Sha256(temporal) != pendientes[i].Key)
@@ -1157,17 +1230,17 @@ static class DirectX
     }
 }
 
-// Tipografías propias (SIL OFL, ver fuentes/): Montserrat Bold Italic para títulos (la del video) y Barlow para el resto.
+// Tipografía propia (SIL OFL, ver fuentes/): Inter ExtraBold para títulos, SemiBold para negritas y Regular para el resto.
 // Van dentro del .exe como recursos; si no cargan, se usa Segoe UI.
 static class Fuentes
 {
     static readonly System.Drawing.Text.PrivateFontCollection coleccion = new System.Drawing.Text.PrivateFontCollection();
     static readonly Dictionary<string, Font> cache = new Dictionary<string, Font>();
-    static FontFamily titulo, cuerpo;
+    static FontFamily titulo, cuerpo, semi;
 
     static Fuentes()
     {
-        foreach (string nombre in new[] { "Montserrat-BoldItalic.ttf", "Barlow-Regular.ttf", "Barlow-Bold.ttf" })
+        foreach (string nombre in new[] { "Inter-Regular.ttf", "Inter-SemiBold.ttf", "Inter-ExtraBold.ttf" })
         {
             try
             {
@@ -1188,8 +1261,9 @@ static class Fuentes
         }
         foreach (FontFamily f in coleccion.Families)
         {
-            if (f.Name == "Montserrat") titulo = f;
-            if (f.Name == "Barlow") cuerpo = f;
+            if (f.Name == "Inter ExtraBold") titulo = f;
+            if (f.Name == "Inter SemiBold") semi = f;
+            if (f.Name == "Inter") cuerpo = f;
         }
     }
 
@@ -1207,21 +1281,76 @@ static class Fuentes
         return f;
     }
 
-    // Los tamaños de la interfaz se pensaron para una letra angosta; Montserrat es más ancha, así que se achica acá.
-    public static Font Titulo(float tam) { return Pedir(titulo, tam * 0.6f, FontStyle.Bold | FontStyle.Italic); }
-    public static Font Texto(float tam) { return Pedir(cuerpo, tam, FontStyle.Regular); }
-    public static Font Negrita(float tam) { return Pedir(cuerpo, tam, FontStyle.Bold); }
+    // Inter (la misma letra del teléfono del server). Los tamaños se pensaron para letras más angostas, así que se achican acá.
+    public static Font Titulo(float tam) { return Pedir(titulo, tam * 0.6f, FontStyle.Regular); }
+    public static Font Texto(float tam) { return Pedir(cuerpo, tam * 0.9f, FontStyle.Regular); }
+    public static Font Negrita(float tam) { return Pedir(semi, tam * 0.9f, FontStyle.Regular); }
+
+    // Íconos de Windows 10/11 (Segoe MDL2 Assets). Sin esa fuente devuelve null y se dibuja sin íconos.
+    static FontFamily iconos;
+    static bool iconosBuscados;
+    public static Font Iconos(float tam)
+    {
+        if (!iconosBuscados)
+        {
+            iconosBuscados = true;
+            try { var f = new FontFamily("Segoe MDL2 Assets"); if (f.Name == "Segoe MDL2 Assets") iconos = f; } catch (ArgumentException) { }
+        }
+        return iconos == null ? null : Pedir(iconos, tam, FontStyle.Regular);
+    }
 }
 
-// La ventana se dibuja entera a mano (sin bordes de Windows) y se repinta ~30 veces por segundo por el fondo animado.
+// Base de las ventanas propias: sin bordes de Windows, puntas redondeadas y botones dibujados a mano.
 // Los botones son zonas: cada vez que se pinta se anotan su rectángulo y su acción.
-class Ventana : Form
+class Lienzo : Form
 {
-    static readonly Color Acento = Color.FromArgb(245, 166, 35), Texto = Color.FromArgb(244, 241, 234), Gris = Color.FromArgb(168, 172, 186),
-        Oscuro = Color.FromArgb(8, 10, 16), Verde = Color.FromArgb(110, 220, 140), Rojo = Color.FromArgb(240, 96, 96), Ambar = Color.FromArgb(245, 196, 80);
-    // 5:3 como el video de fondo; 720 de alto entra en notebooks de 1366x768.
-    const int Ancho = 1200, Alto = 720;
-    static readonly Rectangle Tarjeta = new Rectangle(Ancho - 356, 92, 316, Alto - 140), Contenido = new Rectangle(40, 92, Ancho - 428, Alto - 140);
+    protected static readonly Color Acento = Color.FromArgb(245, 166, 35), Texto = Color.FromArgb(244, 241, 234), Gris = Color.FromArgb(168, 172, 186),
+        Oscuro = Color.FromArgb(8, 10, 16), Verde = Color.FromArgb(110, 220, 140), Rojo = Color.FromArgb(240, 96, 96), Ambar = Color.FromArgb(245, 196, 80),
+        Panel = Color.FromArgb(16, 18, 26), Campo = Color.FromArgb(24, 26, 36);
+
+    protected class Zona { public Rectangle R; public Action Click; public bool Menu; }
+    protected readonly List<Zona> zonas = new List<Zona>();
+    protected Point mouse = new Point(-1, -1);
+    protected int altoArrastre = 76;
+    Point arrastre;
+    bool arrastrando;
+    readonly Stopwatch reloj = Stopwatch.StartNew();
+    readonly Dictionary<object, float[]> animaciones = new Dictionary<object, float[]>(); // clave -> [valor, último ms]
+
+    // Lleva de a poco un valor de 0 a 1 hacia su objetivo (~150 ms) y repinta mientras se mueve.
+    protected float Animar(object clave, bool encendido)
+    {
+        float ahora = reloj.ElapsedMilliseconds, objetivo = encendido ? 1f : 0f;
+        float[] a;
+        if (!animaciones.TryGetValue(clave, out a)) animaciones[clave] = a = new[] { objetivo, ahora };
+        float paso = (ahora - a[1]) / 150f;
+        a[1] = ahora;
+        a[0] = a[0] < objetivo ? Math.Min(objetivo, a[0] + paso) : Math.Max(objetivo, a[0] - paso);
+        if (a[0] != objetivo) BeginInvoke(new Action(Invalidate));
+        // Lo que dejó de dibujarse (por ejemplo, filas que se fueron con el scroll) se olvida.
+        if (animaciones.Count > 300)
+            foreach (object k in animaciones.Where(p => ahora - p.Value[1] > 2000).Select(p => p.Key).ToList()) animaciones.Remove(k);
+        return a[0];
+    }
+
+    protected float Brillo(Rectangle r)
+    {
+        return Animar(r, r.Contains(mouse));
+    }
+
+    protected static Color Mezcla(Color a, Color b, float k)
+    {
+        return Color.FromArgb((int)(a.A + (b.A - a.A) * k), (int)(a.R + (b.R - a.R) * k), (int)(a.G + (b.G - a.G) * k), (int)(a.B + (b.B - a.B) * k));
+    }
+
+    public Lienzo(int ancho, int alto)
+    {
+        FormBorderStyle = FormBorderStyle.None;
+        ClientSize = new Size(ancho, alto);
+        BackColor = Oscuro;
+        DoubleBuffered = true;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+    }
 
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr v, int atributo, ref int valor, int largo);
     [DllImport("gdi32.dll")] static extern IntPtr CreateRoundRectRgn(int x1, int y1, int x2, int y2, int ancho, int alto);
@@ -1233,21 +1362,463 @@ class Ventana : Form
         int redondo = 2;
         bool ok;
         try { ok = DwmSetWindowAttribute(Handle, 33, ref redondo, 4) == 0; } catch (Exception) { ok = false; }
-        if (!ok) Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, Ancho + 1, Alto + 1, 16, 16));
+        if (!ok) try { Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, ClientSize.Width + 1, ClientSize.Height + 1, 16, 16)); } catch (Exception) { }
     }
 
-    class Zona { public Rectangle R; public Action Click; }
-    readonly List<Zona> zonas = new List<Zona>();
+    // ---------- mouse ----------
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (arrastrando) { Location = new Point(Location.X + e.X - arrastre.X, Location.Y + e.Y - arrastre.Y); return; }
+        mouse = e.Location;
+        Cursor = ZonaEn(e.Location) != null ? Cursors.Hand : Cursors.Default;
+        Invalidate();
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        mouse = new Point(-1, -1);
+        Invalidate();
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        if (e.Button == MouseButtons.Left && e.Y < altoArrastre && ZonaEn(e.Location) == null) { arrastrando = true; arrastre = e.Location; }
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (arrastrando) { arrastrando = false; return; }
+        if (e.Button == MouseButtons.Left) Clic(ZonaEn(e.Location));
+    }
+
+    protected virtual void Clic(Zona z)
+    {
+        if (z != null) z.Click();
+        Invalidate();
+    }
+
+    protected Zona ZonaEn(Point p)
+    {
+        for (int i = zonas.Count - 1; i >= 0; i--) if (zonas[i].R.Contains(p)) return zonas[i];
+        return null;
+    }
+
+    // ---------- piezas ----------
+
+    protected void Boton(Graphics g, Rectangle r, string texto, bool principal, Action click)
+    {
+        float k = click == null ? 0 : Brillo(r);
+        Color fondo = click == null ? Color.FromArgb(14, 255, 255, 255) : principal ? Mezcla(Acento, Color.FromArgb(255, 196, 92), k) : Color.FromArgb((int)(20 + 22 * k), 255, 255, 255);
+        Relleno(g, r, fondo, 10);
+        Centrado(g, texto, Fuentes.Negrita(11.5f), click == null ? Color.FromArgb(110, Texto) : principal ? Oscuro : Texto, r);
+        if (click != null) zonas.Add(new Zona { R = r, Click = click });
+    }
+
+    // Píldora para elegir entre opciones (filtros, secciones).
+    protected void Chip(Graphics g, Rectangle r, string texto, bool elegido, Action click)
+    {
+        Relleno(g, r, elegido ? Acento : Color.FromArgb((int)(18 + 24 * Brillo(r)), 255, 255, 255), r.Height / 2);
+        Centrado(g, texto, Fuentes.Negrita(9.5f), elegido ? Oscuro : Texto, r);
+        zonas.Add(new Zona { R = r, Click = click });
+    }
+
+    // Interruptor de prendido y apagado (44x24).
+    protected void Interruptor(Graphics g, Rectangle r, bool activo, Action click)
+    {
+        float k = Brillo(r), lado = Animar("interruptor" + r, activo);
+        Relleno(g, r, Mezcla(Color.FromArgb((int)(50 + 20 * k), 255, 255, 255), Mezcla(Acento, Color.FromArgb(255, 196, 92), k), lado), r.Height / 2);
+        int d = r.Height - 6;
+        using (var b = new SolidBrush(Mezcla(Texto, Oscuro, lado))) g.FillEllipse(b, r.X + 3 + (r.Width - d - 6) * lado, r.Y + 3, d, d);
+        zonas.Add(new Zona { R = r, Click = click });
+    }
+
+    protected void Linea(Graphics g, Rectangle r, bool cruz, Action click)
+    {
+        float k = Brillo(r);
+        if (k > 0) Relleno(g, r, Color.FromArgb((int)((cruz ? 200 : 40) * k), cruz ? Rojo : Color.White), 8);
+        using (var p = new Pen(Texto, 1.6f))
+        {
+            int cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
+            if (cruz) { g.DrawLine(p, cx - 6, cy - 6, cx + 6, cy + 6); g.DrawLine(p, cx + 6, cy - 6, cx - 6, cy + 6); }
+            else g.DrawLine(p, cx - 7, cy, cx + 7, cy);
+        }
+        zonas.Add(new Zona { R = r, Click = click });
+    }
+
+    protected static System.Drawing.Drawing2D.GraphicsPath Redondo(Rectangle r, int radio)
+    {
+        var camino = new System.Drawing.Drawing2D.GraphicsPath();
+        int d = Math.Max(1, Math.Min(radio * 2, Math.Min(r.Width, r.Height)));
+        camino.AddArc(r.X, r.Y, d, d, 180, 90);
+        camino.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        camino.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        camino.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        camino.CloseFigure();
+        return camino;
+    }
+
+    protected static void Relleno(Graphics g, Rectangle r, Color c, int radio)
+    {
+        using (var camino = Redondo(r, radio)) using (var b = new SolidBrush(c)) g.FillPath(b, camino);
+    }
+
+    // Barra de avance con forma de estrella fugaz: cola que se desvanece hacia atrás y cabeza brillante con destellos.
+    protected static void Estela(Graphics g, Rectangle pista, float k, double ms, bool viva)
+    {
+        int radio = pista.Height / 2;
+        Relleno(g, pista, Color.FromArgb(28, 255, 255, 255), radio);
+        if (k <= 0.002f) return;
+        int cabeza = pista.X + (int)(pista.Width * Math.Min(1f, k)), cy = pista.Y + radio;
+        Relleno(g, new Rectangle(pista.X, pista.Y, cabeza - pista.X, pista.Height), Color.FromArgb(60, Acento), radio);
+
+        int largo = Math.Max(2, Math.Min(cabeza - pista.X, 280));
+        var cola = new Rectangle(cabeza - largo, pista.Y, largo, pista.Height);
+        // El pincel es 2 px más ancho para que no repita el color del otro extremo en el borde.
+        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(cola.X - 1, cola.Y, cola.Width + 2, cola.Height), Color.Transparent, Acento, 0f))
+        {
+            b.InterpolationColors = new System.Drawing.Drawing2D.ColorBlend
+            {
+                Colors = new[] { Color.FromArgb(0, Acento), Color.FromArgb(230, Acento), Color.FromArgb(255, 255, 226, 180) },
+                Positions = new[] { 0f, 0.7f, 1f }
+            };
+            using (var camino = Redondo(cola, radio)) g.FillPath(b, camino);
+        }
+        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(cola.X - 1, cy - 1, cola.Width + 2, 2), Color.FromArgb(0, 255, 255, 255), Color.FromArgb(230, 255, 255, 255), 0f))
+            g.FillRectangle(b, cola.X + largo / 3, cy - 1, largo - largo / 3, 2);
+
+        if (viva)
+        {
+            // Estela que recorre la parte llena una y otra vez (la misma de la pantalla de carga).
+            float paso = (float)(ms % 900 / 900), punta = pista.X + paso * (cabeza - pista.X + 90);
+            int desde = (int)Math.Max(pista.X, punta - 90), hasta = (int)Math.Min(cabeza, punta);
+            if (hasta - desde > 1)
+                using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle((int)punta - 91, pista.Y, 92, pista.Height), Color.FromArgb(0, 255, 236, 200), Color.FromArgb(230, 255, 236, 200), 0f))
+                using (var camino = Redondo(new Rectangle(desde, pista.Y, hasta - desde, pista.Height), radio))
+                    g.FillPath(b, camino);
+        }
+
+        float pulso = viva ? 0.85f + 0.15f * (float)Math.Sin(ms / 110) : 1f;
+        int halo = (int)(pista.Height * 3.4f * pulso);
+        using (var camino = new System.Drawing.Drawing2D.GraphicsPath())
+        {
+            camino.AddEllipse(cabeza - halo, cy - halo, halo * 2, halo * 2);
+            using (var b = new System.Drawing.Drawing2D.PathGradientBrush(camino) { CenterColor = Color.FromArgb(170, 255, 205, 130), SurroundColors = new[] { Color.FromArgb(0, Acento) } })
+                g.FillPath(b, camino);
+        }
+        if (viva)
+            for (int i = 0; i < 6; i++)
+            {
+                // Chispas que se quedan atrás de la cabeza y se apagan; salen del reloj, así no hace falta guardar estado.
+                double fase = (ms / 900 + i / 6.0) % 1;
+                float x = cabeza - (float)(fase * largo * 0.8), y = cy + (float)Math.Sin(i * 2.3 + ms / 260) * pista.Height * 0.9f, s = 3.4f * (float)(1 - fase) + 1f;
+                using (var b = new SolidBrush(Color.FromArgb((int)(210 * (1 - fase)), 255, 220, 170))) g.FillEllipse(b, x - s / 2, y - s / 2, s, s);
+            }
+        Ventana.Estrella(g, cabeza, cy, (int)Math.Round(pista.Height * 1.6f * pulso), Color.FromArgb(255, 255, 246, 230));
+    }
+
+    protected static void Borde(Graphics g, Rectangle r, Color c, int radio, float ancho)
+    {
+        using (var camino = Redondo(r, radio)) using (var p = new Pen(c, ancho)) g.DrawPath(p, camino);
+    }
+
+    protected static void Vidrio(Graphics g, Rectangle r)
+    {
+        Relleno(g, r, Color.FromArgb(200, 12, 14, 20), 16);
+        Borde(g, r, Color.FromArgb(18, 255, 255, 255), 16, 1f);
+    }
+
+    protected static void Punto(Graphics g, int x, int y, Color c)
+    {
+        using (var b = new SolidBrush(c)) g.FillEllipse(b, x - 4, y - 4, 8, 8);
+    }
+
+    protected static void Escribir(Graphics g, string texto, Font f, Color c, int x, int y)
+    {
+        using (var b = new SolidBrush(c)) g.DrawString(texto, f, b, x, y);
+    }
+
+    protected static void Centrado(Graphics g, string texto, Font f, Color c, Rectangle r)
+    {
+        using (var b = new SolidBrush(c)) using (var formato = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+            g.DrawString(texto, f, b, r, formato);
+    }
+
+    protected static int Medir(Graphics g, string texto, Font f)
+    {
+        return (int)g.MeasureString(texto, f, PointF.Empty, StringFormat.GenericTypographic).Width;
+    }
+
+    protected static string Recortar(Graphics g, string texto, int ancho, Font f)
+    {
+        if (Medir(g, texto, f) <= ancho) return texto;
+        while (texto.Length > 1 && Medir(g, "..." + texto, f) > ancho) texto = texto.Substring(1);
+        return "..." + texto;
+    }
+
+    // Abre esta ventana encima del launcher; si el launcher está escondido, en el medio de la pantalla y al frente.
+    protected void Mostrarse(Form duenio)
+    {
+        StartPosition = FormStartPosition.CenterParent;
+        ShowInTaskbar = false;
+        if (duenio == null || !duenio.Visible || duenio.WindowState == FormWindowState.Minimized)
+        {
+            StartPosition = FormStartPosition.CenterScreen;
+            TopMost = true;
+            ShowDialog();
+        }
+        else ShowDialog(duenio);
+    }
+}
+
+// Avisos y preguntas con el estilo del launcher, en vez del cuadro de Windows.
+class Dialogo : Lienzo
+{
+    readonly string titulo, texto;
+    readonly string[] botones;
+    readonly Color color;
+    readonly int altoTexto;
+    int elegido = -1;
+
+    Dialogo(string titulo, string texto, string[] botones, Color color) : base(480, 200)
+    {
+        this.titulo = titulo;
+        this.texto = texto;
+        this.botones = botones;
+        this.color = color;
+        Text = titulo;
+        BackColor = Panel;
+        KeyPreview = true;
+        altoArrastre = 64;
+        using (var bmp = new Bitmap(1, 1)) using (Graphics g = Graphics.FromImage(bmp))
+            altoTexto = (int)Math.Ceiling(g.MeasureString(texto, Fuentes.Texto(12f), 480 - 64).Height);
+        ClientSize = new Size(480, 76 + altoTexto + 96);
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyCode == Keys.Enter) Elegir(0);
+        else if (e.KeyCode == Keys.Escape) Elegir(botones.Length - 1);
+    }
+
+    void Elegir(int i)
+    {
+        elegido = i;
+        Close();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Graphics g = e.Graphics;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+        zonas.Clear();
+        Punto(g, 36, 44, color);
+        Escribir(g, titulo, Fuentes.Titulo(24f), Texto, 48, 28);
+        using (var b = new SolidBrush(Color.FromArgb(225, Texto))) g.DrawString(texto, Fuentes.Texto(12f), b, new RectangleF(32, 76, ClientSize.Width - 64, altoTexto + 4));
+        int x = ClientSize.Width - 32;
+        for (int i = 0; i < botones.Length; i++)
+        {
+            var r = new Rectangle(x - 130, ClientSize.Height - 72, 130, 40);
+            int n = i;
+            Boton(g, r, botones[i], i == 0, delegate { Elegir(n); });
+            x = r.X - 10;
+        }
+    }
+
+    // Mismo uso que MessageBox.Show: Sí y No, o solo Aceptar.
+    public static DialogResult Mostrar(Form duenio, string texto, string titulo, MessageBoxButtons tipo, MessageBoxIcon icono)
+    {
+        bool siNo = tipo == MessageBoxButtons.YesNo;
+        Color c = icono == MessageBoxIcon.Error ? Rojo : icono == MessageBoxIcon.Warning ? Ambar : Acento;
+        using (var d = new Dialogo(titulo.ToUpperInvariant(), texto, siNo ? new[] { "SÍ", "NO" } : new[] { "ACEPTAR" }, c))
+        {
+            d.Mostrarse(duenio);
+            if (!siNo) return DialogResult.OK;
+            return d.elegido == 0 ? DialogResult.Yes : DialogResult.No;
+        }
+    }
+}
+
+// Para elegir una carpeta o un archivo sin el explorador de Windows.
+// Una carpeta se abre con un clic; un archivo se marca con un clic y se elige con otro (o con ELEGIR).
+class Explorador : Lienzo
+{
+    readonly string titulo, ayuda;
+    readonly Func<string, bool> sirve; // null: se elige la carpeta abierta
+    string actual = "", marcado, error = "";
+    readonly List<string[]> filas = new List<string[]>(); // [nombre, ruta, d|f]
+    int scroll;
+    string resultado;
+    const int AltoFila = 38;
+    static readonly Rectangle Lista = new Rectangle(32, 136, 576, 304);
+
+    Explorador(string titulo, string ayuda, Func<string, bool> sirve, string inicio) : base(640, 520)
+    {
+        this.titulo = titulo;
+        this.ayuda = ayuda;
+        this.sirve = sirve;
+        Text = titulo;
+        BackColor = Panel;
+        KeyPreview = true;
+        altoArrastre = 64;
+        Cargar(inicio != null && Directory.Exists(inicio) ? inicio : "");
+    }
+
+    static string Lugar(Environment.SpecialFolder f) { try { return Environment.GetFolderPath(f); } catch (Exception) { return ""; } }
+
+    void Cargar(string ruta)
+    {
+        actual = ruta;
+        marcado = null;
+        scroll = 0;
+        error = "";
+        filas.Clear();
+        if (ruta.Length == 0)
+        {
+            string perfil = Lugar(Environment.SpecialFolder.UserProfile);
+            foreach (var a in new[] { new[] { "Escritorio", Lugar(Environment.SpecialFolder.DesktopDirectory) }, new[] { "Descargas", perfil.Length > 0 ? Path.Combine(perfil, "Downloads") : "" },
+                new[] { "Documentos", Lugar(Environment.SpecialFolder.MyDocuments) } })
+                if (a[1].Length > 0 && Directory.Exists(a[1])) filas.Add(new[] { a[0], a[1], "d" });
+            try { foreach (DriveInfo u in DriveInfo.GetDrives()) if (u.IsReady) filas.Add(new[] { "Disco " + u.Name.TrimEnd('\\') + (u.VolumeLabel.Length > 0 ? "  " + u.VolumeLabel : ""), u.RootDirectory.FullName, "d" }); }
+            catch (Exception) { }
+            return;
+        }
+        try
+        {
+            var dir = new DirectoryInfo(ruta);
+            foreach (DirectoryInfo d in dir.GetDirectories().Where(d => (d.Attributes & (FileAttributes.Hidden | FileAttributes.System)) == 0).OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
+                filas.Add(new[] { d.Name, d.FullName, "d" });
+            if (sirve != null)
+                foreach (FileInfo f in dir.GetFiles().Where(f => sirve(f.Name)).OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+                    filas.Add(new[] { f.Name, f.FullName, "f" });
+            if (filas.Count == 0) error = sirve == null ? "No hay carpetas adentro." : "Acá no hay carpetas ni archivos que sirvan.";
+        }
+        catch (Exception) { error = "No se puede abrir esta carpeta."; }
+    }
+
+    void Subir()
+    {
+        DirectoryInfo padre = actual.Length == 0 ? null : Directory.GetParent(actual);
+        Cargar(padre == null ? "" : padre.FullName);
+    }
+
+    void Terminar(string ruta)
+    {
+        resultado = ruta;
+        Close();
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyCode == Keys.Escape) Close();
+        else if (e.KeyCode == Keys.Back && actual.Length > 0) { Subir(); Invalidate(); }
+    }
+
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        base.OnMouseWheel(e);
+        scroll = Math.Max(0, Math.Min(scroll - e.Delta / 3, Math.Max(0, filas.Count * AltoFila - Lista.Height)));
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Graphics g = e.Graphics;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+        zonas.Clear();
+        Escribir(g, titulo, Fuentes.Titulo(24f), Texto, 32, 26);
+        Escribir(g, Recortar(g, ayuda, Lista.Width, Fuentes.Texto(11f)), Fuentes.Texto(11f), Gris, 32, 64);
+        Linea(g, new Rectangle(ClientSize.Width - 52, 20, 32, 32), true, Close);
+
+        var barra = new Rectangle(Lista.X, 92, Lista.Width, 34);
+        Relleno(g, barra, Campo, 10);
+        var atras = new Rectangle(barra.X, barra.Y, 40, barra.Height);
+        if (actual.Length > 0)
+        {
+            if (atras.Contains(mouse)) Relleno(g, atras, Color.FromArgb(30, 255, 255, 255), 10);
+            Centrado(g, "‹", Fuentes.Negrita(16f), Texto, atras);
+            zonas.Add(new Zona { R = atras, Click = Subir });
+        }
+        Escribir(g, Recortar(g, actual.Length == 0 ? "Este equipo" : actual, barra.Width - 60, Fuentes.Texto(11.5f)), Fuentes.Texto(11.5f), Texto, barra.X + 44, barra.Y + 8);
+
+        g.SetClip(Lista);
+        Font f = Fuentes.Texto(12f);
+        for (int i = 0; i < filas.Count; i++)
+        {
+            var r = new Rectangle(Lista.X, Lista.Y + i * AltoFila - scroll, Lista.Width, AltoFila - 4);
+            if (r.Bottom < Lista.Y || r.Y > Lista.Bottom) continue;
+            string[] fila = filas[i];
+            bool carpeta = fila[2] == "d", esMarcado = fila[1] == marcado;
+            if (esMarcado) Relleno(g, r, Color.FromArgb(60, Acento), 8);
+            else Relleno(g, r, Color.FromArgb((int)(22 * Animar(fila[1], r.Contains(mouse) && Lista.Contains(mouse))), 255, 255, 255), 8);
+            // Ícono: carpeta naranja o archivo claro.
+            var icono = new Rectangle(r.X + 12, r.Y + 10, 18, 14);
+            if (carpeta) { Relleno(g, new Rectangle(icono.X, icono.Y - 3, 8, 5), Color.FromArgb(200, Acento), 2); Relleno(g, icono, Color.FromArgb(200, Acento), 3); }
+            else Relleno(g, new Rectangle(icono.X + 2, icono.Y - 3, 14, 18), Color.FromArgb(200, Texto), 3);
+            Escribir(g, Recortar(g, fila[0], r.Width - 60, f), f, Texto, r.X + 42, r.Y + 7);
+            string ruta = fila[1];
+            zonas.Add(new Zona
+            {
+                R = Rectangle.Intersect(r, Lista),
+                Click = delegate
+                {
+                    if (carpeta) Cargar(ruta);
+                    else if (marcado == ruta) Terminar(ruta);
+                    else marcado = ruta;
+                }
+            });
+        }
+        g.ResetClip();
+        if (error.Length > 0) Escribir(g, error, Fuentes.Texto(12f), Gris, Lista.X + 12, Lista.Y + 10);
+
+        int abajo = ClientSize.Height - 64;
+        string elegible = sirve == null ? (actual.Length > 0 ? actual : null) : marcado;
+        Escribir(g, sirve == null ? "Se elige la carpeta abierta." : "Tocá el archivo y después ELEGIR.", Fuentes.Texto(10.5f), Gris, Lista.X, abajo + 12);
+        Boton(g, new Rectangle(ClientSize.Width - 32 - 130, abajo, 130, 40), "ELEGIR", true, elegible == null ? null : (Action)delegate { Terminar(elegible); });
+        Boton(g, new Rectangle(ClientSize.Width - 32 - 270, abajo, 130, 40), "CANCELAR", false, Close);
+    }
+
+    // sirve: qué archivos se muestran y se pueden elegir; null para elegir una carpeta. Devuelve null si se cancela.
+    public static string Elegir(Form duenio, string titulo, string ayuda, Func<string, bool> sirve, string inicio)
+    {
+        using (var d = new Explorador(titulo, ayuda, sirve, inicio))
+        {
+            d.Mostrarse(duenio);
+            return d.resultado;
+        }
+    }
+}
+
+// La ventana principal se dibuja entera a mano. Se repinta sola cada cuarto de segundo (estado, server) y cuando algo se anima.
+class Ventana : Lienzo
+{
+    // 16:9 como la imagen de fondo: 1440x810 si entra en la pantalla; si no, 1280x720 (notebooks de 1366x768).
+    static readonly bool Grande = Screen.PrimaryScreen.WorkingArea.Width >= 1500 && Screen.PrimaryScreen.WorkingArea.Height >= 860;
+    static readonly int Ancho = Grande ? 1440 : 1280, Alto = Grande ? 810 : 720;
+    static readonly Rectangle Tarjeta = new Rectangle(Ancho - 356, 92, 316, Alto - 140), Contenido = new Rectangle(40, 92, Ancho - 428, Alto - 140);
+
     readonly TextBox nick = new TextBox();
     readonly TextBox detalle = new TextBox();
     readonly NotifyIcon bandeja = new NotifyIcon();
     readonly Timer reloj = new Timer(), cuadros = new Timer();
     readonly Stopwatch tiempo = Stopwatch.StartNew();
-    readonly Video video = Video.Cargar();
-    Point mouse = new Point(-1, -1), arrastre;
-    bool arrastrando, consultando, ocupado;
+    readonly Bitmap fondo = Fondo.Cargar(Ancho, Alto), estrella = Fondo.Imagen("arranque-estrella.png");
+    bool consultando, ocupado, tapada;
+    Rectangle menuAncla = Rectangle.Empty;
+    List<Tuple<string, string, Action>> menuItems;
+    string menuPestana = "";
+    double cambioPestana = -1000;
 
-    EstadoServidor server = new EstadoServidor();
+    EstadoServidor[] estados = Config.Servidores.Select(s => new EstadoServidor()).ToArray();
+    EstadoServidor server { get { return estados[Registro.Servidor]; } }
     bool serverConsultado;
     string pestana = "inicio", noticias = "Cargando noticias...", estado = "Listo para jugar.";
     List<Noticia> listaNoticias = Noticias.Leer("Cargando noticias...");
@@ -1260,23 +1831,19 @@ class Ventana : Form
     HashSet<string> modsViejos = new HashSet<string>();
     readonly Dictionary<string, Image> fotosMods = new Dictionary<string, Image>();
     int progreso, scroll;
+    float avance;
     Actualizador.Revision revision;
     List<string> faltantes = new List<string>(), faltaDx = new List<string>();
     bool gta10;
 
-    public Ventana()
+    public Ventana() : base(Ancho, Alto)
     {
         Text = "AMERICA RP";
-        FormBorderStyle = FormBorderStyle.None;
-        ClientSize = new Size(Ancho, Alto);
         StartPosition = FormStartPosition.CenterScreen;
-        BackColor = Oscuro;
-        DoubleBuffered = true;
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
 
         nick.BorderStyle = BorderStyle.None;
-        nick.BackColor = Color.FromArgb(20, 22, 30);
+        nick.BackColor = Campo;
         nick.ForeColor = Texto;
         nick.Font = new Font("Segoe UI", 13f, FontStyle.Bold);
         nick.MaxLength = 20;
@@ -1286,12 +1853,11 @@ class Ventana : Form
 
         detalle.Multiline = true;
         detalle.BorderStyle = BorderStyle.None;
-        detalle.BackColor = Color.FromArgb(20, 22, 30);
+        detalle.BackColor = Campo;
         detalle.ForeColor = Texto;
         detalle.Font = new Font("Segoe UI", 11f);
         detalle.MaxLength = 1000;
-        detalle.ScrollBars = ScrollBars.Vertical;
-        detalle.SetBounds(Contenido.X + 36, Contenido.Y + 238, Contenido.Width - 72, 120);
+                detalle.SetBounds(Contenido.X + 36, Contenido.Y + 262, Contenido.Width - 72, 110);
         detalle.Visible = false;
         Controls.Add(detalle);
         Controls.Add(nick);
@@ -1301,11 +1867,15 @@ class Ventana : Form
         bandeja.MouseClick += delegate { Restaurar(); };
         FormClosed += delegate { bandeja.Visible = false; bandeja.Dispose(); };
 
+        // Hasta 1.4.0 había un solo GTA: pasa a ser el principal.
+        if (Registro.GtaPrincipal.Length == 0 && Registro.Cliente != "custom" && Registro.GtaExe.Length > 0) Registro.GtaPrincipal = Registro.GtaExe;
+        Mods.Dir = DirMods();
         RevisarInstalacion();
         reloj.Interval = 15000;
         reloj.Tick += delegate { RefrescarServer(); };
-        cuadros.Interval = 33;
-        cuadros.Tick += delegate { if (WindowState != FormWindowState.Minimized) Invalidate(); };
+        cuadros.Interval = 250;
+        // Mientras baja o revisa, más cuadros por segundo para que la estela se mueva fluida.
+        cuadros.Tick += delegate { cuadros.Interval = ocupado ? 33 : 250; if (WindowState != FormWindowState.Minimized) Invalidate(); };
         Shown += delegate
         {
             ActiveControl = nick;
@@ -1321,6 +1891,31 @@ class Ventana : Form
     }
 
     // ---------- datos ----------
+
+    static string DirMods()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "mods" + Registro.Sufijo);
+    }
+
+    // Guarda el GTA del cliente elegido (y se lo pasa a SA-MP).
+    static void GuardarGta(string exe)
+    {
+        Registro.GtaExe = exe;
+        if (Registro.Cliente == "custom") Registro.GtaCustom = exe;
+        else Registro.GtaPrincipal = exe;
+    }
+
+    void ElegirCliente(string c)
+    {
+        if (ocupado || c == Registro.Cliente) return;
+        if (Juego.Abierto()) { Mensaje("Cerrá el GTA antes de cambiar de cliente.", "Cliente", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        Registro.Cliente = c;
+        Registro.GtaExe = c == "custom" ? Registro.GtaCustom : Registro.GtaPrincipal;
+        Mods.Dir = DirMods();
+        RevisarInstalacion();
+        RevisarMods();
+        if (Carpeta().Length == 0) { ElegirCarpeta(); return; }
+    }
 
     string Carpeta()
     {
@@ -1346,7 +1941,8 @@ class Ventana : Form
     {
         if (consultando) return;
         consultando = true;
-        server = await Task.Run(() => Consulta.Pedir(Config.Host, Config.Puerto, 2500));
+        // Se consultan todos a la vez, para mostrar en INICIO si cada uno está en línea y su ping.
+        estados = await Task.WhenAll(Config.Servidores.Select(s => Task.Run(() => s.Item2.Length == 0 ? new EstadoServidor() : Consulta.Pedir(s.Item2, s.Item3, 2500))));
         serverConsultado = true;
         consultando = false;
     }
@@ -1382,7 +1978,7 @@ class Ventana : Form
     {
         if (ocupado) return;
         if (Carpeta().Length == 0 && !ElegirCarpeta()) return;
-        if (Juego.Abierto()) { MessageBox.Show(this, "Cerrá el GTA antes de instalar o sacar mods.", "Mods", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        if (Juego.Abierto()) { Mensaje("Cerrá el GTA antes de instalar o sacar mods.", "Mods", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
         string carpeta = Carpeta(), id = m.Id;
         bool sacar = Mods.Instalado(id) && !modsViejos.Contains(id);
         Ocupar(true);
@@ -1407,7 +2003,7 @@ class Ventana : Form
                 Avisar(m.Nombre + ": instalado.", 100);
             }
         }
-        catch (Exception ex) { Avisar("No se pudo " + (sacar ? "sacar " : "instalar ") + m.Nombre + ".", 0); MessageBox.Show(this, ex.Message, "Mods", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        catch (Exception ex) { Avisar("No se pudo " + (sacar ? "sacar " : "instalar ") + m.Nombre + ".", 0); Mensaje(ex.Message, "Mods", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         finally { Ocupar(false); Invalidate(); }
     }
 
@@ -1433,7 +2029,7 @@ class Ventana : Form
         catch (Exception) { return new List<Noticia>(); }
     }
 
-    // Cuántos archivos del server le faltan al jugador (fila "Archivos del server" de MI JUEGO).
+    // Cuántos archivos del server le faltan al jugador (estado del cliente en INICIO).
     async void RevisarMods()
     {
         if (Config.ManifiestoUrl.Length == 0 || Carpeta().Length == 0) return;
@@ -1449,9 +2045,7 @@ class Ventana : Form
         try { r = Autoactualizacion.Leer(await Task.Run(() => Web.Texto(Config.VersionUrl))); }
         catch (Exception) { return; } // sin internet o sin version.txt: se sigue con este
         if (r.Key <= new Version(Config.Version) || ocupado) return;
-        if (!Ajustes.ActualizarSolo && MessageBox.Show(this, "Hay una versión nueva del launcher (" + r.Key + "). Se baja en unos segundos y se vuelve a abrir solo.\n\n¿Actualizar ahora?",
-            "AMERICA RP", MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes) return;
-        if (ocupado) return;
+        // Siempre se actualiza solo, sin preguntar: todos tienen que jugar con la última versión.
         Ocupar(true);
         string exe = Application.ExecutablePath;
         try { await Task.Run(() => Autoactualizacion.Instalar(exe, r.Key, r.Value, Avisar)); }
@@ -1459,7 +2053,7 @@ class Ventana : Form
         {
             Ocupar(false);
             Avisar("No se pudo actualizar el launcher.", 0);
-            if (MessageBox.Show(this, "No se pudo actualizar el launcher: " + ex.Message + "\n\n¿Abrir la página para bajarlo a mano?", "AMERICA RP",
+            if (Mensaje("No se pudo actualizar el launcher: " + ex.Message + "\n\n¿Abrir la página para bajarlo a mano?", "AMERICA RP",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes) Abrir(Config.DescargasUrl);
             return;
         }
@@ -1471,11 +2065,10 @@ class Ventana : Form
 
     bool ElegirCarpeta()
     {
-        using (var d = new OpenFileDialog { Title = "Buscá gta_sa.exe", Filter = "GTA San Andreas|gta_sa.exe" })
-        {
-            if (d.ShowDialog(this) != DialogResult.OK) return false;
-            Registro.GtaExe = d.FileName;
-        }
+        string exe = Explorador.Elegir(this, "BUSCÁ TU GTA", "Abrí la carpeta del GTA San Andreas y elegí gta_sa.exe.",
+            n => n.Equals("gta_sa.exe", StringComparison.OrdinalIgnoreCase), Carpeta());
+        if (exe == null) return false;
+        GuardarGta(exe);
         RevisarInstalacion();
         RevisarMods();
         return true;
@@ -1496,7 +2089,7 @@ class Ventana : Form
         if (problema != null && problema[2] == "grave")
         {
             // Avisa y deja seguir: si alguien ya lo instaló todo como administrador, puede jugar igual.
-            if (MessageBox.Show(this, problema[1] + "\n\n¿Seguir igual?", "Carpeta del GTA", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+            if (Mensaje(problema[1] + "\n\n¿Seguir igual?", "Carpeta del GTA", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return false;
         }
         var repartidos = new List<string>();
@@ -1507,7 +2100,7 @@ class Ventana : Form
             {
                 Avisar("No se pudo actualizar.", 0);
                 RevisarMods();
-                if (MessageBox.Show(this, ex.Message + "\n\n¿Seguir sin actualizar?", "Actualizaciones", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                if (Mensaje(ex.Message + "\n\n¿Seguir sin actualizar?", "Actualizaciones", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                     return false;
             }
             RevisarMods();
@@ -1542,7 +2135,7 @@ class Ventana : Form
                 if (malos.Count > 0)
                 {
                     string donde = await Task.Run(() => Prohibidos.Sacar(carpeta, malos));
-                    MessageBox.Show(this, "Saqué del GTA estos archivos, que no se pueden usar en el server:\n\n" + string.Join("\n", malos.Take(15)) +
+                    Mensaje("Saqué del GTA estos archivos, que no se pueden usar en el server:\n\n" + string.Join("\n", malos.Take(15)) +
                         (malos.Count > 15 ? "\n... y " + (malos.Count - 15) + " más" : "") + "\n\nNo se borraron: quedaron en " + donde,
                         "Archivos prohibidos", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
@@ -1559,7 +2152,7 @@ class Ventana : Form
             Avisar(faltantes[0], 0);
             bool sinSamp = faltantes[0].Contains("SA-MP");
             string pregunta = string.Join("\n", faltantes) + (sinSamp ? "\n\n¿Abrir la página para bajar SA-MP 0.3.7?" : "");
-            if (MessageBox.Show(this, pregunta, "Instalación", sinSamp ? MessageBoxButtons.YesNo : MessageBoxButtons.OK, MessageBoxIcon.Warning) == DialogResult.Yes)
+            if (Mensaje(pregunta, "Instalación", sinSamp ? MessageBoxButtons.YesNo : MessageBoxButtons.OK, MessageBoxIcon.Warning) == DialogResult.Yes)
                 Abrir(Config.DescargaSampUrl);
             return false;
         }
@@ -1578,24 +2171,24 @@ class Ventana : Form
     async Task<bool> OfrecerDirectX()
     {
         string sinEso = faltaDx.Contains("d3dx9_25.dll") ? "el SA-MP no abre" : "el ENB no carga";
-        if (MessageBox.Show(this, "A tu Windows le falta DirectX 9 (" + string.Join(", ", faltaDx) + "). Sin eso " + sinEso + ".\n\n" +
+        if (Mensaje("A tu Windows le falta DirectX 9 (" + string.Join(", ", faltaDx) + "). Sin eso " + sinEso + ".\n\n" +
             "¿Instalarlo ahora? Se baja de Microsoft (96 MB) y Windows te va a pedir permiso de administrador.",
             "DirectX 9", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
         {
-            Avisar("Falta DirectX 9: si el juego no abre, instalalo desde MI JUEGO.", 0);
+            Avisar("Falta DirectX 9: si el juego no abre, tocá Revisar archivos del server en las opciones del cliente.", 0);
             return true;
         }
         try { await Task.Run(() => DirectX.Instalar(Avisar)); }
         catch (Exception ex)
         {
             Avisar("No se pudo instalar DirectX 9.", 0);
-            MessageBox.Show(this, "No se pudo instalar DirectX 9: " + ex.Message, "DirectX 9", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            Mensaje("No se pudo instalar DirectX 9: " + ex.Message, "DirectX 9", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return false;
         }
         RevisarInstalacion();
         if (faltaDx.Count > 0)
         {
-            MessageBox.Show(this, "Se instaló DirectX 9 pero sigue faltando " + string.Join(", ", faltaDx) + ".", "DirectX 9", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            Mensaje("Se instaló DirectX 9 pero sigue faltando " + string.Join(", ", faltaDx) + ".", "DirectX 9", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return false;
         }
         Avisar("DirectX 9 instalado.", 100);
@@ -1605,7 +2198,7 @@ class Ventana : Form
     // Si el ENB está activo, este archivo existe y guarda el manifiesto que se instaló, para poder sacarlo después.
     static string EnbArchivo()
     {
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "enb-instalado.txt");
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmericaRP", "enb-instalado" + Registro.Sufijo + ".txt");
     }
 
     // Desactivar no borra el ENB: le cambia el nombre al .asi (el cargador solo lee .asi), así activarlo es al instante.
@@ -1655,14 +2248,13 @@ class Ventana : Form
                 }
             }
             catch (Exception ex) { Avisar("No se pudo activar el ENB: " + ex.Message + ". Cerrá el GTA y probá de nuevo.", 0); return; }
-            MessageBox.Show(this, "El ENB se baja de su página oficial. Se va a abrir: bajá el archivo " + Config.EnbZip +
+            Mensaje("El ENB se baja de su página oficial. Se va a abrir: bajá el archivo " + Config.EnbZip +
                 " (versión 0.430) y después elegilo en la ventana que aparece.", "Activar ENB", MessageBoxButtons.OK, MessageBoxIcon.Information);
             Abrir(Config.EnbDescargaUrl);
-            using (var d = new OpenFileDialog { Title = "Elegí " + Config.EnbZip, Filter = "ENBSeries|*.zip", FileName = Config.EnbZip })
-            {
-                if (d.ShowDialog(this) != DialogResult.OK) return;
-                zip = d.FileName;
-            }
+            string perfil = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            zip = Explorador.Elegir(this, "ELEGÍ EL ENB", "Buscá " + Config.EnbZip + " (normalmente en Descargas).",
+                n => n.EndsWith(".zip", StringComparison.OrdinalIgnoreCase), Path.Combine(perfil, "Downloads"));
+            if (zip == null) return;
             Ocupar(true);
             try
             {
@@ -1671,7 +2263,7 @@ class Ventana : Form
                 File.WriteAllText(EnbArchivo(), Actualizador.Huellas(carpeta, rutas));
                 Avisar("ENB instalado. Shift+F12 lo prende y lo apaga en el juego.", 100);
             }
-            catch (Exception ex) { MessageBox.Show(this, ex.Message, "Activar ENB", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+            catch (Exception ex) { Mensaje(ex.Message, "Activar ENB", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
             finally { Ocupar(false); }
             Actualizar(); // suma el preset del server
             return;
@@ -1711,7 +2303,7 @@ class Ventana : Form
         string n = nick.Text.Trim();
         if (!Instalacion.NickValido.IsMatch(n))
         {
-            MessageBox.Show(this, "El nick tiene que tener de 3 a 20 caracteres: letras, números o _ [ ] . $ @ = ( )", "Nick", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            Mensaje("El nick tiene que tener de 3 a 20 caracteres: letras, números o _ [ ] . $ @ = ( )", "Nick", MessageBoxButtons.OK, MessageBoxIcon.Information);
             nick.Focus();
             return;
         }
@@ -1721,7 +2313,7 @@ class Ventana : Form
             Registro.Nick = n;
             if (Juego.Abierto())
             {
-                if (MessageBox.Show(this, "El GTA ya está abierto, aunque puede estar escondido detrás de otras ventanas (por ejemplo, la de elegir la resolución).\n\n" +
+                if (Mensaje("El GTA ya está abierto, aunque puede estar escondido detrás de otras ventanas (por ejemplo, la de elegir la resolución).\n\n" +
                     "¿Cerrarlo y abrir uno nuevo? Si estás jugando, se cierra la partida.", "AMERICA RP", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
                 await Task.Run(() => Juego.Cerrar());
                 if (Juego.Abierto()) { Avisar("No se pudo cerrar el GTA. Cerralo desde el Administrador de tareas.", 0); return; }
@@ -1731,11 +2323,11 @@ class Ventana : Form
             string carpeta = Carpeta();
             DateTime inicio = DateTime.Now;
             Juego.DejarPasarAlFrente();
-            Process.Start(new ProcessStartInfo(Path.Combine(carpeta, "samp.exe"), Config.Host + ":" + Config.Puerto) { WorkingDirectory = carpeta });
+            Process.Start(new ProcessStartInfo(Path.Combine(carpeta, "samp.exe"), Config.Servidores[Registro.Servidor].Item2 + ":" + Config.Servidores[Registro.Servidor].Item3) { WorkingDirectory = carpeta });
             Avisar("Abriendo el GTA...", 100);
             Vigilar(carpeta, inicio);
         }
-        catch (Exception ex) { MessageBox.Show(this, "No se pudo abrir el juego: " + ex.Message, "AMERICA RP", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (Exception ex) { Mensaje("No se pudo abrir el juego: " + ex.Message, "AMERICA RP", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         finally { Ocupar(false); }
     }
 
@@ -1756,13 +2348,14 @@ class Ventana : Form
         catch (Exception) { return; }
         if (c == null) { Restaurar(); Avisar("No se vio abrir el GTA. Si no abrió, probá de nuevo.", 0); return; }
         try { await Task.Run(() => Juego.CerrarCefColgado(carpeta)); } catch (Exception) { }
+        try { Registro.AnotarPartida(c.Inicio, c.Fin); } catch (Exception) { }
         Restaurar();
         if (c.Bien) { Avisar("Listo para jugar.", 100); return; }
         string informe;
         try { informe = Juego.GuardarInforme(c, carpeta, EnbActivo()); }
         catch (Exception) { informe = null; }
         Avisar("El GTA se cerró de golpe.", 0);
-        if (MessageBox.Show(this, "El GTA se cerró de golpe (código " + Juego.CodigoTexto(c.Codigo.Value) + ") después de " + (int)(c.Fin - c.Inicio).TotalMinutes + " min." +
+        if (Mensaje("El GTA se cerró de golpe (código " + Juego.CodigoTexto(c.Codigo.Value) + ") después de " + (int)(c.Fin - c.Inicio).TotalMinutes + " min." +
             (informe == null ? "" : "\n\nGuardé un informe para soporte. ¿Abrir la carpeta?"), "AMERICA RP",
             informe == null ? MessageBoxButtons.OK : MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
         {
@@ -1780,56 +2373,102 @@ class Ventana : Form
 
     void EnviarSoporte()
     {
-        if (motivo.Length == 0) { MessageBox.Show(this, "Elegí qué te pasa.", "Soporte", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        if (motivo.Length == 0) { Mensaje("Elegí qué te pasa.", "Soporte", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
         string informe = conInforme ? Soporte.Armar(Revisiones(), Carpeta(), nick.Text.Trim(), EnbActivo(), Soporte.UltimoCierre(Soporte.DirInformes())) : "";
         string texto = Soporte.Pedido(motivo, detalle.Text, informe);
         try { Clipboard.SetText(texto); }
-        catch (Exception ex) { MessageBox.Show(this, "No se pudo copiar el mensaje: " + ex.Message, "Soporte", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+        catch (Exception ex) { Mensaje("No se pudo copiar el mensaje: " + ex.Message, "Soporte", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
         string soporte = Config.Redes.Where(r => r.Key == "Soporte").Select(r => r.Value).FirstOrDefault() ?? "";
         Avisar("Mensaje copiado. Pegalo con Ctrl+V en el canal de soporte.", 100);
-        if (MessageBox.Show(this, "Copié el mensaje. Pegalo con Ctrl+V en el canal de soporte del Discord y el staff te responde ahí." +
+        if (Mensaje("Copié el mensaje. Pegalo con Ctrl+V en el canal de soporte del Discord y el staff te responde ahí." +
             (soporte.Length > 0 ? "\n\n¿Abrir el soporte ahora?" : ""), "Soporte",
             soporte.Length > 0 ? MessageBoxButtons.YesNo : MessageBoxButtons.OK, MessageBoxIcon.Information) == DialogResult.Yes) Abrir(soporte);
     }
 
-    void MenuJuego(Rectangle r)
+    void AbrirMenu(Rectangle ancla, List<Tuple<string, string, Action>> items)
     {
-        var menu = new ContextMenuStrip();
-        menu.Items.Add("Abrir la carpeta del GTA", null, delegate { if (Carpeta().Length > 0) Abrir(Carpeta()); });
-        menu.Items.Add("Reparar archivos (revisar todo de cero)", null, delegate { if (ocupado) return; Actualizador.BorrarHuellas(); Actualizar(); });
-        menu.Items.Add("Mover la carpeta a otro lugar", null, delegate { MoverCarpeta(); });
-        menu.Items.Add("Elegir otra carpeta", null, delegate { ElegirCarpeta(); });
+        menuAncla = ancla;
+        menuItems = items;
+        menuPestana = pestana;
+    }
+
+    // Opciones del GTA del cliente elegido (los tres puntos del cliente en INICIO). null = no se puede.
+    List<Tuple<string, string, Action>> OpcionesJuego()
+    {
         bool hay = Carpeta().Length > 0;
-        for (int i = 0; i < 3; i++) menu.Items[i].Enabled = hay;
-        menu.Closed += delegate { BeginInvoke(new Action(menu.Dispose)); };
-        menu.Show(this, new Point(r.X, r.Bottom + 4));
+        return new List<Tuple<string, string, Action>>
+        {
+            Tuple.Create("Ver estado del juego", "\uE946", (Action)VerEstado),
+            Tuple.Create("Revisar archivos del server", "\uE895", hay ? (Action)Actualizar : null),
+            Tuple.Create("Reparar archivos del juego", "\uE90F", hay ? (Action)delegate { if (ocupado) return; Actualizador.BorrarHuellas(); Actualizar(); } : null),
+            Tuple.Create(EnbActivo() ? "Desactivar gráficos ENB" : "Activar gráficos ENB", "\uE706", hay && Config.EnbUrl.Length > 0 ? (Action)CambiarEnb : null),
+            Tuple.Create("Mover ubicación del juego", "\uE8DE", hay ? (Action)MoverCarpeta : null),
+            Tuple.Create("Abrir carpeta del juego", "\uE838", hay ? (Action)delegate { Abrir(Carpeta()); } : null),
+            Tuple.Create("Elegir otra carpeta", "\uE8DA", (Action)delegate { ElegirCarpeta(); }),
+        };
+    }
+
+    void VerEstado()
+    {
+        Mensaje(string.Join("\n", Revisiones().Select(f => f[0] + ": " + f[1])) + "\n\nCarpeta: " + (Carpeta().Length > 0 ? Carpeta() : "sin elegir"),
+            "Estado del juego", MessageBoxButtons.OK, Revisiones().Any(f => f[2] == "mal") ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+    }
+
+    // Menú dibujado encima de todo; se dibuja último para que sus zonas tapen a las de abajo.
+    void DibujarMenu(Graphics g)
+    {
+        if (menuAncla.IsEmpty) return;
+        if (pestana != menuPestana) { menuAncla = Rectangle.Empty; return; }
+        var items = menuItems;
+        Font iconos = Fuentes.Iconos(11f), letra = Fuentes.Texto(12f);
+        // El ancho sale del texto más largo, así nada se sale de la caja.
+        int ancho = items.Max(it => Medir(g, it.Item1, letra)) + (iconos != null ? 52 : 14) + 34;
+        int x = menuAncla.X < Ancho / 2 ? menuAncla.X : menuAncla.Right - ancho;
+        var caja = new Rectangle(Math.Min(x, Ancho - ancho - 12), menuAncla.Bottom + 8, ancho, items.Count * 46 + 12);
+        Relleno(g, new Rectangle(caja.X + 2, caja.Y + 6, caja.Width, caja.Height), Color.FromArgb(90, 0, 0, 0), 14);
+        Relleno(g, caja, Color.FromArgb(250, Panel), 14);
+        Borde(g, caja, Color.FromArgb(24, 255, 255, 255), 14, 1f);
+        for (int i = 0; i < items.Count; i++)
+        {
+            var r = new Rectangle(caja.X + 6, caja.Y + 6 + i * 46, caja.Width - 12, 46);
+            Action a = items[i].Item3;
+            Color c = a != null ? Texto : Color.FromArgb(110, Gris);
+            if (a != null) Relleno(g, r, Color.FromArgb((int)(28 * Brillo(r)), 255, 255, 255), 10);
+            int tx = r.X + 14;
+            if (iconos != null)
+            {
+                var cuadro = new Rectangle(r.X + 8, r.Y + 7, 32, 32);
+                Relleno(g, cuadro, Color.FromArgb(18, 255, 255, 255), 8);
+                Centrado(g, items[i].Item2, iconos, c, cuadro);
+                tx = cuadro.Right + 12;
+            }
+            Escribir(g, items[i].Item1, letra, c, tx, r.Y + 13);
+            if (a != null) zonas.Add(new Zona { R = r, Click = a, Menu = true });
+        }
     }
 
     async void MoverCarpeta()
     {
         if (ocupado || Carpeta().Length == 0) return;
-        if (Juego.Abierto()) { MessageBox.Show(this, "Cerrá el GTA antes de moverlo.", "Mover la carpeta", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        if (Juego.Abierto()) { Mensaje("Cerrá el GTA antes de moverlo.", "Mover la carpeta", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
         string origen = Carpeta(), destino;
-        using (var d = new FolderBrowserDialog { Description = "Elegí dónde poner la carpeta del GTA. Lejos de Archivos de programa, el Escritorio y OneDrive; por ejemplo, C:\\Juegos." })
-        {
-            if (d.ShowDialog(this) != DialogResult.OK) return;
-            destino = d.SelectedPath;
-        }
+        destino = Explorador.Elegir(this, "MOVER EL GTA", "Abrí la carpeta donde lo querés poner. Lejos de Archivos de programa, el Escritorio y OneDrive; por ejemplo, C:\\Juegos.", null, "");
+        if (destino == null) return;
         Ocupar(true);
         try
         {
             string nueva = await Task.Run(() => Mudanza.Copiar(origen, destino, Avisar));
-            Registro.GtaExe = Path.Combine(nueva, "gta_sa.exe");
+            GuardarGta(Path.Combine(nueva, "gta_sa.exe"));
             RevisarInstalacion();
             RevisarMods();
             Avisar("El GTA ahora está en " + nueva + ".", 100);
-            MessageBox.Show(this, "Listo, el GTA ahora está en:\n" + nueva + "\n\nLa carpeta vieja no se borró. Cuando compruebes que el juego anda, borrala vos:\n" + origen,
+            Mensaje("Listo, el GTA ahora está en:\n" + nueva + "\n\nLa carpeta vieja no se borró. Cuando compruebes que el juego anda, borrala vos:\n" + origen,
                 "Mover la carpeta", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
             Avisar("No se pudo mover el GTA.", 0);
-            MessageBox.Show(this, ex.Message + "\n\nEl GTA sigue en " + origen + ", sin cambios.", "Mover la carpeta", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            Mensaje(ex.Message + "\n\nEl GTA sigue en " + origen + ", sin cambios.", "Mover la carpeta", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
         finally { Ocupar(false); }
     }
@@ -1841,6 +2480,7 @@ class Ventana : Form
 
     void Pestana(string p)
     {
+        if (p != pestana) cambioPestana = tiempo.Elapsed.TotalMilliseconds;
         pestana = p;
         scroll = 0;
         detalle.Visible = p == "soporte";
@@ -1848,44 +2488,30 @@ class Ventana : Form
 
     // ---------- mouse ----------
 
-    protected override void OnMouseMove(MouseEventArgs e)
-    {
-        base.OnMouseMove(e);
-        if (arrastrando) { Location = new Point(Location.X + e.X - arrastre.X, Location.Y + e.Y - arrastre.Y); return; }
-        mouse = e.Location;
-        Cursor = ZonaEn(e.Location) != null ? Cursors.Hand : Cursors.Default;
-    }
-
-    protected override void OnMouseLeave(EventArgs e)
-    {
-        base.OnMouseLeave(e);
-        mouse = new Point(-1, -1);
-    }
-
-    protected override void OnMouseDown(MouseEventArgs e)
-    {
-        base.OnMouseDown(e);
-        if (e.Button == MouseButtons.Left && e.Y < 76 && ZonaEn(e.Location) == null) { arrastrando = true; arrastre = e.Location; }
-    }
-
-    protected override void OnMouseUp(MouseEventArgs e)
-    {
-        base.OnMouseUp(e);
-        if (arrastrando) { arrastrando = false; return; }
-        Zona z = ZonaEn(e.Location);
-        if (e.Button == MouseButtons.Left && z != null) z.Click();
-    }
-
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         base.OnMouseWheel(e);
         scroll = Math.Max(0, scroll - e.Delta / 3);
     }
 
-    Zona ZonaEn(Point p)
+    // Con el menú de OPCIONES abierto, un clic afuera solo lo cierra.
+    protected override void Clic(Zona z)
     {
-        for (int i = zonas.Count - 1; i >= 0; i--) if (zonas[i].R.Contains(p)) return zonas[i];
-        return null;
+        if (!menuAncla.IsEmpty)
+        {
+            menuAncla = Rectangle.Empty;
+            if (z != null && z.Menu) z.Click();
+            return;
+        }
+        base.Clic(z);
+    }
+
+    DialogResult Mensaje(string texto, string titulo, MessageBoxButtons tipo, MessageBoxIcon icono)
+    {
+        tapada = true;
+        Invalidate();
+        try { return Dialogo.Mostrar(this, texto, titulo, tipo, icono); }
+        finally { tapada = false; Invalidate(); }
     }
 
     // ---------- dibujo ----------
@@ -1897,37 +2523,51 @@ class Ventana : Form
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
         zonas.Clear();
 
-        if (video != null) video.Dibujar(g, tiempo.Elapsed.TotalSeconds, Ancho, Alto);
+        if (fondo != null) g.DrawImageUnscaled(fondo, 0, 0);
         Sombra(g, new Rectangle(0, 0, Ancho, 140), 200, 0, 90f);
         Sombra(g, new Rectangle(0, Alto - 300, Tarjeta.X + 16, 300), 0, 235, 90f);
         Sombra(g, new Rectangle(0, 0, 520, Alto), 150, 0, 0f);
 
         DibujarArriba(g);
+        // Al cambiar de pestaña, el contenido entra subiendo un poco y aclarándose (~200 ms).
+        float t = Math.Min(1f, (float)(tiempo.Elapsed.TotalMilliseconds - cambioPestana) / 200f), k = 1 - (1 - t) * (1 - t) * (1 - t);
+        if (t < 1) BeginInvoke(new Action(Invalidate));
+        var estado0 = g.Save();
+        g.TranslateTransform(0, 12 * (1 - k));
         if (pestana == "noticias") DibujarNoticias(g);
         else if (pestana == "mods") DibujarMods(g);
-        else if (pestana == "juego") DibujarJuego(g);
         else if (pestana == "ajustes") DibujarAjustes(g);
         else if (pestana == "soporte") DibujarSoporte(g);
         else if (pestana == "novedades") DibujarNovedades(g);
         else DibujarInicio(g);
+        if (k < 1 && pestana != "inicio") Relleno(g, Contenido, Color.FromArgb((int)(220 * (1 - k)), 12, 14, 20), 16);
+        g.Restore(estado0);
         DibujarTarjeta(g);
         DibujarPie(g);
+        DibujarMenu(g);
+        if (tapada) using (var b = new SolidBrush(Color.FromArgb(150, 0, 0, 0))) g.FillRectangle(b, ClientRectangle);
     }
 
     void DibujarArriba(Graphics g)
     {
-        Estrella(g, 52, 38, 17, Acento);
-        Neon(g, "America RP", Fuentes.Titulo(34f), 76, 20);
+        // La misma estrella dorada de la pantalla de carga; sin la imagen, la estrella dibujada.
+        if (estrella != null)
+        {
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.DrawImage(estrella, new Rectangle(52 - 32, 38 - 33, 64, 64));
+        }
+        else Estrella(g, 52, 38, 17, Acento);
+        Escribir(g, "America RP", Fuentes.Titulo(32f), Texto, 80, 22);
 
         int x = 300;
-        foreach (string[] p in new[] { new[] { "inicio", "INICIO" }, new[] { "noticias", "NOTICIAS" }, new[] { "mods", "MODS" }, new[] { "juego", "MI JUEGO" }, new[] { "ajustes", "AJUSTES" } })
+        foreach (string[] p in new[] { new[] { "inicio", "INICIO" }, new[] { "noticias", "NOTICIAS" }, new[] { "mods", "MODS" }, new[] { "soporte", "SOPORTE" }, new[] { "ajustes", "AJUSTES" } })
         {
             Font f = Fuentes.Titulo(19f);
             int w = Medir(g, p[1], f);
             var r = new Rectangle(x - 8, 20, w + 16, 40);
-            bool activa = pestana == p[0], sobre = r.Contains(mouse);
-            Escribir(g, p[1], f, activa || sobre ? Texto : Gris, x, 26);
-            if (activa) using (var b = new SolidBrush(Acento)) g.FillRectangle(b, x, 56, 22, 3);
+            bool activa = pestana == p[0];
+            Escribir(g, p[1], f, activa ? Texto : Mezcla(Gris, Texto, Brillo(r)), x, 26);
+            if (activa) Relleno(g, new Rectangle(x, 56, 18, 3), Acento, 2);
             string cap = p[0];
             zonas.Add(new Zona { R = r, Click = delegate { Pestana(cap); } });
             x += w + 30;
@@ -1939,13 +2579,107 @@ class Ventana : Form
 
     void DibujarInicio(Graphics g)
     {
+        DibujarClientes(g);
         int y = Contenido.Bottom - 150;
         Escribir(g, "SERVIDOR DE ROLEPLAY EN ESPAÑOL", Fuentes.Negrita(10f), Acento, 44, y);
-        Escribir(g, "BIENVENIDO A AMERICA RP", Fuentes.Titulo(58f), Texto, 40, y + 18);
+        Escribir(g, "TU HISTORIA EMPIEZA ACÁ", Fuentes.Titulo(58f), Texto, 40, y + 18);
         Noticia ultima = listaNoticias.FirstOrDefault();
         string primera = ultima == null ? "" : ultima.Titulo.Length > 0 ? ultima.Titulo : ultima.Lineas.FirstOrDefault(l => l.Trim().Length > 0 && !l.Contains("Bienvenido")) ?? "";
         using (var b = new SolidBrush(Color.FromArgb(220, Texto)))
             g.DrawString(primera, Fuentes.Texto(13f), b, new RectangleF(44, y + 104, 600, 50));
+    }
+
+    // Como el selector de juego de otros launchers, pero sin repartir el GTA: todos usan el GTA de cada jugador.
+    void DibujarClientes(Graphics g)
+    {
+        int x = 40, y = 100, ancho = 440;
+        Escribir(g, "ELEGÍ TU CLIENTE", Fuentes.Negrita(10f), Gris, x + 4, y);
+        y += 24;
+        string principal = Registro.GtaPrincipal, custom = Registro.GtaCustom;
+        bool hayP = principal.Length > 0 && File.Exists(principal), hayC = custom.Length > 0 && File.Exists(custom);
+        bool oficial = Registro.Cliente != "custom", enb = Config.EnbUrl.Length > 0 && EnbActivo();
+        var clientes = new[]
+        {
+            new { Id = "liviano", Nombre = "OFICIAL", Etiqueta = oficial && enb ? "ENB" : "", Estado = hayP ? "Listo" : "Sin elegir", Color = hayP ? Verde : Gris,
+                Texto = "Tu GTA con los archivos del server." },
+            new { Id = "custom", Nombre = "CUSTOM", Etiqueta = !oficial && enb ? "ENB" : "", Estado = hayC ? "Listo" : "Sin elegir", Color = hayC ? Verde : Gris,
+                Texto = hayC ? "Carpeta: " + Path.GetDirectoryName(custom) : "Tu propio GTA, con los mods y aportes que quieras." },
+        };
+        string[] falta = Revisiones().FirstOrDefault(f => f[2] == "mal" || f[2] == "ojo");
+        foreach (var c in clientes)
+        {
+            var r = new Rectangle(x, y, ancho, 92);
+            bool elegido = Registro.Cliente == c.Id;
+            // En el elegido, lo primero que falta (DirectX, archivos del server...) reemplaza al "Listo".
+            string estado = elegido && falta != null && Carpeta().Length > 0 ? falta[0] + ": " + falta[1].ToLowerInvariant() : c.Estado;
+            Color colorEstado = elegido && falta != null && Carpeta().Length > 0 ? (falta[2] == "mal" ? Rojo : Ambar) : c.Color;
+            Relleno(g, r, elegido ? Color.FromArgb(225, 14, 16, 22) : Color.FromArgb((int)(170 + 40 * Brillo(r)), 12, 14, 20), 14);
+            Borde(g, r, elegido ? Color.FromArgb(220, Acento) : Color.FromArgb(18, 255, 255, 255), 14, elegido ? 1.5f : 1f);
+            string id = c.Id;
+            zonas.Add(new Zona { R = r, Click = delegate { ElegirCliente(id); } });
+
+            // Botón de radio.
+            using (var p = new Pen(elegido ? Acento : Gris, 1.6f)) g.DrawEllipse(p, r.X + 16, r.Y + 38, 16, 16);
+            if (elegido) using (var b = new SolidBrush(Acento)) g.FillEllipse(b, r.X + 20, r.Y + 42, 8, 8);
+
+            // Ícono: estrella sobre naranja (oficial) o carpeta (personalizado).
+            var icono = new Rectangle(r.X + 46, r.Y + 22, 48, 48);
+            Relleno(g, icono, c.Id == "custom" ? Campo : Acento, 12);
+            if (c.Id == "custom")
+            {
+                Relleno(g, new Rectangle(icono.X + 12, icono.Y + 14, 10, 6), Acento, 2);
+                Relleno(g, new Rectangle(icono.X + 12, icono.Y + 17, 24, 18), Acento, 4);
+            }
+            else Estrella(g, icono.X + 24, icono.Y + 25, 13, Oscuro);
+
+            int tx = icono.Right + 14, tw = r.Right - 44 - tx;
+            Escribir(g, c.Nombre, Fuentes.Negrita(13.5f), Texto, tx, r.Y + 12);
+            Escribir(g, estado, Fuentes.Negrita(10f), colorEstado, tx, r.Y + 38);
+            if (c.Etiqueta.Length > 0)
+            {
+                Font chica = Fuentes.Negrita(9f);
+                var e = new Rectangle(tx + Medir(g, estado, Fuentes.Negrita(10f)) + 12, r.Y + 37, Medir(g, c.Etiqueta, chica) + 16, 18);
+                Relleno(g, e, Color.FromArgb(40, Acento), 9);
+                Centrado(g, c.Etiqueta, chica, Acento, e);
+            }
+            using (var b = new SolidBrush(Gris)) using (var formato = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
+                g.DrawString(c.Texto, Fuentes.Texto(10f), b, new RectangleF(tx, r.Y + 62, tw, 20), formato);
+
+            if (elegido)
+            {
+                var puntos = new Rectangle(r.Right - 40, r.Y + 26, 28, 40);
+                Relleno(g, puntos, Color.FromArgb((int)(36 * Brillo(puntos)), 255, 255, 255), 8);
+                for (int i = 0; i < 3; i++) Punto(g, puntos.X + 14, puntos.Y + 12 + i * 8, Gris);
+                zonas.Add(new Zona { R = puntos, Click = delegate { AbrirMenu(puntos, OpcionesJuego()); } });
+            }
+            y += 102;
+        }
+        DibujarServidores(g, x, y + 6, ancho);
+    }
+
+    // Elegir a qué server entrar, cada uno con su luz (verde en línea, roja apagado) y su ping.
+    void DibujarServidores(Graphics g, int x, int y, int ancho)
+    {
+        Escribir(g, "ELEGÍ EL SERVIDOR", Fuentes.Negrita(10f), Gris, x + 4, y);
+        y += 24;
+        int n = Config.Servidores.Length, w = (ancho - 10 * (n - 1)) / n;
+        for (int i = 0; i < n; i++)
+        {
+            var r = new Rectangle(x + i * (w + 10), y, w, 64);
+            bool elegido = Registro.Servidor == i, sinIp = Config.Servidores[i].Item2.Length == 0;
+            EstadoServidor e = estados[i];
+            Relleno(g, r, elegido ? Color.FromArgb(225, 14, 16, 22) : Color.FromArgb((int)(170 + 40 * Brillo(r)), 12, 14, 20), 14);
+            Borde(g, r, elegido ? Color.FromArgb(220, Acento) : Color.FromArgb(18, 255, 255, 255), 14, elegido ? 1.5f : 1f);
+            int indice = i;
+            if (!sinIp) zonas.Add(new Zona { R = r, Click = delegate { Registro.Servidor = indice; Invalidate(); } });
+
+            Color luz = sinIp || !serverConsultado ? Gris : e.EnLinea ? Verde : Rojo;
+            using (var b = new SolidBrush(Color.FromArgb(60, luz))) g.FillEllipse(b, r.X + 14, r.Y + 22, 20, 20);
+            using (var b = new SolidBrush(luz)) g.FillEllipse(b, r.X + 19, r.Y + 27, 10, 10);
+            Escribir(g, Config.Servidores[i].Item1, Fuentes.Negrita(13f), Texto, r.X + 46, r.Y + 12);
+            string detalle = sinIp ? "Todavía sin IP" : !serverConsultado ? "Consultando..." : e.EnLinea ? e.Ping + " ms · " + e.Jugadores + "/" + e.Maximo + " jugadores" : "Apagado";
+            Escribir(g, Recortar(g, detalle, r.Right - 14 - (r.X + 46), Fuentes.Texto(10f)), Fuentes.Texto(10f), e.EnLinea ? Gris : Color.FromArgb(200, Gris), r.X + 46, r.Y + 36);
+        }
     }
 
     Rectangle Hoja(Graphics g, string titulo)
@@ -1965,13 +2699,9 @@ class Ventana : Form
             foreach (string[] o in new[] { new[] { "p", "PARCHES DEL SERVER" }, new[] { "n", "NOTICIAS" } })
             {
                 Font chica = Fuentes.Negrita(9.5f);
-                var r = new Rectangle(x - Medir(g, o[1], chica) - 20, Contenido.Y + 30, Medir(g, o[1], chica) + 20, 24);
-                bool elegido = verParches == (o[0] == "p");
-                if (elegido) using (var b2 = new SolidBrush(Acento)) g.FillRectangle(b2, r);
-                else using (var pen = new Pen(Color.FromArgb(r.Contains(mouse) ? 200 : 90, 255, 255, 255))) g.DrawRectangle(pen, r);
-                Escribir(g, o[1], chica, elegido ? Oscuro : Texto, r.X + 10, r.Y + 5);
+                var r = new Rectangle(x - Medir(g, o[1], chica) - 28, Contenido.Y + 28, Medir(g, o[1], chica) + 28, 28);
                 bool parches = o[0] == "p";
-                zonas.Add(new Zona { R = r, Click = delegate { verParches = parches; scroll = 0; Invalidate(); } });
+                Chip(g, r, o[1], verParches == parches, delegate { verParches = parches; scroll = 0; });
                 x = r.X - 8;
             }
         }
@@ -2004,9 +2734,10 @@ class Ventana : Form
                 if (n.Etiqueta.Length > 0)
                 {
                     string e = n.Etiqueta.ToUpperInvariant();
-                    int w = Medir(g, e, chica) + 16;
-                    using (var b = new SolidBrush(ColorEtiqueta(n.Etiqueta))) g.FillRectangle(b, x, y, w, 20);
-                    Escribir(g, e, chica, Oscuro, x + 8, y + 3);
+                    int w = Medir(g, e, chica) + 22;
+                    Color ce = ColorEtiqueta(n.Etiqueta);
+                    Relleno(g, new Rectangle(x, y, w, 20), Color.FromArgb(45, ce), 10);
+                    Centrado(g, e, chica, ce, new Rectangle(x, y, w, 20));
                     x += w + 10;
                 }
                 Escribir(g, n.Fecha, chica, Gris, x, y + 3);
@@ -2054,22 +2785,19 @@ class Ventana : Form
             string m = Soporte.Motivos[i];
             var r = new Rectangle(area.X + (i % 2) * (ancho + 10), area.Y + 22 + (i / 2) * 38, ancho, 32);
             bool elegido = motivo == m;
-            using (var b = new SolidBrush(elegido ? Color.FromArgb(60, Acento) : Color.FromArgb(r.Contains(mouse) ? 50 : 25, 255, 255, 255))) g.FillRectangle(b, r);
-            if (elegido) using (var p = new Pen(Acento, 1.5f)) g.DrawRectangle(p, r);
+            Relleno(g, r, elegido ? Color.FromArgb(55, Acento) : Color.FromArgb((int)(16 + 20 * Brillo(r)), 255, 255, 255), 10);
             Punto(g, r.X + 14, r.Y + 16, elegido ? Acento : Gris);
             Escribir(g, m, Fuentes.Negrita(11.5f), Texto, r.X + 26, r.Y + 7);
             zonas.Add(new Zona { R = r, Click = delegate { motivo = m; Invalidate(); } });
         }
         var caja = new Rectangle(detalle.Left - 8, detalle.Top - 6, detalle.Width + 16, detalle.Height + 12);
         Escribir(g, "CONTANOS QUÉ PASÓ: QUÉ ESTABAS HACIENDO, QUÉ VISTE, DESDE CUÁNDO", Fuentes.Negrita(10f), Gris, area.X, caja.Y - 22);
-        using (var b = new SolidBrush(detalle.BackColor)) g.FillRectangle(b, caja);
-        using (var p = new Pen(detalle.Focused ? Acento : Color.FromArgb(60, 255, 255, 255))) g.DrawRectangle(p, caja);
+        Relleno(g, caja, Campo, 10);
+        if (detalle.Focused) Borde(g, caja, Acento, 10, 1.5f);
 
-        var marca = new Rectangle(area.X, caja.Bottom + 16, 18, 18);
-        using (var p = new Pen(conInforme ? Acento : Gris, 1.5f)) g.DrawRectangle(p, marca);
-        if (conInforme) using (var b = new SolidBrush(Acento)) g.FillRectangle(b, marca.X + 4, marca.Y + 4, 11, 11);
-        Escribir(g, "Sumar el informe técnico (versión, Windows, revisiones y último cierre del GTA)", Fuentes.Texto(11f), Texto, marca.Right + 10, marca.Y);
-        zonas.Add(new Zona { R = new Rectangle(marca.X, marca.Y, area.Width, 20), Click = delegate { conInforme = !conInforme; Invalidate(); } });
+        var marca = new Rectangle(area.X, caja.Bottom + 14, 40, 22);
+        Interruptor(g, marca, conInforme, delegate { conInforme = !conInforme; });
+        Escribir(g, "Sumar el informe técnico (versión, Windows, revisiones y último cierre del GTA)", Fuentes.Texto(11f), Texto, marca.Right + 12, marca.Y + 2);
 
         Boton(g, new Rectangle(area.X, area.Bottom - 44, 240, 40), "COPIAR PARA DISCORD", true, EnviarSoporte);
         Escribir(g, "Se copia el mensaje: pegalo con Ctrl+V en el canal de soporte.", Fuentes.Texto(10.5f), Gris, area.X + 256, area.Bottom - 32);
@@ -2091,8 +2819,6 @@ class Ventana : Form
         int y = area.Y;
         FilaAjuste(g, area, ref y, "ESCONDER EL LAUNCHER MIENTRAS JUGÁS", "Se va a la bandeja, al lado del reloj, y vuelve solo cuando cerrás el GTA. Si no, queda minimizado.",
             Ajustes.Bandeja, delegate { Ajustes.Bandeja = !Ajustes.Bandeja; });
-        FilaAjuste(g, area, ref y, "ACTUALIZAR EL LAUNCHER SIN PREGUNTAR", "Cuando sale una versión nueva, se instala sola al abrirlo. Si no, te pregunta antes.",
-            Ajustes.ActualizarSolo, delegate { Ajustes.ActualizarSolo = !Ajustes.ActualizarSolo; });
         Escribir(g, "NOVEDADES DEL LAUNCHER", Fuentes.Negrita(13f), Texto, area.X, y + 10);
         Boton(g, new Rectangle(area.Right - 150, y + 4, 150, 34), "VER", false, delegate { Pestana("novedades"); });
         Escribir(g, "Qué trajo cada versión del launcher.", Fuentes.Texto(11f), Gris, area.X, y + 40);
@@ -2111,8 +2837,7 @@ class Ventana : Form
     void FilaAjuste(Graphics g, Rectangle area, ref int y, string nombre, string detalle, bool activo, Action cambiar)
     {
         Escribir(g, nombre, Fuentes.Negrita(13f), Texto, area.X, y + 10);
-        // El botón muestra cómo está y lo cambia al tocarlo: naranja = activado.
-        Boton(g, new Rectangle(area.Right - 150, y + 4, 150, 34), activo ? "ACTIVADO" : "DESACTIVADO", activo, cambiar);
+        Interruptor(g, new Rectangle(area.Right - 44, y + 10, 44, 24), activo, cambiar);
         Escribir(g, detalle, Fuentes.Texto(11f), Gris, area.X, y + 40);
         using (var p = new Pen(Color.FromArgb(28, 255, 255, 255))) g.DrawLine(p, area.X, y + 66, area.Right, y + 66);
         y += 76;
@@ -2131,14 +2856,10 @@ class Ventana : Form
         foreach (string cat in new[] { "" }.Concat(catalogo.Select(m => m.Categoria).Where(c => c.Length > 0).Distinct()))
         {
             string t = cat.Length == 0 ? "TODOS" : cat.ToUpperInvariant();
-            var r = new Rectangle(x, y, Medir(g, t, chica) + 20, 24);
+            var r = new Rectangle(x, y, Medir(g, t, chica) + 28, 28);
             if (r.Right > area.Right) break;
-            bool elegido = filtroMods == cat;
-            if (elegido) using (var b = new SolidBrush(Acento)) g.FillRectangle(b, r);
-            else using (var p = new Pen(Color.FromArgb(r.Contains(mouse) ? 200 : 90, 255, 255, 255))) g.DrawRectangle(p, r);
-            Escribir(g, t, chica, elegido ? Oscuro : Texto, r.X + 10, r.Y + 5);
             string c = cat;
-            zonas.Add(new Zona { R = r, Click = delegate { filtroMods = c; scroll = 0; Invalidate(); } });
+            Chip(g, r, t, filtroMods == cat, delegate { filtroMods = c; scroll = 0; });
             x = r.Right + 8;
         }
 
@@ -2159,11 +2880,13 @@ class Ventana : Form
                 // La foto llena el recuadro recortando lo que sobra, sin deformarla.
                 float escala = Math.Max((float)foto.Width / img.Width, (float)foto.Height / img.Height);
                 float w = foto.Width / escala, h = foto.Height / escala;
+                using (var camino = Redondo(foto, 10)) g.SetClip(camino, System.Drawing.Drawing2D.CombineMode.Intersect);
                 g.DrawImage(img, foto, new RectangleF((img.Width - w) / 2, (img.Height - h) / 2, w, h), GraphicsUnit.Pixel);
+                g.SetClip(lista);
             }
             else
             {
-                using (var b = new SolidBrush(Color.FromArgb(160, 20, 20, 26))) g.FillRectangle(b, foto);
+                Relleno(g, foto, Color.FromArgb(18, 255, 255, 255), 10);
                 string letra = m.Nombre.Length > 0 ? m.Nombre.Substring(0, 1).ToUpperInvariant() : "?";
                 Font f = Fuentes.Titulo(34f);
                 Escribir(g, letra, f, Color.FromArgb(120, Acento), foto.X + (foto.Width - Medir(g, letra, f)) / 2, foto.Y + 18);
@@ -2189,37 +2912,6 @@ class Ventana : Form
         g.ResetClip();
     }
 
-    void DibujarJuego(Graphics g)
-    {
-        Rectangle area = Hoja(g, "MI JUEGO");
-        string carpeta = Carpeta();
-        Escribir(g, "CARPETA DEL GTA SAN ANDREAS", Fuentes.Negrita(10f), Gris, area.X, area.Y);
-        Escribir(g, carpeta.Length == 0 ? "Sin elegir" : Recortar(g, carpeta, area.Width - 200, Fuentes.Texto(13f)), Fuentes.Texto(13f), Texto, area.X, area.Y + 20);
-        var opciones = new Rectangle(area.Right - 170, area.Y + 6, 170, 38);
-        Boton(g, opciones, "OPCIONES ▾", false, delegate { MenuJuego(opciones); });
-
-        int y = area.Y + 80;
-        foreach (string[] fila in Revisiones())
-        {
-            Color c = fila[2] == "ok" ? Verde : fila[2] == "mal" ? Rojo : fila[2] == "ojo" ? Ambar : Gris;
-            using (var p = new Pen(Color.FromArgb(28, 255, 255, 255))) g.DrawLine(p, area.X, y + 44, area.Right, y + 44);
-            Escribir(g, fila[0], Fuentes.Negrita(13f), Texto, area.X, y + 10);
-            Escribir(g, fila[1], Fuentes.Titulo(18f), c, area.Right - Medir(g, fila[1], Fuentes.Titulo(18f)), y + 9);
-            y += 46;
-        }
-        if (Config.EnbUrl.Length > 0)
-        {
-            bool activo = EnbActivo();
-            Escribir(g, "GTA FULL · GRÁFICOS ENB", Fuentes.Negrita(13f), Texto, area.X, y + 10);
-            Escribir(g, activo ? "ACTIVADO" : "DESACTIVADO", Fuentes.Titulo(18f), activo ? Verde : Gris, area.Right - 300, y + 9);
-            Boton(g, new Rectangle(area.Right - 150, y + 4, 150, 34), activo ? "DESACTIVAR" : "ACTIVAR", false, CambiarEnb);
-            Escribir(g, "Luces y colores mejorados. Pide más PC: si el juego anda lento, desactivalo.", Fuentes.Texto(11f), Gris, area.X, y + 40);
-            y += 66;
-        }
-        Boton(g, new Rectangle(area.X, y + 24, 200, 40), "REVISAR Y ACTUALIZAR", true, Actualizar);
-        Boton(g, new Rectangle(area.X + 216, y + 24, 200, 40), "SOPORTE", false, delegate { Pestana("soporte"); });
-    }
-
     // [nombre, valor, ok|ojo|mal|nada]
     List<string[]> Revisiones()
     {
@@ -2242,7 +2934,6 @@ class Ventana : Form
     {
         Rectangle t = Tarjeta;
         Vidrio(g, t);
-        using (var b = new SolidBrush(Acento)) g.FillRectangle(b, t.X, t.Y, t.Width, 3);
         int x = t.X + 28;
 
         Escribir(g, "SERVIDOR", Fuentes.Negrita(9.5f), Gris, x, t.Y + 24);
@@ -2260,39 +2951,32 @@ class Ventana : Form
         using (var p = new Pen(Color.FromArgb(36, 255, 255, 255))) g.DrawLine(p, x, t.Y + 212, t.Right - 28, t.Y + 212);
         Escribir(g, "TU NICK", Fuentes.Negrita(9.5f), Gris, x, t.Y + 228);
         var caja = new Rectangle(x, t.Y + 250, t.Width - 56, 48);
-        using (var b = new SolidBrush(Color.FromArgb(20, 22, 30))) g.FillRectangle(b, caja);
-        using (var p = new Pen(nick.Focused ? Acento : Color.FromArgb(60, 255, 255, 255))) g.DrawRectangle(p, caja);
+        Relleno(g, caja, Campo, 10);
+        if (nick.Focused) Borde(g, caja, Acento, 10, 1.5f);
 
-        int y = t.Y + 318;
-        // En la tarjeta entran cuatro filas: las tres de siempre y, si algo más anda mal, la primera de esas.
-        List<string[]> filas = Revisiones();
-        string[] otra = filas.Skip(3).FirstOrDefault(f => f[2] == "mal" || f[2] == "ojo");
-        filas = filas.Take(3).ToList();
-        if (otra != null) filas.Add(otra);
-        foreach (string[] fila in filas)
+        Escribir(g, "TU TIEMPO JUGADO", Fuentes.Negrita(9.5f), Gris, x, t.Y + 320);
+        DateTime fin = Registro.FinUltima;
+        if (fin == DateTime.MinValue) Escribir(g, "Todavía no jugaste", Fuentes.Negrita(13f), Texto, x, t.Y + 340);
+        else
         {
-            Color fc = fila[2] == "ok" ? Verde : fila[2] == "mal" ? Rojo : fila[2] == "ojo" ? Ambar : Gris;
-            Punto(g, x + 4, y + 10, fc);
-            Escribir(g, fila[0], Fuentes.Texto(11f), Texto, x + 16, y + 1);
-            Escribir(g, fila[1], Fuentes.Titulo(15f), fc, t.Right - 28 - Medir(g, fila[1], Fuentes.Titulo(15f)), y);
-            y += 26;
+            Escribir(g, Juego.Duracion(Registro.MinutosJugados) + " en total", Fuentes.Negrita(13f), Texto, x, t.Y + 340);
+            string cuando = fin.Date == DateTime.Today ? "hoy" : fin.Date == DateTime.Today.AddDays(-1) ? "ayer" : fin.ToString("dd/MM");
+            Escribir(g, "Última partida: " + Juego.Duracion(Registro.MinutosUltima) + " · " + cuando, Fuentes.Texto(10f), Gris, x, t.Y + 364);
         }
 
-        // Botón inclinado: el borde en diagonal le da otro aire que un rectángulo redondeado.
-        var jugar = new Rectangle(x, t.Bottom - 96, t.Width - 56, 68);
-        bool sobre = jugar.Contains(mouse) && !ocupado;
-        var forma = new[] { new Point(jugar.X + 14, jugar.Y), new Point(jugar.Right, jugar.Y), new Point(jugar.Right - 14, jugar.Bottom), new Point(jugar.X, jugar.Bottom) };
-        using (var b = new SolidBrush(ocupado ? Color.FromArgb(120, Acento) : sobre ? Color.FromArgb(255, 186, 72) : Acento)) g.FillPolygon(b, forma);
-        string txt = ocupado ? "ESPERÁ..." : "JUGAR";
-        Escribir(g, txt, Fuentes.Titulo(40f), Oscuro, jugar.X + (jugar.Width - Medir(g, txt, Fuentes.Titulo(40f))) / 2, jugar.Y + 10);
+        var jugar = new Rectangle(x, t.Bottom - 92, t.Width - 56, 64);
+        Relleno(g, jugar, ocupado ? Color.FromArgb(120, Acento) : Mezcla(Acento, Color.FromArgb(255, 196, 92), Brillo(jugar)), 14);
+        Centrado(g, ocupado ? "ESPERÁ..." : "JUGAR", Fuentes.Titulo(34f), Oscuro, jugar);
         if (!ocupado) zonas.Add(new Zona { R = jugar, Click = Jugar });
     }
 
     void DibujarPie(Graphics g)
     {
-        using (var b = new SolidBrush(Color.FromArgb(40, 255, 255, 255))) g.FillRectangle(b, 0, Alto - 3, Ancho, 3);
-        if (progreso > 0) using (var b = new SolidBrush(Acento)) g.FillRectangle(b, 0, Alto - 3, Ancho * progreso / 100, 3);
-        Escribir(g, Recortar(g, (ocupado ? "● " : "") + estado, 640, Fuentes.Texto(11f)), Fuentes.Texto(11f), Gris, 40, Alto - 36);
+        // La barra avanza suave hacia el porcentaje real (llega cada 250 ms); si vuelve a empezar, salta.
+        float objetivo = progreso / 100f;
+        avance = objetivo < avance ? objetivo : avance + (objetivo - avance) * 0.2f;
+        Estela(g, new Rectangle(40, Alto - 14, Ancho - 80, 6), avance, tiempo.Elapsed.TotalMilliseconds, ocupado);
+        Escribir(g, Recortar(g, (ocupado ? "● " : "") + estado, Tarjeta.X - 80, Fuentes.Texto(11f)), Fuentes.Texto(11f), Gris, 40, Alto - 42);
 
         int x = Tarjeta.Right;
         for (int i = Config.Redes.Length - 1; i >= 0; i--)
@@ -2301,43 +2985,14 @@ class Ventana : Form
             string t = Config.Redes[i].Key.ToUpperInvariant(), url = Config.Redes[i].Value;
             int w = Medir(g, t, Fuentes.Titulo(17f));
             x -= w;
-            var r = new Rectangle(x - 4, Alto - 40, w + 8, 30);
-            Escribir(g, t, Fuentes.Titulo(17f), r.Contains(mouse) ? Acento : Gris, x, Alto - 37);
+            var r = new Rectangle(x - 4, Alto - 46, w + 8, 30);
+            Escribir(g, t, Fuentes.Titulo(17f), r.Contains(mouse) ? Acento : Gris, x, Alto - 43);
             zonas.Add(new Zona { R = r, Click = delegate { Abrir(url); } });
             x -= 22;
         }
     }
 
     // ---------- piezas ----------
-
-    void Boton(Graphics g, Rectangle r, string texto, bool principal, Action click)
-    {
-        bool sobre = r.Contains(mouse);
-        if (principal) using (var b = new SolidBrush(sobre ? Color.FromArgb(255, 186, 72) : Acento)) g.FillRectangle(b, r);
-        else using (var p = new Pen(sobre ? Acento : Color.FromArgb(120, 255, 255, 255), 1.5f)) g.DrawRectangle(p, r);
-        Font f = Fuentes.Titulo(18f);
-        Escribir(g, texto, f, principal ? Oscuro : Texto, r.X + (r.Width - Medir(g, texto, f)) / 2, r.Y + (r.Height - 26) / 2);
-        zonas.Add(new Zona { R = r, Click = click });
-    }
-
-    void Linea(Graphics g, Rectangle r, bool cruz, Action click)
-    {
-        bool sobre = r.Contains(mouse);
-        if (sobre) using (var b = new SolidBrush(Color.FromArgb(cruz ? 200 : 60, cruz ? Rojo : Color.White))) g.FillRectangle(b, r);
-        using (var p = new Pen(Texto, 1.6f))
-        {
-            int cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
-            if (cruz) { g.DrawLine(p, cx - 6, cy - 6, cx + 6, cy + 6); g.DrawLine(p, cx + 6, cy - 6, cx - 6, cy + 6); }
-            else g.DrawLine(p, cx - 7, cy, cx + 7, cy);
-        }
-        zonas.Add(new Zona { R = r, Click = click });
-    }
-
-    static void Vidrio(Graphics g, Rectangle r)
-    {
-        using (var b = new SolidBrush(Color.FromArgb(205, 10, 12, 18))) g.FillRectangle(b, r);
-        using (var p = new Pen(Color.FromArgb(34, 255, 255, 255))) g.DrawRectangle(p, r);
-    }
 
     static void Sombra(Graphics g, Rectangle r, int desde, int hasta, float angulo)
     {
@@ -2347,24 +3002,7 @@ class Ventana : Form
             g.FillRectangle(b, r);
     }
 
-    // Letras con brillo azul, como el logo del video.
-    static void Neon(Graphics g, string texto, Font f, int x, int y)
-    {
-        using (var camino = new System.Drawing.Drawing2D.GraphicsPath())
-        {
-            camino.AddString(texto, f.FontFamily, (int)f.Style, g.DpiY * f.SizeInPoints / 72f, new Point(x, y), StringFormat.GenericTypographic);
-            foreach (int ancho in new[] { 10, 6, 3 })
-                using (var p = new Pen(Color.FromArgb(ancho == 10 ? 40 : ancho == 6 ? 80 : 200, 60, 150, 255), ancho)) { p.LineJoin = System.Drawing.Drawing2D.LineJoin.Round; g.DrawPath(p, camino); }
-            using (var b = new SolidBrush(Color.White)) g.FillPath(b, camino);
-        }
-    }
-
-    static void Punto(Graphics g, int x, int y, Color c)
-    {
-        using (var b = new SolidBrush(c)) g.FillEllipse(b, x - 4, y - 4, 8, 8);
-    }
-
-    static void Estrella(Graphics g, int cx, int cy, int radio, Color c)
+    internal static void Estrella(Graphics g, int cx, int cy, int radio, Color c)
     {
         var pts = new PointF[10];
         for (int i = 0; i < 10; i++)
@@ -2375,22 +3013,92 @@ class Ventana : Form
         }
         using (var b = new SolidBrush(c)) g.FillPolygon(b, pts);
     }
+}
 
-    static void Escribir(Graphics g, string texto, Font f, Color c, int x, int y)
+// Pantalla chica de carga antes de la ventana principal: logo que aparece, barra que se llena y se cierra sola.
+class Arranque : Lienzo
+{
+    const int Duracion = 1600;
+    readonly Stopwatch reloj = Stopwatch.StartNew();
+    readonly Timer cuadros = new Timer { Interval = 16 };
+    // Fondo de noche con montañas y estrella dorada brillante (fondo/arranque.jpg y fondo/arranque-estrella.png).
+    static readonly Bitmap cielo = Fondo.Cargar(460, 300, "arranque.jpg"), estrella = Fondo.Imagen("arranque-estrella.png");
+
+    public Arranque() : base(460, 300)
     {
-        using (var b = new SolidBrush(c)) g.DrawString(texto, f, b, x, y);
+        Text = "AMERICA RP";
+        StartPosition = FormStartPosition.CenterScreen;
+        BackColor = Panel;
+        altoArrastre = 300;
+        try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
+        cuadros.Tick += delegate { if (reloj.ElapsedMilliseconds >= Duracion) Close(); else Invalidate(); };
+        Shown += delegate { reloj.Restart(); cuadros.Start(); };
+        FormClosed += delegate { cuadros.Dispose(); };
     }
 
-    static int Medir(Graphics g, string texto, Font f)
+    protected override void OnPaint(PaintEventArgs e)
     {
-        return (int)g.MeasureString(texto, f, PointF.Empty, StringFormat.GenericTypographic).Width;
-    }
+        Graphics g = e.Graphics;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+        float t = Math.Min(1f, reloj.ElapsedMilliseconds / (float)Duracion), aparece = Math.Min(1f, t * 4), k = 1 - (1 - t) * (1 - t);
+        double ms = reloj.ElapsedMilliseconds;
 
-    static string Recortar(Graphics g, string texto, int ancho, Font f)
-    {
-        if (Medir(g, texto, f) <= ancho) return texto;
-        while (texto.Length > 1 && Medir(g, "..." + texto, f) > ancho) texto = texto.Substring(1);
-        return "..." + texto;
+        if (cielo != null) g.DrawImage(cielo, 0, 0);
+        else using (var b = new SolidBrush(Panel)) g.FillRectangle(b, ClientRectangle);
+        // Abajo se oscurece un poco para que se lean la barra y el texto.
+        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, 149, ClientSize.Width, 152), Color.FromArgb(0, 0, 0, 0), Color.FromArgb(150, 0, 0, 0), 90f))
+            g.FillRectangle(b, 0, 150, ClientSize.Width, 150);
+
+        // Una estrella fugaz cruza el cielo mientras carga.
+        float f0 = (float)((ms - 250) / 650);
+        if (f0 > 0 && f0 < 1)
+        {
+            float cx = 40 + f0 * 300, cy = 30 + f0 * 70;
+            using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new PointF(cx - 70, cy - 16), new PointF(cx, cy), Color.FromArgb(0, 255, 255, 255), Color.FromArgb((int)(220 * Math.Sin(f0 * Math.PI)), 255, 240, 220)))
+            using (var p = new Pen(b, 1.6f)) g.DrawLine(p, cx - 70, cy - 16, cx, cy);
+        }
+
+        // Logo: la estrella brillante a la izquierda (late despacio) y "America RP" adelante.
+        Font f = Fuentes.Titulo(40f);
+        int ancho = Medir(g, "America RP", f) + 64, x = (ClientSize.Width - ancho) / 2;
+        if (estrella != null)
+        {
+            float lado = 104 * (1 + 0.05f * (float)Math.Sin(ms / 220));
+            var m = new System.Drawing.Imaging.ColorMatrix { Matrix33 = aparece };
+            using (var atributos = new System.Drawing.Imaging.ImageAttributes())
+            {
+                atributos.SetColorMatrix(m);
+                g.DrawImage(estrella, new Rectangle((int)(x + 22 - lado / 2), (int)(126 - lado / 2), (int)lado, (int)lado), 0, 0, estrella.Width, estrella.Height, GraphicsUnit.Pixel, atributos);
+            }
+        }
+        else Ventana.Estrella(g, x + 22, 128, 22, Color.FromArgb((int)(255 * aparece), Acento));
+        Escribir(g, "America RP", f, Color.FromArgb((int)(140 * aparece), 0, 0, 0), x + 66, 106);
+        Escribir(g, "America RP", f, Color.FromArgb((int)(255 * aparece), Texto), x + 64, 104);
+
+        // Barra mínima: una línea fina que se llena en blanco, con un brillo suave en la punta.
+        var barra = new Rectangle((ClientSize.Width - 200) / 2, 210, 200, 2);
+        Relleno(g, barra, Color.FromArgb(45, 255, 255, 255), 1);
+        int lleno = (int)(barra.Width * k);
+        if (lleno > 2)
+        {
+            using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(barra.X - 1, barra.Y, lleno + 2, 2), Color.FromArgb(60, 255, 255, 255), Color.FromArgb(255, 255, 255, 255), 0f))
+                g.FillRectangle(b, barra.X, barra.Y, lleno, 2);
+            // Estela que recorre la parte llena una y otra vez mientras carga.
+            float paso = (float)(ms % 900 / 900), punta = barra.X + paso * (lleno + 70);
+            int desde = (int)Math.Max(barra.X, punta - 70), hasta = (int)Math.Min(barra.X + lleno, punta);
+            if (hasta - desde > 1)
+                using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle((int)punta - 71, barra.Y - 1, 72, 4), Color.FromArgb(0, 255, 236, 200), Color.FromArgb(255, 255, 236, 200), 0f))
+                    g.FillRectangle(b, desde, barra.Y - 1, hasta - desde, 4);
+            using (var camino = new System.Drawing.Drawing2D.GraphicsPath())
+            {
+                camino.AddEllipse(barra.X + lleno - 10, barra.Y - 9, 20, 20);
+                using (var b = new System.Drawing.Drawing2D.PathGradientBrush(camino) { CenterColor = Color.FromArgb(110, 255, 255, 255), SurroundColors = new[] { Color.FromArgb(0, 255, 255, 255) } })
+                    g.FillPath(b, camino);
+            }
+        }
+        Centrado(g, "Iniciando", Fuentes.Texto(9f), Color.FromArgb(170, Texto), new Rectangle(0, 222, ClientSize.Width, 22));
     }
 }
 
@@ -2402,71 +3110,42 @@ static class Web
     }
 }
 
-// Fondo en video: fondo/video.bin va dentro del .exe (lo arma fondo/armar_video.py) y se repite en bucle.
-// Son JPEG ya del tamaño de la ventana; se descomprime solo el cuadro que toca, así no ocupa cientos de MB.
-class Video
+// Imagen de fondo (fondo/fondo.jpg dentro del .exe), escalada una sola vez al tamaño de la ventana y recortada sin deformar.
+// Sin la imagen (compilado sin el recurso o rota) el fondo queda liso.
+static class Fondo
 {
-    readonly byte[] datos;
-    readonly List<int> inicios = new List<int>(), largos = new List<int>();
-    readonly int fps;
-    int actual = -1;
-    Image cuadro;
-
-    Video(byte[] datos)
-    {
-        this.datos = datos;
-        if (datos.Length < 16 || Encoding.ASCII.GetString(datos, 0, 8) != "AMRPVID1") throw new InvalidDataException("video.bin inválido");
-        fps = Math.Max(1, BitConverter.ToInt32(datos, 8));
-        int n = BitConverter.ToInt32(datos, 12), pos = 16;
-        for (int i = 0; i < n && pos + 4 <= datos.Length; i++)
-        {
-            int largo = BitConverter.ToInt32(datos, pos);
-            if (largo <= 0 || pos + 4 + largo > datos.Length) break;
-            inicios.Add(pos + 4);
-            largos.Add(largo);
-            pos += 4 + largo;
-        }
-        if (inicios.Count == 0) throw new InvalidDataException("video.bin sin cuadros");
-    }
-
-    public int Cuadros { get { return inicios.Count; } }
-
-    public static Video Desde(byte[] datos) { return new Video(datos); }
-
-    // Sin video (compilado sin el recurso o roto) el fondo queda liso.
-    public static Video Cargar()
+    // Imagen embebida tal cual (null si falta).
+    public static Bitmap Imagen(string recurso)
     {
         try
         {
-            using (Stream s = typeof(Video).Assembly.GetManifestResourceStream("video.bin"))
-            {
-                if (s == null) return null;
-                var ms = new MemoryStream();
-                s.CopyTo(ms);
-                return new Video(ms.ToArray());
-            }
+            using (Stream s = typeof(Ventana).Assembly.GetManifestResourceStream(recurso))
+                return s == null ? null : new Bitmap(s);
         }
         catch (Exception) { return null; }
     }
 
-    public void Dibujar(Graphics g, double t, int ancho, int alto)
+    public static Bitmap Cargar(int ancho, int alto, string recurso = "fondo.jpg")
     {
-        int i = (int)(t * fps) % inicios.Count;
-        if (i != actual)
+        try
         {
-            try
+            using (Stream s = typeof(Ventana).Assembly.GetManifestResourceStream(recurso))
             {
-                Image nuevo;
-                using (var ms = new MemoryStream(datos, inicios[i], largos[i])) using (Image img = Image.FromStream(ms)) nuevo = new Bitmap(img);
-                if (cuadro != null) cuadro.Dispose();
-                cuadro = nuevo;
+                if (s == null) return null;
+                using (Image img = Image.FromStream(s))
+                {
+                    var b = new Bitmap(ancho, alto);
+                    using (Graphics g = Graphics.FromImage(b))
+                    {
+                        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                        float escala = Math.Max((float)ancho / img.Width, (float)alto / img.Height), w = ancho / escala, h = alto / escala;
+                        g.DrawImage(img, new Rectangle(0, 0, ancho, alto), new RectangleF((img.Width - w) / 2, (img.Height - h) / 2, w, h), GraphicsUnit.Pixel);
+                    }
+                    return b;
+                }
             }
-            catch (Exception) { }
-            actual = i;
         }
-        if (cuadro == null) return;
-        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
-        g.DrawImage(cuadro, 0, 0, ancho, alto);
+        catch (Exception) { return null; }
     }
 }
 
@@ -2495,6 +3174,7 @@ static class Programa
         }
         Autoactualizacion.BorrarViejo(Application.ExecutablePath);
         Application.EnableVisualStyles();
+        using (var arranque = new Arranque()) Application.Run(arranque);
         Application.Run(new Ventana());
         return 0;
     }
@@ -2597,14 +3277,6 @@ static class Prueba
             Ver(Tira(() => Actualizador.ExtraerCef(gta, malo)) && !File.Exists(Path.Combine(carpeta, "afuera.txt")), "zip CEF: rechaza rutas de afuera");
         }
         finally { Directory.Delete(carpeta, true); }
-
-        var vid = new List<byte>(Encoding.ASCII.GetBytes("AMRPVID1"));
-        vid.AddRange(BitConverter.GetBytes(24));
-        vid.AddRange(BitConverter.GetBytes(5)); // dice 5 cuadros pero trae 2 y uno cortado
-        for (int i = 0; i < 2; i++) { vid.AddRange(BitConverter.GetBytes(3)); vid.AddRange(new byte[] { 1, 2, 3 }); }
-        vid.AddRange(BitConverter.GetBytes(999));
-        Ver(Video.Desde(vid.ToArray()).Cuadros == 2, "video: lee solo los cuadros completos");
-        Ver(Tira(() => Video.Desde(Encoding.ASCII.GetBytes("cualquier cosa nada"))), "video: rechaza archivo que no es video");
 
         string sha64 = new string('a', 64);
         var ver = Autoactualizacion.Leer("1.2.0 " + sha64 + "\r\n");
@@ -2716,12 +3388,11 @@ static class Prueba
         try
         {
             Ajustes.Ruta = Path.Combine(carpeta, "ajustes.txt");
-            Ver(Ajustes.Bandeja && !Ajustes.ActualizarSolo, "ajustes: valores de fábrica");
+            Ver(Ajustes.Bandeja, "ajustes: valores de fábrica");
             Ajustes.Bandeja = false;
-            Ajustes.ActualizarSolo = true;
-            Ver(!Ajustes.Bandeja && Ajustes.ActualizarSolo && File.ReadAllLines(Ajustes.Ruta).Length == 2, "ajustes: se guardan");
+            Ver(!Ajustes.Bandeja && File.ReadAllLines(Ajustes.Ruta).Length == 1, "ajustes: se guardan");
             File.WriteAllText(Ajustes.Ruta, "basura\n=x\nbandeja=si\n");
-            Ver(Ajustes.Bandeja && !Ajustes.ActualizarSolo, "ajustes: un archivo raro no rompe");
+            Ver(Ajustes.Bandeja, "ajustes: un archivo raro no rompe");
 
             Ver(Soporte.UltimoCierre(Path.Combine(carpeta, "no-existe")) == "", "soporte: sin informes");
             File.WriteAllText(Path.Combine(carpeta, "cierre-20261101-100000.txt"), "AMERICA RP\nCódigo de salida: viejo\n\nchat");
@@ -2824,6 +3495,10 @@ static class Prueba
             Ver(nueva == Path.Combine(carpeta, "nuevo", "GTA San Andreas") && File.ReadAllText(Path.Combine(nueva, "models", "gta3.img")) == "img" && File.Exists(Path.Combine(viejo, "gta_sa.exe")), "mover: copia todo y no borra la vieja");
             Ver(Tira(() => Mudanza.Copiar(viejo, Path.Combine(carpeta, "nuevo"), delegate { })), "mover: no pisa una carpeta con archivos");
             Ver(Tira(() => Mudanza.Copiar(viejo, viejo, delegate { })), "mover: no se mete adentro de sí misma");
+            Ver(Actualizador.Detalle(5 << 20, 0, 0.5) == "5,0 MB", "detalle: sin total ni velocidad al principio");
+            Ver(Juego.Duracion(0) == "0 min" && Juego.Duracion(45) == "45 min" && Juego.Duracion(120) == "2 h" && Juego.Duracion(750) == "12 h 30 min", "tiempo jugado: formato");
+            Ver(Actualizador.Detalle(10 << 20, 40 << 20, 5) == "10,0 de 40,0 MB · 2,0 MB/s · faltan 15 s", "detalle: velocidad y lo que falta");
+            Ver(Actualizador.Detalle(10 << 20, 1000L << 20, 10).EndsWith("faltan 17 min"), "detalle: más de un minuto en minutos");
         }
         finally { Directory.Delete(carpeta, true); }
 

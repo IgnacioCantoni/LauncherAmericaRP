@@ -8,22 +8,23 @@ Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe
 - **Estado del server**: cada 15 segundos muestra si está en línea, los jugadores y el ping.
 - **Mi juego**: la carpeta del GTA y si están bien la versión 1.0, el SA-MP 0.3.7 (`samp.exe` y `samp.dll`) y los archivos del server. El resumen también está en la tarjeta del server, junto al botón JUGAR.
 - **Noticias**: muestra `noticias.txt` de este repo, cada noticia con su fecha, etiqueta y título (ver abajo).
-- **Mods**: catálogo de mods opcionales que elige el staff (ver "Mods opcionales"). Cada jugador instala y saca los que quiera con un clic. Los archivos que el server reparte a todos (`actualizaciones/archivos/`) se bajan solos antes de jugar, y su estado está en MI JUEGO.
-- **Fondo en video**: `fondo/video.bin` (armado desde el video del server) se repite en bucle detrás de todo. Va dentro del `.exe`.
+- **Mods**: catálogo de mods opcionales que elige el staff (ver "Mods opcionales"). Cada jugador instala y saca los que quiera con un clic. Los archivos que el server reparte a todos (`actualizaciones/archivos/`) se bajan solos antes de jugar, y su estado está en la tarjeta del cliente, en INICIO.
+- **Imagen de fondo**: `fondo/fondo.jpg` va dentro del `.exe`, escalada al tamaño de la ventana (1440x810 si entra en la pantalla; si no, 1280x720).
 - **Se actualiza solo**: al abrir, mira `launcher/version.txt`. Si hay una versión nueva, la baja de la Release de GitHub, revisa su huella, se reemplaza y se vuelve a abrir (ver abajo).
 - **DirectX 9**: antes de jugar revisa que estén `d3dx9_25.dll` (la pide el SA-MP) y, con el ENB activo, `d3dx9_43.dll`. Si faltan, ofrece bajar el instalador oficial de Microsoft de junio de 2010, revisa su huella y lo instala en silencio (Windows pide permiso de administrador). Visual C++ no hace falta: CEF, CLEO y el cargador de ASI no lo usan.
 - **Antes de jugar**: revisa que esté `text\american.gxt` (sin él el juego se cierra al cargar) y avisa si el GTA está en Archivos de programa o Windows (ahí no puede actualizar archivos), en OneDrive o en el Escritorio. Con el ENB activo le pone a `gta_sa.exe` el parche de 4 GB (Large Address Aware), para que no se quede sin memoria; la primera vez guarda la copia original como `gta_sa.exe.sin4gb`. No deja abrir un segundo GTA.
 - **Archivos rápidos**: recuerda el tamaño y la fecha de cada archivo revisado (`%LOCALAPPDATA%\AmericaRP\huellas.txt`) y solo vuelve a leer los que cambiaron.
 - **Si el juego se cierra de golpe**: el launcher sigue al GTA. Cuando se cierra vuelve a aparecer y, si fue un crash, lo avisa con el código y deja un informe para soporte en `%LOCALAPPDATA%\AmericaRP\informes` (versión, Windows, ENB, tiempo jugado y las últimas líneas del chat de SA-MP). También cierra los procesos del CEF que quedaron colgados.
 - **Pantallas del server**: instala el cliente de CEF para el teléfono y las demás pantallas en HTML del server (ver abajo).
-- **Soporte**: en MI JUEGO, SOPORTE abre un formulario como el de NewGamers: elegís qué te pasa (no abre, se cierra solo, no conecta, descarga o instalación, otra cosa), contás qué pasó y "COPIAR PARA DISCORD" arma el mensaje, con el informe técnico si lo dejás marcado (versión del launcher, nick, Windows, carpeta, cada revisión, el ENB y el último cierre de golpe). Si `Config.Redes` tiene el link de Soporte, ofrece abrirlo.
-- **Opciones del juego**: en MI JUEGO, OPCIONES abre la carpeta del GTA, repara archivos (borra la memoria de huellas y revisa todo de cero), mueve la carpeta a otro lugar (la copia entera, la revisa y cambia la ruta; la vieja no se borra hasta que el jugador lo decida) o elige otra.
+- **Soporte**: la pestaña SOPORTE abre un formulario como el de NewGamers: elegís qué te pasa (no abre, se cierra solo, no conecta, descarga o instalación, otra cosa), contás qué pasó y "COPIAR PARA DISCORD" arma el mensaje, con el informe técnico si lo dejás marcado (versión del launcher, nick, Windows, carpeta, cada revisión, el ENB y el último cierre de golpe). Si `Config.Redes` tiene el link de Soporte, ofrece abrirlo.
+- **Clientes**: en INICIO se elige el cliente, como el selector de juego de NewGamers pero sin repartir el GTA: OFICIAL (el GTA del jugador con los archivos del server), o CUSTOM (otra carpeta del jugador, con los mods y aportes que quiera; su ENB y sus mods se anotan aparte). Al elegir uno, SA-MP pasa a abrir ese GTA. La tarjeta muestra si está listo o lo primero que falta.
+- **Opciones del juego**: los tres puntos del cliente elegido muestran el estado completo, abren la carpeta del GTA, repara archivos (borra la memoria de huellas y revisa todo de cero), mueve la carpeta a otro lugar (la copia entera, la revisa y cambia la ruta; la vieja no se borra hasta que el jugador lo decida) o elige otra.
 - **Novedades del launcher**: AJUSTES > NOVEDADES muestra `launcher/novedades.txt`, con el mismo formato que las noticias.
 - **Dos monitores**: con más de un monitor el GTA abre el cuadro "Device Selection" (elegir pantalla), que no tiene botón en la barra de tareas. El launcher no se esconde hasta que aparece la primera ventana del GTA y la trae al frente, así ese cuadro no queda tapado.
-- **Ajustes**: pestaña AJUSTES con dos opciones que se guardan en `%LOCALAPPDATA%\AmericaRP\ajustes.txt`: esconder el launcher en la bandeja (al lado del reloj) mientras jugás, que viene activado, y actualizar el launcher sin preguntar, que viene desactivado. También abre la carpeta de informes de cierres.
+- **Ajustes**: pestaña AJUSTES con una opción que se guarda en `%LOCALAPPDATA%\AmericaRP\ajustes.txt`: esconder el launcher en la bandeja (al lado del reloj) mientras jugás, que viene activado. Las versiones nuevas del launcher se instalan siempre solas, sin preguntar (desde la 1.4.0). También abre la carpeta de informes de cierres.
 - **Archivos prohibidos**: en cada JUGAR lee `prohibidos.txt` de este repo y saca del GTA lo que coincida (ver abajo).
 - **Redes y soporte**: links de Discord, YouTube, TikTok, Instagram y Soporte en el pie; aparecen los que tengan link en `Config.Redes`.
-- **Tipografías**: Montserrat Bold Italic (títulos, la misma del video) y Barlow (textos), con licencia libre SIL OFL (ver `fuentes/`). Van dentro del `.exe`.
+- **Tipografía**: Inter (ExtraBold en títulos, SemiBold en negritas y Regular en textos), la misma del teléfono del server, con licencia libre SIL OFL (ver `fuentes/`). Va dentro del `.exe`.
 
 ## Compilar
 
@@ -35,7 +36,7 @@ Para probar la lógica sin abrir la ventana: `AmericaRP.exe --prueba` (en Linux,
 
 Arriba de `src/Launcher.cs`, en `Config`:
 
-- `Host` y `Puerto`: la IP pública (o dominio) y el puerto del server. Hoy está en `127.0.0.1:7777`, que solo sirve en la PC donde corre el server.
+- `Servidores`: los servers que se eligen en INICIO (nombre, IP o dominio y puerto). Hoy DESARROLLO está en `127.0.0.1:7777` (el server de la PC del staff) y OFICIAL todavía no tiene IP: aparece como "Todavía sin IP" y no se puede elegir hasta completarla. El launcher consulta todos cada 15 segundos y muestra si están en línea y su ping; JUGAR entra al elegido.
 - `Redes`: los links del pie.
 - `NoticiasUrl`, `ManifiestoUrl` y `EnbUrl`: apuntan a este repo. Si se dejan vacías, esa función se apaga.
 
@@ -69,7 +70,7 @@ Solo frena a quien entra por el launcher. Quien abre `samp.exe` a mano se lo sal
 
 ## Modo GTA Full: ENB
 
-El ENB (ENBSeries v0.430 para GTA SA) es opcional: cada jugador lo activa o lo desactiva en MI JUEGO.
+El ENB (ENBSeries v0.430 para GTA SA) es opcional: cada jugador lo activa o lo desactiva en las opciones del cliente (los tres puntos, en INICIO).
 
 Con SA-MP 0.3.7 se usa la **versión ASI** del ENB. La versión `d3d9.dll` hace cerrar SA-MP al entrar ("An exception occurred"), y la v0.076 entra pero se ve mal (probado el 3/11/2026 con GTA 1.0 US y SA-MP 0.3.7-R5). El `.asi` lo carga el Ultimate ASI Loader (`dinput8.dll`, licencia MIT), que va en `actualizaciones/archivos/` con su licencia porque también lo usa CLEO.
 
@@ -107,9 +108,18 @@ Dos arreglos van con las actualizaciones para todos, porque el cliente de CEF lo
 
 - `salida_limpia.asi`: el SA-MP sale con `ExitProcess`, y al descargarse `cef\client.dll` Windows corta el GTA con 0xC0000602, así que cada salida contaba como crash. Esta ASI cambia ese `ExitProcess` de samp.dll por `TerminateProcess` con el mismo código, cuando el SA-MP y el CEF ya se apagaron. Fuente en `cliente/salida_limpia.c`. Se compila con `i686-w64-mingw32-gcc -O2 -s -shared -nostdlib -e _DllMain@12 -o salida_limpia.asi salida_limpia.c -lkernel32`. Sacarla cuando omp-cef lo arregle.
 - Sin `wndmode.ini`: la ventana sin bordes del Ultimate ASI Loader se repartió un día y se sacó, porque con dos monitores el GTA crasheaba después de elegir la pantalla. `prohibidos.txt` la saca de las carpetas que la recibieron. Con el ENB activo, el `enblocal.ini` del paquete ENB (`paquetes/enb/archivos`) sigue pidiendo ventana sin bordes (`ForceBorderless` y `ForceBorderlessFullscreen`).
-## Cambiar el video de fondo
+## Video de la pantalla de carga del GTA
 
-Con Python y ffmpeg instalados: `python fondo/armar_video.py tu-video.mp4`. Rehace `fondo/video.bin` (cuadros JPEG de 1100x660, sin sonido). Después volvé a compilar.
+Mientras el GTA carga, en vez de las imágenes de siempre (las de `loadscs.txd`) y su barra gris, se ve el video del server, que ya trae su propio círculo de carga. Lo hace `carga_video.asi`, que va con las actualizaciones junto con `americarp/carga.bin` (el video en cuadros JPEG de 1280x720 como el original, a 24 por segundo, unos 21 MB). El video se repite mientras dure la carga. Si `carga.bin` falta o está roto, se ven las pantallas de siempre, sin barra. Solo funciona con GTA SA 1.0 US; en otra versión la ASI no toca nada. Cada vez que arranca el GTA deja en `americarp/carga.log` qué pasó (si cargó el video, si pudo crear la textura, si dibujó el primer cuadro).
+
+- Fuente en `cliente/carga_video.c` (lee los JPEG con `cliente/stb_image.h`, de dominio público). Se compila con `i686-w64-mingw32-gcc -O2 -s -shared -static-libgcc -o carga_video.asi carga_video.c` desde `cliente/`.
+- Para cambiar el video: reemplazá `cliente/carga.mp4` (mejor 16:9), corré `python cliente/armar_carga.py` (necesita ffmpeg), después `generar-manifiesto.bat`, commit y push. El sonido del video no se usa: suena la música de carga del GTA.
+
+## Cambiar la imagen de fondo
+
+La pantalla de carga del launcher usa `fondo/arranque.jpg` (460x300, la noche con montañas) y `fondo/arranque-estrella.png` (la estrella dorada con transparencia). Para cambiarlas, reemplazalas con el mismo tamaño y volvé a compilar.
+
+Reemplazá `fondo/fondo.jpg` por otra imagen 16:9 (mejor de 1440x810 o más grande) y volvé a compilar. Si no es 16:9 se recorta lo que sobra, sin deformarla.
 
 ## Publicar archivos o mods
 
