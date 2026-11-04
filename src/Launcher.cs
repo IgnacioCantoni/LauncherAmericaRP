@@ -181,6 +181,18 @@ static class Registro
 
     // Clientes: "liviano" es el oficial (el GTA principal); "custom" es otra carpeta del jugador, con sus aportes.
     public static string Cliente { get { string c = Leer(Propia, "cliente"); return c.Length == 0 ? "liviano" : c; } set { Guardar(Propia, "cliente", value); } }
+    // Tiempo jugado: minutos totales, los de la última partida y cuándo terminó (para la tarjeta del server).
+    public static int MinutosJugados { get { int n; return int.TryParse(Leer(Propia, "minutos_jugados"), out n) ? n : 0; } }
+    public static int MinutosUltima { get { int n; return int.TryParse(Leer(Propia, "minutos_ultima"), out n) ? n : 0; } }
+    public static DateTime FinUltima { get { long n; return long.TryParse(Leer(Propia, "fin_ultima"), out n) ? new DateTime(n) : DateTime.MinValue; } }
+    public static void AnotarPartida(DateTime inicio, DateTime fin)
+    {
+        int min = (int)Math.Max(0, (fin - inicio).TotalMinutes);
+        Guardar(Propia, "minutos_jugados", (MinutosJugados + min).ToString());
+        Guardar(Propia, "minutos_ultima", min.ToString());
+        Guardar(Propia, "fin_ultima", fin.Ticks.ToString());
+    }
+
     public static int Servidor
     {
         get
@@ -672,6 +684,13 @@ static class Juego
     public static void AlFrente(IntPtr v) { SetForegroundWindow(v); }
 
     public class Cierre { public int? Codigo; public DateTime Inicio, Fin; public bool Bien { get { return Codigo == null || Codigo == 0; } } }
+
+    // Tiempo de juego para mostrar: "45 min", "2 h", "12 h 30 min".
+    public static string Duracion(int minutos)
+    {
+        if (minutos < 60) return minutos + " min";
+        return minutos / 60 + " h" + (minutos % 60 > 0 ? " " + minutos % 60 + " min" : "");
+    }
 
     // Ruta completa del .exe de un proceso, también de uno de 32 bits (Process.MainModule no siempre puede).
     static string Ruta(int id)
@@ -2333,6 +2352,7 @@ class Ventana : Lienzo
         catch (Exception) { return; }
         if (c == null) { Restaurar(); Avisar("No se vio abrir el GTA. Si no abrió, probá de nuevo.", 0); return; }
         try { await Task.Run(() => Juego.CerrarCefColgado(carpeta)); } catch (Exception) { }
+        try { Registro.AnotarPartida(c.Inicio, c.Fin); } catch (Exception) { }
         Restaurar();
         if (c.Bien) { Avisar("Listo para jugar.", 100); return; }
         string informe;
@@ -2940,6 +2960,16 @@ class Ventana : Lienzo
         Relleno(g, caja, Campo, 10);
         if (nick.Focused) Borde(g, caja, Acento, 10, 1.5f);
 
+        Escribir(g, "TU TIEMPO JUGADO", Fuentes.Negrita(9.5f), Gris, x, t.Y + 320);
+        DateTime fin = Registro.FinUltima;
+        if (fin == DateTime.MinValue) Escribir(g, "Todavía no jugaste", Fuentes.Negrita(13f), Texto, x, t.Y + 340);
+        else
+        {
+            Escribir(g, Juego.Duracion(Registro.MinutosJugados) + " en total", Fuentes.Negrita(13f), Texto, x, t.Y + 340);
+            string cuando = fin.Date == DateTime.Today ? "hoy" : fin.Date == DateTime.Today.AddDays(-1) ? "ayer" : fin.ToString("dd/MM");
+            Escribir(g, "Última partida: " + Juego.Duracion(Registro.MinutosUltima) + " · " + cuando, Fuentes.Texto(10f), Gris, x, t.Y + 364);
+        }
+
         var jugar = new Rectangle(x, t.Bottom - 92, t.Width - 56, 64);
         Relleno(g, jugar, ocupado ? Color.FromArgb(120, Acento) : Mezcla(Acento, Color.FromArgb(255, 196, 92), Brillo(jugar)), 14);
         Centrado(g, ocupado ? "ESPERÁ..." : "JUGAR", Fuentes.Titulo(34f), Oscuro, jugar);
@@ -3473,6 +3503,7 @@ static class Prueba
             Ver(Tira(() => Mudanza.Copiar(viejo, Path.Combine(carpeta, "nuevo"), delegate { })), "mover: no pisa una carpeta con archivos");
             Ver(Tira(() => Mudanza.Copiar(viejo, viejo, delegate { })), "mover: no se mete adentro de sí misma");
             Ver(Actualizador.Detalle(5 << 20, 0, 0.5) == "5,0 MB", "detalle: sin total ni velocidad al principio");
+            Ver(Juego.Duracion(0) == "0 min" && Juego.Duracion(45) == "45 min" && Juego.Duracion(120) == "2 h" && Juego.Duracion(750) == "12 h 30 min", "tiempo jugado: formato");
             Ver(Actualizador.Detalle(10 << 20, 40 << 20, 5) == "10,0 de 40,0 MB · 2,0 MB/s · faltan 15 s", "detalle: velocidad y lo que falta");
             Ver(Actualizador.Detalle(10 << 20, 1000L << 20, 10).EndsWith("faltan 17 min"), "detalle: más de un minuto en minutos");
         }
