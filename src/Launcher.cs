@@ -2311,7 +2311,7 @@ class Ventana : Lienzo
         {
             Tuple.Create("Ver estado del juego", "\uE946", (Action)VerEstado),
             Tuple.Create("Revisar archivos del server", "\uE895", hay ? (Action)Actualizar : null),
-            Tuple.Create("Reparar archivos (revisar todo de cero)", "\uE90F", hay ? (Action)delegate { if (ocupado) return; Actualizador.BorrarHuellas(); Actualizar(); } : null),
+            Tuple.Create("Reparar archivos del juego", "\uE90F", hay ? (Action)delegate { if (ocupado) return; Actualizador.BorrarHuellas(); Actualizar(); } : null),
             Tuple.Create(EnbActivo() ? "Desactivar gráficos ENB" : "Activar gráficos ENB", "\uE706", hay && Config.EnbUrl.Length > 0 ? (Action)CambiarEnb : null),
             Tuple.Create("Mover ubicación del juego", "\uE8DE", hay ? (Action)MoverCarpeta : null),
             Tuple.Create("Abrir carpeta del juego", "\uE838", hay ? (Action)delegate { Abrir(Carpeta()); } : null),
@@ -2331,9 +2331,11 @@ class Ventana : Lienzo
         if (menuAncla.IsEmpty) return;
         if (pestana != menuPestana) { menuAncla = Rectangle.Empty; return; }
         var items = menuItems;
-        Font iconos = Fuentes.Iconos(11f);
-        int x = menuAncla.X < Ancho / 2 ? menuAncla.X : menuAncla.Right - 330;
-        var caja = new Rectangle(x, menuAncla.Bottom + 8, 330, items.Count * 46 + 12);
+        Font iconos = Fuentes.Iconos(11f), letra = Fuentes.Texto(12f);
+        // El ancho sale del texto más largo, así nada se sale de la caja.
+        int ancho = items.Max(it => Medir(g, it.Item1, letra)) + (iconos != null ? 52 : 14) + 34;
+        int x = menuAncla.X < Ancho / 2 ? menuAncla.X : menuAncla.Right - ancho;
+        var caja = new Rectangle(Math.Min(x, Ancho - ancho - 12), menuAncla.Bottom + 8, ancho, items.Count * 46 + 12);
         Relleno(g, new Rectangle(caja.X + 2, caja.Y + 6, caja.Width, caja.Height), Color.FromArgb(90, 0, 0, 0), 14);
         Relleno(g, caja, Color.FromArgb(250, Panel), 14);
         Borde(g, caja, Color.FromArgb(24, 255, 255, 255), 14, 1f);
@@ -2351,7 +2353,7 @@ class Ventana : Lienzo
                 Centrado(g, items[i].Item2, iconos, c, cuadro);
                 tx = cuadro.Right + 12;
             }
-            Escribir(g, items[i].Item1, Fuentes.Texto(12f), c, tx, r.Y + 13);
+            Escribir(g, items[i].Item1, letra, c, tx, r.Y + 13);
             if (a != null) zonas.Add(new Zona { R = r, Click = a, Menu = true });
         }
     }
