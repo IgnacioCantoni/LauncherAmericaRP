@@ -628,6 +628,8 @@ static class Actualizador
                 try
                 {
                     web.DownloadFile(UrlArchivo(manifiestoUrl, ruta), temporal);
+                    if (!File.Exists(temporal))
+                        throw new IOException("El antivirus borró " + ruta + " apenas se bajó. Si confiás en el server, permitilo en el historial de protección de Windows.");
                     if (Sha256(temporal) != pendientes[i].Key)
                         throw new InvalidDataException("El archivo bajado no coincide con el manifiesto: " + ruta);
                     try { File.Copy(temporal, destino, true); }
