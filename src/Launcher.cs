@@ -2878,7 +2878,7 @@ class Ventana : Lienzo
             g.FillRectangle(b, r);
     }
 
-    static void Estrella(Graphics g, int cx, int cy, int radio, Color c)
+    internal static void Estrella(Graphics g, int cx, int cy, int radio, Color c)
     {
         var pts = new PointF[10];
         for (int i = 0; i < 10; i++)
@@ -2888,6 +2888,52 @@ class Ventana : Lienzo
             pts[i] = new PointF(cx + (float)(Math.Cos(ang) * r), cy + (float)(Math.Sin(ang) * r));
         }
         using (var b = new SolidBrush(c)) g.FillPolygon(b, pts);
+    }
+}
+
+// Pantalla chica de carga antes de la ventana principal: logo que aparece, barra que se llena y se cierra sola.
+class Arranque : Lienzo
+{
+    const int Duracion = 1600;
+    readonly Stopwatch reloj = Stopwatch.StartNew();
+    readonly Timer cuadros = new Timer { Interval = 16 };
+
+    public Arranque() : base(460, 300)
+    {
+        Text = "AMERICA RP";
+        StartPosition = FormStartPosition.CenterScreen;
+        BackColor = Panel;
+        altoArrastre = 300;
+        try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
+        cuadros.Tick += delegate { if (reloj.ElapsedMilliseconds >= Duracion) Close(); else Invalidate(); };
+        Shown += delegate { reloj.Restart(); cuadros.Start(); };
+        FormClosed += delegate { cuadros.Dispose(); };
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Graphics g = e.Graphics;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+        float t = Math.Min(1f, reloj.ElapsedMilliseconds / (float)Duracion), aparece = Math.Min(1f, t * 4), k = 1 - (1 - t) * (1 - t);
+
+        // Brillo naranja suave detrás del logo.
+        using (var camino = new System.Drawing.Drawing2D.GraphicsPath())
+        {
+            camino.AddEllipse(-60, -90, 580, 420);
+            using (var b = new System.Drawing.Drawing2D.PathGradientBrush(camino) { CenterColor = Color.FromArgb(60, Acento), SurroundColors = new[] { Color.FromArgb(0, Acento) } })
+                g.FillPath(b, camino);
+        }
+
+        Font f = Fuentes.Titulo(40f);
+        int ancho = Medir(g, "America RP", f) + 56, x = (ClientSize.Width - ancho) / 2;
+        Ventana.Estrella(g, x + 20, 128, 22, Color.FromArgb((int)(255 * aparece), Acento));
+        Escribir(g, "America RP", f, Color.FromArgb((int)(255 * aparece), Texto), x + 56, 104);
+
+        var barra = new Rectangle((ClientSize.Width - 200) / 2, 206, 200, 3);
+        Relleno(g, barra, Color.FromArgb(30, 255, 255, 255), 2);
+        if (k > 0.02f) Relleno(g, new Rectangle(barra.X, barra.Y, (int)(barra.Width * k), barra.Height), Acento, 2);
+        Centrado(g, "I N I C I A N D O . . .", Fuentes.Negrita(8.5f), Gris, new Rectangle(0, 226, ClientSize.Width, 24));
     }
 }
 
@@ -2952,6 +2998,7 @@ static class Programa
         }
         Autoactualizacion.BorrarViejo(Application.ExecutablePath);
         Application.EnableVisualStyles();
+        using (var arranque = new Arranque()) Application.Run(arranque);
         Application.Run(new Ventana());
         return 0;
     }
