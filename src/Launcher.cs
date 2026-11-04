@@ -2944,6 +2944,13 @@ class Arranque : Lienzo
     const int Duracion = 1600;
     readonly Stopwatch reloj = Stopwatch.StartNew();
     readonly Timer cuadros = new Timer { Interval = 16 };
+    // Cielo de noche: posición, tamaño y fase de titileo de cada estrella, siempre las mismas.
+    static readonly float[][] cielo = Enumerable.Range(0, 110).Select(i => new float[] { 0, 0, 0, 0 }).ToArray();
+    static Arranque()
+    {
+        var azar = new Random(7);
+        foreach (var e in cielo) { e[0] = azar.Next(460); e[1] = azar.Next(300); e[2] = 0.6f + (float)Math.Pow(azar.NextDouble(), 3) * 1.8f; e[3] = (float)(azar.NextDouble() * Math.PI * 2); }
+    }
 
     public Arranque() : base(460, 300)
     {
@@ -2963,6 +2970,24 @@ class Arranque : Lienzo
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
         float t = Math.Min(1f, reloj.ElapsedMilliseconds / (float)Duracion), aparece = Math.Min(1f, t * 4), k = 1 - (1 - t) * (1 - t);
+        double ms = reloj.ElapsedMilliseconds;
+
+        // Noche: azul oscuro arriba, apenas más cálido abajo, con estrellas que titilan.
+        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, -1, ClientSize.Width, ClientSize.Height + 2), Color.FromArgb(7, 9, 24), Color.FromArgb(22, 16, 30), 90f))
+            g.FillRectangle(b, ClientRectangle);
+        foreach (var s in cielo)
+        {
+            int luz = (int)(150 + 105 * Math.Sin(ms / 240 + s[3]));
+            using (var b = new SolidBrush(Color.FromArgb(Math.Max(40, luz), 230, 236, 255))) g.FillEllipse(b, s[0] - s[2] / 2, s[1] - s[2] / 2, s[2], s[2]);
+        }
+        // Una estrella fugaz cruza el cielo mientras carga.
+        float f0 = (float)((ms - 250) / 650);
+        if (f0 > 0 && f0 < 1)
+        {
+            float cx = 40 + f0 * 300, cy = 30 + f0 * 70;
+            using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new PointF(cx - 70, cy - 16), new PointF(cx, cy), Color.FromArgb(0, 255, 255, 255), Color.FromArgb((int)(220 * Math.Sin(f0 * Math.PI)), 255, 240, 220)))
+            using (var p = new Pen(b, 1.6f)) g.DrawLine(p, cx - 70, cy - 16, cx, cy);
+        }
 
         // Brillo naranja suave detrás del logo.
         using (var camino = new System.Drawing.Drawing2D.GraphicsPath())
@@ -2971,6 +2996,23 @@ class Arranque : Lienzo
             using (var b = new System.Drawing.Drawing2D.PathGradientBrush(camino) { CenterColor = Color.FromArgb(60, Acento), SurroundColors = new[] { Color.FromArgb(0, Acento) } })
                 g.FillPath(b, camino);
         }
+
+        // Estrella grande detrás del logo: aparece con el logo, late y gira muy despacio.
+        float tam = 150 * (0.85f + 0.15f * aparece) * (1 + 0.03f * (float)Math.Sin(reloj.ElapsedMilliseconds / 260.0));
+        var puntas = new PointF[10];
+        for (int i = 0; i < 10; i++)
+        {
+            double ang = -Math.PI / 2 + i * Math.PI / 5 + reloj.ElapsedMilliseconds / 9000.0;
+            float r = i % 2 == 0 ? tam : tam * 0.42f;
+            puntas[i] = new PointF(ClientSize.Width / 2f + (float)(Math.Cos(ang) * r), 128 + (float)(Math.Sin(ang) * r));
+        }
+        using (var b = new System.Drawing.Drawing2D.PathGradientBrush(puntas)
+        {
+            CenterPoint = new PointF(ClientSize.Width / 2f, 128),
+            CenterColor = Color.FromArgb((int)(120 * aparece), 255, 214, 150),
+            SurroundColors = new[] { Color.FromArgb(0, Acento) }
+        })
+            g.FillPolygon(b, puntas);
 
         Font f = Fuentes.Titulo(40f);
         int ancho = Medir(g, "America RP", f) + 56, x = (ClientSize.Width - ancho) / 2;
