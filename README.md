@@ -92,6 +92,8 @@ Scripts del server, en `actualizaciones/archivos/cleo/`:
 
   Lo arma `cleo/armar_fps.py` (el código, comentado, está ahí): `python cleo/armar_fps.py actualizaciones/archivos/cleo/fps_libres.cs`. Fuera de apuntar siguen las otras fallas conocidas de los FPS muy altos (nadar o trepar cuesta más, algunas animaciones van más rápido).
 
+- `sens_igual.cs`: iguala la sensibilidad vertical del mouse a la horizontal. El GTA deja la vertical fija en 0.0015 (`0xB6EC18`) y la barra del menú solo mueve la horizontal (`0xB6EC1C`, 0.0025 de fábrica); cada cuadro copia la horizontal en la vertical, así la barra mueve las dos. Son 41 bytes: `00 00 01 00 04 00 8D 0A 01 1C EC B6 00 04 04 04 00 03 00 00 8C 0A 01 18 EC B6 00 04 04 03 00 00 04 00 02 00 01 FE FF FF FF`.
+
 Hasta el 2026-11-09 se repartía `fps_sin_limite.cs`, sin tope nunca: está en `prohibidos.txt` para que el launcher lo quite de los GTA que lo recibieron.
 
 Para sumar otro CLEO, poné su `.cs` (y sus archivos) en `actualizaciones/archivos/cleo/`, corré `generar-manifiesto.bat` y hacé commit y push. Ojo: con CLEO instalado cualquier jugador puede sumar sus propios scripts, incluidos trucos, así que lo que importa (dinero, armas, vida) se controla en el server.
