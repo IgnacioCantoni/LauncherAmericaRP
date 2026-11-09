@@ -84,7 +84,15 @@ El preset del server hoy cambia dos cosas: `enblocal.ini` pide ventana sin borde
 
 Todos los jugadores reciben CLEO 5.5.0 (licencia MIT, de github.com/cleolibrary/CLEO5) con las actualizaciones: `CLEO.asi` y la carpeta `cleo/`, que carga el mismo `dinput8.dll` del ENB. Si anda, en el menú principal del GTA aparece "CLEO" abajo a la izquierda. No se reparten el plugin de audio (`SA.Audio.cleo`) ni su `bass.dll`, porque el GTA ya tiene el `bass.dll` del SA-MP, ni NewOpcodes. Tampoco `SA.Text.cleo` (textos en pantalla): ningún script del server lo usa y Windows Defender lo marca como Trojan:Win32/Wacatac.H!ml, un falso positivo que lo borra apenas se baja.
 
-Hoy no se reparte ningún script del server. Hasta el 2026-11-09 se repartía `fps_sin_limite.cs`, que sacaba todos los topes de FPS; por encima de unos 75 FPS el GTA no deja caminar mientras apuntás (se vio con la Desert Eagle), así que se sacó y está en `prohibidos.txt` para que el launcher lo quite de los GTA que lo recibieron. Queda el límite normal del juego y del SA-MP (`/fpslimit`).
+Scripts del server, en `actualizaciones/archivos/cleo/`:
+
+- `fps_libres.cs`: FPS sin tope, salvo mientras apuntás un arma a pie. Con FPS muy altos el GTA no deja caminar apuntando (se vio con la Desert Eagle; el MTA lo arregla igual, bajando los FPS solo al apuntar). Cada cuadro:
+  - apaga la opción "Frame limiter" del menú (`0xBA6794`) y la espera mínima entre cuadros del GTA (el `cmp eax, 14` de `0x53E94C`; el SA-MP lo pone en 2);
+  - mira el modo de la cámara (`0xB6F1A8`, `TheCamera.Cams[0].Mode`): con 53 (apuntando a pie) deja el limitador del SA-MP como viene (`cmp esi, 11` de `samp.dll + 0xA1D86`, unos 98 FPS, con los que se puede caminar apuntando); si no, lo pasa a `cmp esi, 0`, que nunca duerme. Otro valor que no sea 11 o 0 cuelga el juego (el SA-MP calcula la espera con un 10 fijo). Solo lo toca si el SA-MP está cargado y esos bytes son los de la 0.3.7-R5 (`83 FE 0B 7D`); con otra versión no hace nada.
+
+  Lo arma `cleo/armar_fps.py` (el código, comentado, está ahí): `python cleo/armar_fps.py actualizaciones/archivos/cleo/fps_libres.cs`. Fuera de apuntar siguen las otras fallas conocidas de los FPS muy altos (nadar o trepar cuesta más, algunas animaciones van más rápido).
+
+Hasta el 2026-11-09 se repartía `fps_sin_limite.cs`, sin tope nunca: está en `prohibidos.txt` para que el launcher lo quite de los GTA que lo recibieron.
 
 Para sumar otro CLEO, poné su `.cs` (y sus archivos) en `actualizaciones/archivos/cleo/`, corré `generar-manifiesto.bat` y hacé commit y push. Ojo: con CLEO instalado cualquier jugador puede sumar sus propios scripts, incluidos trucos, así que lo que importa (dinero, armas, vida) se controla en el server.
 
