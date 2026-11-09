@@ -6,3 +6,7 @@
 # Ventana sin bordes del Ultimate ASI Loader: el launcher la repartió el 2026-11-04 y con dos monitores el GTA
 # crashea después de "Device Selection" (o queda escondido). Se saca de las carpetas que la recibieron.
 wndmode.ini
+
+# FPS sin límite: el launcher lo repartió hasta 2026-11-09. Por encima de unos 75 FPS el GTA no deja caminar
+# mientras apuntás (se vio con la Desert Eagle). Vuelve el límite normal del juego y del SA-MP (/fpslimit).
+cleo/fps_sin_limite.cs
