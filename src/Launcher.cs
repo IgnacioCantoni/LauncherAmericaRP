@@ -1929,9 +1929,11 @@ class Ventana : Lienzo
         if (Carpeta().Length == 0) { ElegirCarpeta(); return; }
     }
 
+    // La del cliente elegido, no la del registro de SA-MP: otros programas (o un .bat) pueden cambiar esa.
     string Carpeta()
     {
-        string exe = Registro.GtaExe;
+        string exe = Registro.Cliente == "custom" ? Registro.GtaCustom : Registro.GtaPrincipal;
+        if (exe.Length == 0) exe = Registro.GtaExe;
         return exe.Length == 0 ? "" : Path.GetDirectoryName(exe);
     }
 
@@ -2336,6 +2338,7 @@ class Ventana : Lienzo
             string carpeta = Carpeta();
             DateTime inicio = DateTime.Now;
             Juego.DejarPasarAlFrente();
+            Registro.GtaExe = Path.Combine(carpeta, "gta_sa.exe"); // samp.exe abre el GTA que dice el registro
             Process.Start(new ProcessStartInfo(Path.Combine(carpeta, "samp.exe"), Config.Servidores[Registro.Servidor].Item2 + ":" + Config.Servidores[Registro.Servidor].Item3) { WorkingDirectory = carpeta });
             Avisar("Abriendo el GTA...", 100);
             Vigilar(carpeta, inicio);
