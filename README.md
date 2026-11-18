@@ -102,6 +102,8 @@ Para sumar otro CLEO, poné su `.cs` (y sus archivos) en `actualizaciones/archiv
 
 El teléfono y las demás pantallas en HTML del server usan omp-cef (licencia MIT, github.com/aurora-mp/omp-cef). Antes de jugar, el launcher revisa si el GTA tiene su cliente (`cef.asi` y la carpeta `cef/`, unos 310 MB instalado) y, si falta o es de otra versión, baja el zip oficial del release (`Config.CefZipUrl`, unos 150 MB), revisa su huella (`Config.CefZipSha`) e instala solo `cef.asi` y `cef/`. La versión instalada queda anotada en `cef/americarp-version.txt`. Si algo falla se avisa y se juega igual, con los diálogos de siempre.
 
+En AJUSTES, "Jugar sin las pantallas del server (CEF)" deja de bajarlo y lo apaga renombrando `cef.asi` a `cef.asi.off` (la carpeta `cef/` queda, así prenderlo de nuevo no baja nada). Va por cliente: se puede tener el oficial con CEF y el personalizado sin.
+
 Para pasar a otra versión de omp-cef: cambiá la URL y la huella (SHA-256 del zip), volvé a compilar y repartí el `.exe`. La versión tiene que ser la misma que la del `Cef.dll` del server.
 
 

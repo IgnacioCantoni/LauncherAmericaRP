@@ -361,6 +361,8 @@ static class Ajustes
 
     // Mientras jugás el launcher se va a la bandeja (al lado del reloj) en vez de quedar minimizado.
     public static bool Bandeja { get { return Si("bandeja", true); } set { Poner("bandeja", value); } }
+    // Jugar sin las pantallas del server: el launcher no baja el CEF y apaga cef.asi. Va por cliente (oficial o personalizado).
+    public static bool SinCef { get { return Si("sin_cef" + Registro.Sufijo, false); } set { Poner("sin_cef" + Registro.Sufijo, value); } }
 }
 
 // Informe para pegar en el canal de soporte: lo que soporte siempre pregunta, en un solo texto.
@@ -1034,6 +1036,16 @@ static class Actualizador
         }
         finally { if (File.Exists(zip)) File.Delete(zip); }
         return true;
+    }
+
+    // Apaga o prende el CEF renombrando cef.asi a cef.asi.off (el cargador de ASI ignora el .off). La carpeta cef/ queda.
+    public static void ApagarCef(string carpetaGta, bool apagar)
+    {
+        string asi = RutaSegura(carpetaGta, "cef.asi"), off = asi + ".off";
+        string de = apagar ? asi : off, a = apagar ? off : asi;
+        if (!File.Exists(de) || (!apagar && File.Exists(a))) return;
+        if (File.Exists(a)) File.Delete(a);
+        File.Move(de, a);
     }
 
     // Del zip de omp-cef solo van cef.asi y la carpeta cef/ (sin el .lib, que es para compilar).
@@ -1917,9 +1929,11 @@ class Ventana : Lienzo
         if (Carpeta().Length == 0) { ElegirCarpeta(); return; }
     }
 
+    // La del cliente elegido, no la del registro de SA-MP: otros programas (o un .bat) pueden cambiar esa.
     string Carpeta()
     {
-        string exe = Registro.GtaExe;
+        string exe = Registro.Cliente == "custom" ? Registro.GtaCustom : Registro.GtaPrincipal;
+        if (exe.Length == 0) exe = Registro.GtaExe;
         return exe.Length == 0 ? "" : Path.GetDirectoryName(exe);
     }
 
@@ -2108,7 +2122,8 @@ class Ventana : Lienzo
         if (Config.CefZipUrl.Length > 0 && File.Exists(Path.Combine(carpeta, "gta_sa.exe")))
         {
             // Sin CEF se juega igual (con los diálogos de siempre): si falla, se avisa y se sigue.
-            try { await Task.Run(() => Actualizador.InstalarCef(carpeta, Avisar)); }
+            bool sinCef = Ajustes.SinCef;
+            try { await Task.Run(() => { Actualizador.ApagarCef(carpeta, sinCef); if (!sinCef) Actualizador.InstalarCef(carpeta, Avisar); }); }
             catch (Exception ex) { Avisar("No se pudieron instalar las pantallas del server: " + ex.Message, 0); }
         }
         if (EnbActivo() && Config.EnbUrl.Length > 0 && File.Exists(Path.Combine(carpeta, "gta_sa.exe")))
@@ -2323,6 +2338,7 @@ class Ventana : Lienzo
             string carpeta = Carpeta();
             DateTime inicio = DateTime.Now;
             Juego.DejarPasarAlFrente();
+            Registro.GtaExe = Path.Combine(carpeta, "gta_sa.exe"); // samp.exe abre el GTA que dice el registro
             Process.Start(new ProcessStartInfo(Path.Combine(carpeta, "samp.exe"), Config.Servidores[Registro.Servidor].Item2 + ":" + Config.Servidores[Registro.Servidor].Item3) { WorkingDirectory = carpeta });
             Avisar("Abriendo el GTA...", 100);
             Vigilar(carpeta, inicio);
@@ -2819,6 +2835,14 @@ class Ventana : Lienzo
         int y = area.Y;
         FilaAjuste(g, area, ref y, "ESCONDER EL LAUNCHER MIENTRAS JUGÁS", "Se va a la bandeja, al lado del reloj, y vuelve solo cuando cerrás el GTA. Si no, queda minimizado.",
             Ajustes.Bandeja, delegate { Ajustes.Bandeja = !Ajustes.Bandeja; });
+        FilaAjuste(g, area, ref y, "JUGAR SIN LAS PANTALLAS DEL SERVER (CEF)", "No baja el CEF y lo apaga en el GTA de este cliente. Se juega con los diálogos de siempre.",
+            Ajustes.SinCef, delegate
+            {
+                if (Juego.Abierto()) { Mensaje("Cerrá el GTA antes de cambiar esto.", "CEF", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+                Ajustes.SinCef = !Ajustes.SinCef;
+                // Si se vuelve a prender y falta, se baja al tocar JUGAR.
+                try { if (Carpeta().Length > 0) Actualizador.ApagarCef(Carpeta(), Ajustes.SinCef); } catch (Exception) { }
+            });
         Escribir(g, "NOVEDADES DEL LAUNCHER", Fuentes.Negrita(13f), Texto, area.X, y + 10);
         Boton(g, new Rectangle(area.Right - 150, y + 4, 150, 34), "VER", false, delegate { Pestana("novedades"); });
         Escribir(g, "Qué trajo cada versión del launcher.", Fuentes.Texto(11f), Gris, area.X, y + 40);
@@ -3275,6 +3299,13 @@ static class Prueba
             using (ZipArchive z = ZipFile.Open(malo, ZipArchiveMode.Create))
                 using (var w = new StreamWriter(z.CreateEntry("cef/../../afuera.txt").Open())) w.Write("x");
             Ver(Tira(() => Actualizador.ExtraerCef(gta, malo)) && !File.Exists(Path.Combine(carpeta, "afuera.txt")), "zip CEF: rechaza rutas de afuera");
+            string asi = Path.Combine(gta, "cef.asi");
+            File.WriteAllText(asi + ".off", "viejo");
+            Actualizador.ApagarCef(gta, true);
+            Ver(!File.Exists(asi) && File.ReadAllText(asi + ".off") == "cef.asi", "CEF: se apaga y pisa un .off viejo");
+            Actualizador.ApagarCef(gta, true);
+            Actualizador.ApagarCef(gta, false);
+            Ver(File.ReadAllText(asi) == "cef.asi" && !File.Exists(asi + ".off"), "CEF: se vuelve a prender");
         }
         finally { Directory.Delete(carpeta, true); }
 
