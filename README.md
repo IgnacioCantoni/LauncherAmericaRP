@@ -93,6 +93,7 @@ Scripts del server, en `actualizaciones/archivos/cleo/`:
 
   Lo arma `cleo/armar_fps.py` (el código, comentado, está ahí): `python cleo/armar_fps.py actualizaciones/archivos/cleo/fps_libres.cs`.
 
+- `hud_propio.cs` (desde 2026-11-20): sin CEF el server dibuja su propio HUD arriba a la derecha (dinero, arma con sus balas, vida y chaleco), y este script esconde esos del GTA: pone `ret` (`C3`) al principio de `CHud::DrawAmmo` (`0x5893B0`), `CHud::DrawWeaponIcon` (`0x58D7D0`) y las barras de vida (`0x589270`) y chaleco (`0x5890A0`), y `90 E9` en `0x58F47D` para saltear el dinero (las direcciones del MTA, `Client/game_sa/CHudSA.h`). Lo repite cada segundo. Si en la carpeta del GTA está `cef.asi` (con CEF), termina sin tocar nada. Lo arma `cleo/armar_hud.py`: `python cleo/armar_hud.py actualizaciones/archivos/cleo/hud_propio.cs`.
 - `sens_igual.cs`: iguala la sensibilidad vertical del mouse a la horizontal. El GTA deja la vertical fija en 0.0015 (`0xB6EC18`) y la barra del menú solo mueve la horizontal (`0xB6EC1C`, 0.0025 de fábrica); cada cuadro copia la horizontal en la vertical, así la barra mueve las dos. Son 41 bytes: `00 00 01 00 04 00 8D 0A 01 1C EC B6 00 04 04 04 00 03 00 00 8C 0A 01 18 EC B6 00 04 04 03 00 00 04 00 02 00 01 FE FF FF FF`.
 
 Arreglos de los bugs del propio GTA, en `actualizaciones/archivos/` (todos con licencia MIT, cada uno con su `-LICENSE.txt`). Son los que trae NewGamers para jugar con FPS libres:
