@@ -12,9 +12,11 @@ def s(t): return b'\x0e'+bytes([len(t)])+t.encode()
 class L(str): pass                                    # etiqueta
 def jmp(o,lbl): return (op(o)+b'\x01', lbl)          # se completa con -posición de la etiqueta (script CLEO)
 
-# Apuntando vuelve el cmp esi, 11 original del SA-MP (unos 98 FPS, probado: deja caminar apuntando).
-# Otro número cuelga el juego: el SA-MP calcula la espera con un 10 fijo (con 16 crasheó a los 3 s).
-TOPE_APUNTANDO=11
+# Apuntando se prende el Frame limiter del propio GTA a 70 FPS (el MTA usa el mismo tope: arriba de 74 ya no se
+# camina apuntando, y con el cmp esi, 11 del SA-MP, unos 98 FPS, tampoco se podía con la Desert Eagle).
+# El limitador del SA-MP queda siempre en cmp esi, 0: otro número que no sea 11 o 0 lo cuelga (calcula la
+# espera con un 10 fijo; con 16 crasheó a los 3 s).
+TOPE_APUNTANDO=70
 code=[
  op(0x0000),
  L('loop'),
@@ -37,8 +39,8 @@ code=[
  op(0x0A8D)+i32(0xB6F1A8)+i8(2)+i8(0)+lv(5),          # 5@ = modo de la cámara (TheCamera.Cams[0].Mode)
  # en los vehículos ya no se limita: los frenazos con FPS altos los arregla FramerateVigilante.SA.asi
  op(0x00D6)+i8(0), op(0x0039)+lv(5)+i8(53), jmp(0x004D,'libre'),   # apuntando un arma a pie (modo 53)
- op(0x0A8C)+lv(3)+i8(1)+i8(TOPE_APUNTANDO)+i8(1),     # el limitador original
- jmp(0x0002,'loop'),
+ op(0x0A8C)+i32(0xC1704C)+i8(4)+i8(TOPE_APUNTANDO)+i8(0),   # RsGlobal.frameLimit = 70
+ op(0x0A8C)+i32(0xBA6794)+i8(1)+i8(1)+i8(0),          # Frame limiter del GTA prendido solo este cuadro
  L('libre'),
  op(0x0A8C)+lv(3)+i8(1)+i8(0)+i8(1),                  # cmp esi, 0: nunca duerme
  jmp(0x0002,'loop'),
