@@ -86,13 +86,23 @@ Todos los jugadores reciben CLEO 5.5.0 (licencia MIT, de github.com/cleolibrary/
 
 Scripts del server, en `actualizaciones/archivos/cleo/`:
 
-- `fps_libres.cs`: FPS sin tope, salvo mientras apuntás un arma a pie o vas en un vehículo. Con FPS muy altos el GTA no deja caminar apuntando (se vio con la Desert Eagle; el MTA lo arregla igual, bajando los FPS solo al apuntar) y los vehículos frenan de golpe apenas se suelta el acelerador (desde el 2026-11-20 también se limita en los vehículos). Cada cuadro:
+- `fps_libres.cs`: FPS sin tope siempre, también en vehículos y apuntando. Las fallas del GTA con FPS muy altos (los vehículos que frenan de golpe al soltar el acelerador, no poder caminar apuntando con la Desert Eagle) las arreglan Framerate Vigilante y SilentPatch (ver abajo); probado el 2026-11-20. Ese día se probó antes limitar en los vehículos y al apuntar (a 98 FPS con la Desert Eagle tampoco se caminaba) y se descartó. Cada cuadro:
   - apaga la opción "Frame limiter" del menú (`0xBA6794`) y la espera mínima entre cuadros del GTA (el `cmp eax, 14` de `0x53E94C`; el SA-MP lo pone en 2);
-  - mira el modo de la cámara (`0xB6F1A8`, `TheCamera.Cams[0].Mode`) y el vehículo en el que va (`0xBA18FC`, 0 a pie): con 53 (apuntando a pie) o arriba de un vehículo deja el limitador del SA-MP como viene (`cmp esi, 11` de `samp.dll + 0xA1D86`, unos 98 FPS, con los que se puede caminar apuntando); si no, lo pasa a `cmp esi, 0`, que nunca duerme. Otro valor que no sea 11 o 0 cuelga el juego (el SA-MP calcula la espera con un 10 fijo). Solo lo toca si el SA-MP está cargado y esos bytes son los de la 0.3.7-R5 (`83 FE 0B 7D`); con otra versión no hace nada.
+  - pasa el limitador del SA-MP (`cmp esi, 11` de `samp.dll + 0xA1D86`, unos 98 FPS) a `cmp esi, 0`, que nunca duerme. Con el Frame limiter apagado el SA-MP hace `if (ms < N) Sleep(10 - ms)`: un `N` mayor que 11 sin cambiar el 10 le pasa un negativo a `Sleep` y cuelga el juego. Solo lo toca si el SA-MP está cargado y esos bytes son los de la 0.3.7-R5 (`83 FE 0B 7D`); con otra versión no hace nada.
+  - no usa el Frame limiter del menú para limitar en ningún caso: prenderlo minimiza el juego un segundo.
 
-  Lo arma `cleo/armar_fps.py` (el código, comentado, está ahí): `python cleo/armar_fps.py actualizaciones/archivos/cleo/fps_libres.cs`. Fuera de apuntar siguen las otras fallas conocidas de los FPS muy altos (nadar o trepar cuesta más, algunas animaciones van más rápido).
+  Lo arma `cleo/armar_fps.py` (el código, comentado, está ahí): `python cleo/armar_fps.py actualizaciones/archivos/cleo/fps_libres.cs`.
 
 - `sens_igual.cs`: iguala la sensibilidad vertical del mouse a la horizontal. El GTA deja la vertical fija en 0.0015 (`0xB6EC18`) y la barra del menú solo mueve la horizontal (`0xB6EC1C`, 0.0025 de fábrica); cada cuadro copia la horizontal en la vertical, así la barra mueve las dos. Son 41 bytes: `00 00 01 00 04 00 8D 0A 01 1C EC B6 00 04 04 04 00 03 00 00 8C 0A 01 18 EC B6 00 04 04 03 00 00 04 00 02 00 01 FE FF FF FF`.
+
+Arreglos de los bugs del propio GTA, en `actualizaciones/archivos/` (todos con licencia MIT, cada uno con su `-LICENSE.txt`). Son los que trae NewGamers para jugar con FPS libres:
+
+- `FramerateVigilante.SA.asi` y `FramerateVigilante.ini` (github.com/GTAmodding/FramerateVigilante): arregla la física que depende de los FPS con el limitador apagado. Su `FPSlimit` solo vale con el limitador del menú prendido, y `fps_libres.cs` lo apaga.
+- `SilentPatchSA.asi` y `SilentPatchSA.ini` (github.com/CookiePLMonster/SilentPatch): arreglos generales del GTA para PC, incluida la espera de 14 ms entre cuadros.
+- `III.VC.SA.LimitAdjuster.asi` y su `.ini` (github.com/ThirteenAG/III.VC.SA.LimitAdjuster), con la configuración de NewGamers: sube los límites de edificios, objetos, vehículos y otros, para que el GTA no se cierre con mapeos grandes.
+- `stream.ini` con 512 MB de memoria de streaming (traía 13 MB): con poca memoria el GTA carga y descarga el mapa todo el tiempo al manejar y bajan los FPS. El `gta_sa.exe` 1.0 US que se usa puede usar hasta 4 GB (Large Address Aware).
+
+NewGamers también trae el limit adjuster de fastman92 y RefreshRateFix de DarkP1xel; no se reparten porque no tienen una licencia que permita hacerlo, y el primero hace lo mismo que el de ThirteenAG y SilentPatch ya usa la frecuencia del monitor (`UseDesktopRefreshRate`).
 
 Hasta el 2026-11-09 se repartía `fps_sin_limite.cs`, sin tope nunca: está en `prohibidos.txt` para que el launcher lo quite de los GTA que lo recibieron.
 

@@ -1,7 +1,7 @@
 # Arma actualizaciones/archivos/cleo/fps_libres.cs (bytecode de CLEO). Uso: python cleo/armar_fps.py actualizaciones/archivos/cleo/fps_libres.cs
-# FPS sin tope, salvo mientras apuntás un arma a pie o vas en un vehículo: arriba de unos 75 FPS el GTA no
-# deja caminar apuntando (el MTA lo arregla igual, bajando a 70 solo al apuntar), y con cientos de FPS los
-# vehículos frenan de golpe apenas se suelta el acelerador.
+# FPS sin tope siempre (a pie, en vehículos y apuntando). Las fallas del GTA con FPS altos (vehículos que frenan de
+# golpe, caminar apuntando, nadar) las arreglan FramerateVigilante.SA.asi y SilentPatchSA.asi, que van con las
+# actualizaciones. Probado el 2026-11-20: con ellos se maneja y se camina apuntando con la Desert Eagle sin tope.
 import struct,sys
 def op(n): return struct.pack('<H',n)
 def i8(v): return b'\x04'+struct.pack('<b',v)
@@ -12,9 +12,10 @@ def s(t): return b'\x0e'+bytes([len(t)])+t.encode()
 class L(str): pass                                    # etiqueta
 def jmp(o,lbl): return (op(o)+b'\x01', lbl)          # se completa con -posición de la etiqueta (script CLEO)
 
-# Apuntando o en un vehículo vuelve el cmp esi, 11 original del SA-MP (unos 98 FPS, probado: deja caminar apuntando).
-# Otro número cuelga el juego: el SA-MP calcula la espera con un 10 fijo (con 16 crasheó a los 3 s).
-TOPE_APUNTANDO=11
+# El limitador del SA-MP, con el Frame limiter del menú apagado, hace: si pasaron menos de 11 ms desde el cuadro
+# anterior (cmp esi, 11), Sleep(10 - ms) (mov edx, 10): unos 98 FPS. Se pasa a cmp esi, 0, que nunca duerme.
+# Otro número mayor que 11 sin cambiar el 10 le pasa un negativo a Sleep y cuelga el juego (con 16 crasheó a los 3 s).
+# No se usa el Frame limiter del menú: prenderlo minimiza el juego un segundo.
 code=[
  op(0x0000),
  L('loop'),
@@ -34,13 +35,6 @@ code=[
  op(0x0006)+lv(4)+i8(1),
  L('listo'),
  op(0x00D6)+i8(0), op(0x0039)+lv(4)+i8(1), jmp(0x004D,'loop'),
- op(0x0A8D)+i32(0xB6F1A8)+i8(2)+i8(0)+lv(5),          # 5@ = modo de la cámara (TheCamera.Cams[0].Mode)
- op(0x0A8D)+i32(0xBA18FC)+i8(4)+i8(0)+lv(6),          # 6@ = vehículo en el que va (0 = a pie)
- # 21 = "o" de dos condiciones: apuntando un arma a pie (modo 53) o arriba de un vehículo
- op(0x00D6)+i8(21), op(0x0039)+lv(5)+i8(53), op(0x8039)+lv(6)+i8(0), jmp(0x004D,'libre'),
- op(0x0A8C)+lv(3)+i8(1)+i8(TOPE_APUNTANDO)+i8(1),     # el limitador original
- jmp(0x0002,'loop'),
- L('libre'),
  op(0x0A8C)+lv(3)+i8(1)+i8(0)+i8(1),                  # cmp esi, 0: nunca duerme
  jmp(0x0002,'loop'),
 ]
@@ -50,5 +44,6 @@ for c in code:
     elif isinstance(c,tuple): n+=len(c[0])+4
     else: n+=len(c)
 b=b''.join(c[0]+struct.pack('<i',-pos[c[1]]) if isinstance(c,tuple) else (b'' if isinstance(c,L) else c) for c in code)
-assert len(b)==n and b[pos['loop']:pos['loop']+2]==op(1) and b[pos['libre']:pos['libre']+2]==op(0x0A8C)
+assert len(b)==n and b[pos['loop']:pos['loop']+2]==op(1) and b.count(bytes.fromhex('8c0a03030004010400'))==1
+assert bytes.fromhex('94 67 ba 00 04 01 04 01') not in b      # nunca prende el Frame limiter del menú
 open(sys.argv[1],'wb').write(b); print(len(b)); print(b.hex(' '))
