@@ -1,0 +1,4 @@
+# Lo que reparte el launcher se baja tal cual y se compara con la huella del manifiesto: git no debe cambiar los fines de línea.
+actualizaciones/archivos/** -text
+paquetes/*/archivos/** -text
+mods/*/archivos/** -text
