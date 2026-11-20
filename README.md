@@ -86,9 +86,9 @@ Todos los jugadores reciben CLEO 5.5.0 (licencia MIT, de github.com/cleolibrary/
 
 Scripts del server, en `actualizaciones/archivos/cleo/`:
 
-- `fps_libres.cs`: FPS sin tope, salvo mientras apuntás un arma a pie. Con FPS muy altos el GTA no deja caminar apuntando (se vio con la Desert Eagle; el MTA lo arregla igual, bajando los FPS solo al apuntar). Cada cuadro:
+- `fps_libres.cs`: FPS sin tope, salvo mientras apuntás un arma a pie o vas en un vehículo. Con FPS muy altos el GTA no deja caminar apuntando (se vio con la Desert Eagle; el MTA lo arregla igual, bajando los FPS solo al apuntar) y los vehículos frenan de golpe apenas se suelta el acelerador (desde el 2026-11-20 también se limita en los vehículos). Cada cuadro:
   - apaga la opción "Frame limiter" del menú (`0xBA6794`) y la espera mínima entre cuadros del GTA (el `cmp eax, 14` de `0x53E94C`; el SA-MP lo pone en 2);
-  - mira el modo de la cámara (`0xB6F1A8`, `TheCamera.Cams[0].Mode`): con 53 (apuntando a pie) deja el limitador del SA-MP como viene (`cmp esi, 11` de `samp.dll + 0xA1D86`, unos 98 FPS, con los que se puede caminar apuntando); si no, lo pasa a `cmp esi, 0`, que nunca duerme. Otro valor que no sea 11 o 0 cuelga el juego (el SA-MP calcula la espera con un 10 fijo). Solo lo toca si el SA-MP está cargado y esos bytes son los de la 0.3.7-R5 (`83 FE 0B 7D`); con otra versión no hace nada.
+  - mira el modo de la cámara (`0xB6F1A8`, `TheCamera.Cams[0].Mode`) y el vehículo en el que va (`0xBA18FC`, 0 a pie): con 53 (apuntando a pie) o arriba de un vehículo deja el limitador del SA-MP como viene (`cmp esi, 11` de `samp.dll + 0xA1D86`, unos 98 FPS, con los que se puede caminar apuntando); si no, lo pasa a `cmp esi, 0`, que nunca duerme. Otro valor que no sea 11 o 0 cuelga el juego (el SA-MP calcula la espera con un 10 fijo). Solo lo toca si el SA-MP está cargado y esos bytes son los de la 0.3.7-R5 (`83 FE 0B 7D`); con otra versión no hace nada.
 
   Lo arma `cleo/armar_fps.py` (el código, comentado, está ahí): `python cleo/armar_fps.py actualizaciones/archivos/cleo/fps_libres.cs`. Fuera de apuntar siguen las otras fallas conocidas de los FPS muy altos (nadar o trepar cuesta más, algunas animaciones van más rápido).
 

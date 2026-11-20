@@ -1,6 +1,7 @@
 # Arma actualizaciones/archivos/cleo/fps_libres.cs (bytecode de CLEO). Uso: python cleo/armar_fps.py actualizaciones/archivos/cleo/fps_libres.cs
-# FPS sin tope, salvo mientras apuntás un arma a pie: arriba de unos 75 FPS el GTA no deja caminar
-# apuntando (el MTA lo arregla igual, bajando a 70 solo al apuntar).
+# FPS sin tope, salvo mientras apuntás un arma a pie o vas en un vehículo: arriba de unos 75 FPS el GTA no
+# deja caminar apuntando (el MTA lo arregla igual, bajando a 70 solo al apuntar), y con cientos de FPS los
+# vehículos frenan de golpe apenas se suelta el acelerador.
 import struct,sys
 def op(n): return struct.pack('<H',n)
 def i8(v): return b'\x04'+struct.pack('<b',v)
@@ -11,7 +12,7 @@ def s(t): return b'\x0e'+bytes([len(t)])+t.encode()
 class L(str): pass                                    # etiqueta
 def jmp(o,lbl): return (op(o)+b'\x01', lbl)          # se completa con -posición de la etiqueta (script CLEO)
 
-# Apuntando vuelve el cmp esi, 11 original del SA-MP (unos 98 FPS, probado: deja caminar apuntando).
+# Apuntando o en un vehículo vuelve el cmp esi, 11 original del SA-MP (unos 98 FPS, probado: deja caminar apuntando).
 # Otro número cuelga el juego: el SA-MP calcula la espera con un 10 fijo (con 16 crasheó a los 3 s).
 TOPE_APUNTANDO=11
 code=[
@@ -34,7 +35,9 @@ code=[
  L('listo'),
  op(0x00D6)+i8(0), op(0x0039)+lv(4)+i8(1), jmp(0x004D,'loop'),
  op(0x0A8D)+i32(0xB6F1A8)+i8(2)+i8(0)+lv(5),          # 5@ = modo de la cámara (TheCamera.Cams[0].Mode)
- op(0x00D6)+i8(0), op(0x0039)+lv(5)+i8(53), jmp(0x004D,'libre'),          # 53 = apuntando un arma a pie
+ op(0x0A8D)+i32(0xBA18FC)+i8(4)+i8(0)+lv(6),          # 6@ = vehículo en el que va (0 = a pie)
+ # 21 = "o" de dos condiciones: apuntando un arma a pie (modo 53) o arriba de un vehículo
+ op(0x00D6)+i8(21), op(0x0039)+lv(5)+i8(53), op(0x8039)+lv(6)+i8(0), jmp(0x004D,'libre'),
  op(0x0A8C)+lv(3)+i8(1)+i8(TOPE_APUNTANDO)+i8(1),     # el limitador original
  jmp(0x0002,'loop'),
  L('libre'),
