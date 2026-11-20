@@ -98,7 +98,7 @@ Scripts del server, en `actualizaciones/archivos/cleo/`:
 Arreglos de los bugs del propio GTA, en `actualizaciones/archivos/` (todos con licencia MIT, cada uno con su `-LICENSE.txt`). Son los que trae NewGamers para jugar con FPS libres:
 
 - `FramerateVigilante.SA.asi` y `FramerateVigilante.ini` (github.com/GTAmodding/FramerateVigilante): arregla la física que depende de los FPS con el limitador apagado. Su `FPSlimit` solo vale con el limitador del menú prendido, y `fps_libres.cs` lo apaga.
-- `SilentPatchSA.asi` y `SilentPatchSA.ini` (github.com/CookiePLMonster/SilentPatch): arreglos generales del GTA para PC, incluida la espera de 14 ms entre cuadros.
+- `SilentPatchSA.asi` y `SilentPatchSA.ini` (github.com/CookiePLMonster/SilentPatch): arreglos generales del GTA para PC, incluida la espera de 14 ms entre cuadros. Ojo: SilentPatch respeta `Documents\GTA San Andreas User Files\device_remembered.set` (la pantalla elegida con "recordar") y deja de preguntar la pantalla. Con dos monitores uno viejo hizo que el GTA se cerrara al arrancar (2026-11-20); borrarlo vuelve a mostrar la elección.
 - `III.VC.SA.LimitAdjuster.asi` y su `.ini` (github.com/ThirteenAG/III.VC.SA.LimitAdjuster), con la configuración de NewGamers: sube los límites de edificios, objetos, vehículos y otros, para que el GTA no se cierre con mapeos grandes.
 - `stream.ini` con 512 MB de memoria de streaming (traía 13 MB): con poca memoria el GTA carga y descarga el mapa todo el tiempo al manejar y bajan los FPS. El `gta_sa.exe` 1.0 US que se usa puede usar hasta 4 GB (Large Address Aware).
 
