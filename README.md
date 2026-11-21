@@ -2,6 +2,8 @@
 
 Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe`, no necesita instalar nada (usa el .NET Framework 4.x que ya trae Windows 10 y 11).
 
+Licencia MIT (ver `LICENSE`). Firma del `.exe`: ver [Code signing policy](#code-signing-policy).
+
 ## Qué hace
 
 - **Jugar**: guarda tu nick y abre el GTA conectado directo al server. Usa los mismos datos que el cliente SA-MP (nick y carpeta del GTA en el registro, `HKCU\Software\SAMP`).
@@ -28,7 +30,9 @@ Programa de Windows para entrar al server con un clic. Es un solo `AmericaRP.exe
 
 ## Compilar
 
-Doble clic en `compilar.bat`. Deja `AmericaRP.exe` en esta carpeta.
+Doble clic en `compilar.bat`. Deja `AmericaRP.exe` en esta carpeta, con la estrella de ícono (`fondo/icono.ico`, lo arma `fondo/armar_icono.py`).
+
+GitHub también lo compila solo en cada push a `main` que toque el código (`.github/workflows/compilar.yml`): queda en Actions como artefacto `AmericaRP`. Es el que se firma (ver abajo).
 
 Para probar la lógica sin abrir la ventana: `AmericaRP.exe --prueba` (en Linux, `mono AmericaRP.exe --prueba`).
 
@@ -196,9 +200,22 @@ Pasá el link de la última Release: https://github.com/IgnacioCantoni/LauncherA
 Los jugadores que ya lo tienen la reciben solos al abrirlo. En este orden:
 
 1. Subí `Config.Version` en `src/Launcher.cs` (por ejemplo de `1.1.0` a `1.2.0`).
-2. Doble clic en `compilar.bat`.
+2. Doble clic en `compilar.bat`. Cuando la firma esté andando, en vez de eso bajá de Actions el artefacto `AmericaRP-firmado` de ese push (la firma cambia la huella, así que el `.exe` del paso 3 y el de la Release tienen que ser el firmado).
 3. Doble clic en `publicar-launcher.bat`. Escribe `launcher/version.txt` con la versión y la huella del `.exe`.
 4. En GitHub, Releases → Draft a new release, con la etiqueta `v` + la versión (`v1.2.0`), y subí `AmericaRP.exe`.
 5. Recién después, commit y push de `launcher/version.txt`. Si lo subís antes que la Release, los launchers no encuentran el `.exe` y siguen con el que tienen.
 
 Si el `.exe` bajado no coincide con la huella, no se instala. Si el jugador lo tiene en una carpeta donde Windows no deja escribir (como Archivos de programa), le ofrece abrir la página para bajarlo a mano.
+
+## Code signing policy
+
+Free code signing provided by SignPath.io, certificate by SignPath Foundation.
+
+- Se firma solo `AmericaRP.exe`, compilado por GitHub Actions desde este repositorio (`.github/workflows/compilar.yml`). Los archivos de otros proyectos que reparte el launcher (CLEO, Ultimate ASI Loader, SilentPatch, etc.) no se firman con este certificado.
+- Autores y revisores: [IgnacioCantoni](https://github.com/IgnacioCantoni). Los cambios de otras personas se revisan antes de entrar a `main`.
+- Aprobación: [IgnacioCantoni](https://github.com/IgnacioCantoni) aprueba a mano cada versión antes de firmarla.
+
+### Privacidad
+
+El launcher no junta datos personales ni manda información a nadie. Solo se conecta para consultar el estado de los servers de AMERICA RP, para bajar sus archivos y actualizaciones desde GitHub y, si el jugador acepta, el instalador oficial de DirectX desde Microsoft. El nick y los ajustes quedan en la PC del jugador. El formulario de SOPORTE no manda nada: copia el mensaje para que el jugador lo pegue donde quiera.
+
