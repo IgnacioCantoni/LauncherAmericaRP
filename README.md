@@ -138,6 +138,14 @@ También pasa al español los mensajes del SA-MP en el chat ("Conectando al serv
 - Las imágenes van en `americarp/conexion.bin`. Para cambiar el fondo, reemplazá `cliente/conexion-fondo.jpg` (mejor 16:9), corré `python cliente/armar_conexion.py` (necesita Pillow; con `python cliente/armar_conexion.py vista.png` deja además cómo se ve en 1920x1080), después `generar-manifiesto.bat`, commit y push. Los textos y el logo están en ese mismo script.
 - El fondo se escala para cubrir la pantalla; el logo y el estado van pegados a la izquierda y el consejo a la derecha, así en 4:3 no se cortan.
 
+### Ingreso y selección de personaje
+
+Después de conectar, la ASI dibuja las pantallas del server (desde la 0.7.8 de GABU-RP): el cuadro de ingreso, la selección de personaje y un fondo simple para el registro y la creación de personaje. Las pide el server con un TextDraw invisible que dice `ACN:` y la pantalla (`I`, `F` o `S` con las ranuras, ver `gamemode/cuentas/pantallas.inc` en GABU-RP). La ASI dibuja lo fijo (el vidrio, los íconos, los botones) y el SA-MP dibuja encima los TextDraws del server con lo que cambia (nombres, números, el personaje en 3D). Sin marca del server, a los 4 segundos de conectar se funde como antes.
+
+- En el ingreso esconde el cartel de contraseña del SA-MP (lo deja abierto lejos de la pantalla: es el que manda la clave), dibuja un punto por letra en el campo propio y hace que ENTRAR y "Salir del servidor" funcionen como los botones del cartel. Enter y Esc andan como siempre.
+- Las piezas están en el mismo `americarp/conexion.bin`, desde el tipo 10. Las arma `cliente/pantallas.py` (lo llama `armar_conexion.py`, que con `vista.png` deja también `vista-ingreso.png` y `vista-seleccion.png`). Van estiradas a toda la pantalla como los TextDraws, en medidas de 1920x1080: si se mueve algo, hay que moverlo igual en GABU-RP.
+- Usa más direcciones de `samp.dll` 0.3.7-R5 (el cartel en `+0x26EB50`, los TextDraws en el pool `+0x3DE` / `+0x1C`, el foco de DXUT en `+0x142780`). Al arrancar revisa los bytes de esas partes del código; si no coinciden, no dibuja estas pantallas, lo anota en `americarp/carga.log` y se ve el cartel de siempre.
+
 ## Cambiar la imagen de fondo
 
 La pantalla de carga del launcher usa `fondo/arranque.jpg` (460x300, la noche con montañas) y `fondo/arranque-estrella.png` (la estrella dorada con transparencia). Para cambiarlas, reemplazalas con el mismo tamaño y volvé a compilar.

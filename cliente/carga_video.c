@@ -7,6 +7,11 @@
 // 2) Mientras el SA-MP se conecta al server tapa la pantalla con la del server (americarp\conexion.bin,
 //    lo arma cliente/armar_conexion.py) y pasa al espaniol los mensajes del SA-MP en el chat.
 //    La pantalla se va sola cuando el server termina de conectar. Solo con SA-MP 0.3.7-R5.
+// 3) Despues de conectar dibuja las pantallas del server (ingreso y seleccion de personaje, en el
+//    mismo conexion.bin) cuando el server las pide con un TextDraw que dice "ACN:...". En el ingreso
+//    esconde el cartel de contrasenia del SA-MP y dibuja los puntos en el campo propio; ENTRAR y
+//    "Salir del servidor" cierran ese cartel como sus botones. Lo que cambia (nombres, numeros, el
+//    personaje en 3D) lo dibuja el server con TextDraws, que el SA-MP pinta despues, encima.
 // Direcciones de GTA SA 1.0 US (plugin-sdk y gta-reversed).
 #include <windows.h>
 #include <string.h>
@@ -210,9 +215,11 @@ static const Traduccion textos[] = {
 
 // Pieza de conexion.bin (ver cliente/armar_conexion.py).
 typedef struct { int tipo, ancla, x, y, w, h, bx, by, bw, bh; Sprite sprite; } Pieza;
-static Pieza piezas[16];
+static Pieza piezas[64];
 static int npiezas, conexionProbada;
 static DWORD samp, conectadoDesde;
+static int pantallasOk;
+static void verificarPantallas(void);
 
 // Busca el texto exacto (con su 0 al final) en samp.dll y cambia cada "push texto" del codigo por el nuestro.
 static int traducir(const char *ingles, const char *espaniol, DWORD ini, DWORD fin, DWORD codigo, DWORD codigoFin)
@@ -246,6 +253,7 @@ static void prepararSamp(void)
     char t[64];
     wsprintfA(t, "SA-MP 0.3.7-R5: %u mensajes traducidos", total);
     anotar(t);
+    verificarPantallas();
     sampEstado = 1;
 }
 
@@ -275,7 +283,7 @@ static void cargarConexion(void)
     unsigned char *d = (largo > 8 && largo < 64u << 20) ? malloc(largo) : NULL;
     if (d && ReadFile(f, d, largo, &leido, NULL) && leido == largo && !memcmp(d, "ACN1", 4)) {
         DWORD n = *(DWORD *)(d + 4), pos = 8;
-        for (DWORD i = 0; i < n && npiezas < 16 && pos + 44 <= largo; i++) {
+        for (DWORD i = 0; i < n && npiezas < 64 && pos + 44 <= largo; i++) {
             int *c = (int *)(d + pos);
             pos += 44;
             if (c[10] <= 0 || (DWORD)c[10] > largo - pos) break;
@@ -305,41 +313,204 @@ static void borrarConexion(void)
     conexionProbada = 0;
 }
 
+// ---------- Pantallas del server despues de conectar (ingreso y seleccion de personaje) ----------
+// Mas direcciones de samp.dll 0.3.7-R5, sacadas de su codigo (verificarPantallas las revisa):
+#define SAMP_DIALOGO   0x26EB50 // CDialog*: +1C el CDXUTDialog, +24 el campo de texto, +28 abierto, +2C estilo
+#define SAMP_POOLS     0x3DE    // CNetGame: los pools; +1C el de TextDraws (0x900 "hay", desde +2400 los punteros)
+#define SAMP_FOCO      0x142780 // el control de DXUT que tiene el teclado
+#define SAMP_ENFOCAR   0x84A30  // CDXUTDialog::RequestFocus(control)
+#define SAMP_CERRAR    0x70630  // CDialog::Close(boton): lo que hacen sus botones (1 aceptar, 0 cancelar)
+#define ESTILO_CONTRASENIA 3
+// Tipos de pieza de las pantallas (cliente/pantallas.py).
+enum { FONDO_INGRESO = 10, PUNTO, CURSOR, ENTRAR, SALIR, FONDO_SELECCION = 20, ELEGIDA, LIBRE, BLOQUEADA,
+       JUGAR, CREAR, DESBLOQUEAR, CINE_SI, CINE_NO, CARA, FONDO_SIMPLE, PANEL_PERSONAJE, PANEL_LIBRE,
+       PANEL_BLOQUEADA, SALIR_SELECCION };
+
+static int igual(DWORD dir, const char *bytes, int n) { return !memcmp((void *)(samp + dir), bytes, (size_t)n); }
+
+static void verificarPantallas(void)
+{
+    pantallasOk = igual(0x6130, "\xA1", 1) && *(DWORD *)(samp + 0x6131) == samp + SAMP_DIALOGO
+        && igual(0x70630, "\x55\x8B\xEC\x83\xE4\xF8", 6) && igual(0x70655, "\x8B\x46\x28", 3)
+        && igual(0x85650, "\x8B\x49\x4D", 3)
+        && igual(SAMP_ENFOCAR, "\xA1", 1) && *(DWORD *)(samp + SAMP_ENFOCAR + 1) == samp + SAMP_FOCO
+        && igual(0x6F576, "\x89\x8A\x16\x01\x00\x00\x89\x82\x1A\x01\x00\x00", 12)
+        && igual(0x1E84A, "\x8B\x8C\xB7\x00\x24\x00\x00", 7)
+        && igual(0xC5037, "\x8B\x80\xDE\x03\x00\x00\x8B\x48\x1C", 9);
+    if (!pantallasOk) anotar("samp.dll no coincide con lo esperado: sin pantallas de ingreso ni seleccion");
+}
+
+// Lo que pidio el server: "ACN:I" ingreso, "ACN:F" solo el fondo (registro, creacion de personaje)
+// y "ACN:S" + ranura elegida (1 a 4) + las cuatro ranuras (P personaje, L libre, B bloqueada) +
+// cinematica (0 o 1), por ejemplo "ACN:S1PLBB1".
+typedef struct { char modo; int elegida; char ranura[4]; int cine; } Marca;
+
+static int leerMarca(DWORD ng, Marca *m)
+{
+    DWORD pools = *(DWORD *)(ng + SAMP_POOLS), tds = pools ? *(DWORD *)(pools + 0x1C) : 0;
+    if (!tds) return 0;
+    for (int i = 0; i < 0x900; i++) {
+        if (!((int *)tds)[i]) continue;
+        const char *t = *(const char **)(tds + 0x2400 + i * 4); // el texto es lo primero del CTextDraw
+        if (!t || memcmp(t, "ACN:", 4)) continue;
+        m->modo = t[4];
+        if (m->modo == 'S') {
+            if (t[5] < '1' || t[5] > '4') return 0;
+            m->elegida = t[5] - '1';
+            for (int k = 0; k < 4; k++)
+                if ((m->ranura[k] = t[6 + k]) == 0) return 0;
+            m->cine = t[10] == '1';
+        }
+        return m->modo == 'I' || m->modo == 'S' || m->modo == 'F';
+    }
+    return 0;
+}
+
+static Pieza *buscar(int tipo)
+{
+    for (int i = 0; i < npiezas; i++)
+        if (piezas[i].tipo == tipo) return &piezas[i];
+    return NULL;
+}
+
+// Medidas de 1920x1080; dx y dy la corren (en esas medidas) para repetirla.
+static void ponerPieza(const Pieza *p, int dx, int dy, unsigned char alfa)
+{
+    if (!p) return;
+    float w = (float)Ancho, h = (float)Alto, s = h / 1080;
+    Rect r;
+    if (p->ancla == 0) { // cubre la pantalla sin deformarse, como el video
+        float e = w / p->w > h / p->h ? w / p->w : h / p->h;
+        r.x1 = (w - p->w * e) / 2; r.x2 = r.x1 + p->w * e; r.y2 = (h - p->h * e) / 2; r.y1 = r.y2 + p->h * e;
+    } else if (p->ancla == 3) { // estirada como los TextDraws, para que coincida con lo que dibuja el server
+        float sx = w / 1920, sy = h / 1080;
+        r.x1 = (p->x + dx) * sx; r.x2 = (p->x + dx + p->w) * sx; r.y2 = (p->y + dy) * sy; r.y1 = (p->y + dy + p->h) * sy;
+    } else {
+        float x = p->ancla == 2 ? w - (1920 - p->x) * s : p->x * s;
+        r.x1 = x; r.x2 = x + p->w * s; r.y2 = p->y * s; r.y1 = (p->y + p->h) * s;
+    }
+    Rgba color = { 255, 255, 255, alfa };
+    SpriteDibujar((Sprite *)&p->sprite, &r, &color);
+}
+
+// El mouse en medidas de 1920x1080 y si se solto el boton izquierdo en este cuadro.
+static float ratonX = -1, ratonY = -1;
+static int clic;
+
+static void leerRaton(void)
+{
+    static int antes;
+    HWND v = *(HWND *)0xC97C1C; // la ventana del GTA
+    POINT pt;
+    RECT rc;
+    int abajo = 0;
+    ratonX = ratonY = -1;
+    if (v && GetForegroundWindow() == v && GetCursorPos(&pt) && ScreenToClient(v, &pt) && GetClientRect(v, &rc) && rc.right > 0 && rc.bottom > 0) {
+        ratonX = pt.x * 1920.0f / rc.right;
+        ratonY = pt.y * 1080.0f / rc.bottom;
+        abajo = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    }
+    clic = antes && !abajo;
+    antes = abajo;
+}
+
+static int encima(const Pieza *p)
+{
+    return p && ratonX >= p->x && ratonX < p->x + p->w && ratonY >= p->y && ratonY < p->y + p->h;
+}
+
+static void ingreso(DWORD ahora, unsigned char alfa)
+{
+    ponerPieza(buscar(FONDO_INGRESO), 0, 0, alfa);
+    DWORD dlg = *(DWORD *)(samp + SAMP_DIALOGO);
+    if (!dlg || !*(int *)(dlg + 0x28) || *(int *)(dlg + 0x2C) != ESTILO_CONTRASENIA) return;
+    DWORD dxut = *(DWORD *)(dlg + 0x1C), campo = *(DWORD *)(dlg + 0x24);
+    // El cartel sigue abierto (es el que recibe lo que se escribe y se lo manda al server), pero
+    // lejos de la pantalla. Se pone en cada cuadro porque el SA-MP lo vuelve a centrar.
+    if (dxut) { *(int *)(dxut + 0x116) = -8000; *(int *)(dxut + 0x11A) = -8000; }
+    if (!campo) return;
+    // Un clic fuera de sus controles le saca el teclado al campo: se lo devuelve.
+    if (*(DWORD *)(samp + SAMP_FOCO) != campo) ((void (__stdcall *)(DWORD))(samp + SAMP_ENFOCAR))(campo);
+    const WCHAR *texto = *(const WCHAR **)(campo + 0x4D); // CUniBuffer: lo primero es el texto
+    int n = texto ? lstrlenW(texto) : 0;
+    Pieza *p = buscar(PUNTO);
+    int maximo = p ? p->bw : 0;
+    if (n > maximo) n = maximo;
+    for (int i = 0; i < n; i++) ponerPieza(p, i * p->bx, 0, alfa);
+    p = buscar(CURSOR);
+    if (p && (ahora / 530) % 2 == 0) ponerPieza(p, n * p->bx, 0, alfa);
+    leerRaton();
+    for (int tipo = ENTRAR; tipo <= SALIR; tipo++) {
+        p = buscar(tipo);
+        if (!encima(p)) continue;
+        ponerPieza(p, 0, 0, alfa);
+        if (clic && alfa == 255) ((void (__attribute__((thiscall)) *)(DWORD, char))(samp + SAMP_CERRAR))(dlg, tipo == ENTRAR);
+    }
+}
+
+static void seleccion(const Marca *m, unsigned char alfa)
+{
+    ponerPieza(buscar(FONDO_SELECCION), 0, 0, alfa);
+    Pieza *p;
+    for (int k = 0; k < 4; k++) {
+        p = buscar(m->ranura[k] == 'P' ? CARA : m->ranura[k] == 'L' ? LIBRE : BLOQUEADA);
+        if (p) ponerPieza(p, 0, k * p->bx, alfa);
+    }
+    p = buscar(ELEGIDA);
+    if (p) ponerPieza(p, 0, m->elegida * p->bx, alfa);
+    char e = m->ranura[m->elegida];
+    ponerPieza(buscar(e == 'P' ? PANEL_PERSONAJE : e == 'L' ? PANEL_LIBRE : PANEL_BLOQUEADA), 0, 0, alfa);
+    ponerPieza(buscar(e == 'P' ? JUGAR : e == 'L' ? CREAR : DESBLOQUEAR), 0, 0, alfa);
+    ponerPieza(buscar(m->cine ? CINE_SI : CINE_NO), 0, 0, alfa);
+    // Los clics los recibe el server (TextDraws que se pueden tocar); aca solo el resaltado.
+    leerRaton();
+    p = buscar(SALIR_SELECCION);
+    if (encima(p)) ponerPieza(p, 0, 0, alfa);
+}
+
 static void conexion(void)
 {
+    static DWORD antes;
+    static int alfa = 255, huboMarca;
+    static Marca marca; // la ultima que pidio el server; se sigue dibujando mientras se funde
     if (sampEstado == 0) prepararSamp();
     if (sampEstado != 1) return;
     DWORD ng = *(DWORD *)(samp + SAMP_NETGAME), ahora = GetTickCount();
     int estado = ng ? *(int *)(ng + SAMP_ESTADO) : 0;
-    // Al conectar se funde en medio segundo y despues se libera.
-    if (estado != SAMP_CONECTADO) conectadoDesde = 0;
+    Marca m;
+    int hay = estado == SAMP_CONECTADO && pantallasOk && leerMarca(ng, &m);
+    if (estado != SAMP_CONECTADO) { conectadoDesde = 0; huboMarca = 0; marca.modo = 0; }
     else if (!conectadoDesde) conectadoDesde = ahora ? ahora : 1;
-    int alfa = conectadoDesde ? 255 - (int)(ahora - conectadoDesde) * 255 / 500 : 255;
-    if (alfa <= 0) { if (npiezas) borrarConexion(); return; }
+    if (hay) { huboMarca = 1; marca = m; }
+    // Conectado y sin pantalla del server: se espera 4 segundos a que la pida (un server sin
+    // pantallas, o un jugador que ya esta en juego) y despues se funde.
+    int quiere = estado != SAMP_CONECTADO || hay || (!huboMarca && ahora - conectadoDesde < 4000);
+    int paso = antes ? (int)(ahora - antes) : 0;
+    antes = ahora;
+    if (paso > 100) paso = 100;
+    alfa += quiere ? paso * 255 / 300 : -paso * 255 / 500;
+    if (alfa > 255) alfa = 255;
+    if (alfa <= 0) { alfa = 0; if (npiezas) borrarConexion(); return; }
     if (!conexionProbada) { conexionProbada = 1; cargarConexion(); }
     if (!npiezas) return;
+    unsigned char a = (unsigned char)alfa;
+
+    if (marca.modo == 'I' && buscar(FONDO_INGRESO)) { ingreso(ahora, a); return; }
+    if (marca.modo == 'S' && buscar(FONDO_SELECCION)) { seleccion(&marca, a); return; }
+    if (marca.modo == 'F' && buscar(FONDO_SIMPLE)) { ponerPieza(buscar(FONDO_SIMPLE), 0, 0, a); return; }
 
     int tipo = estado == 6 || estado == SAMP_CONECTADO ? 3 : estado == 11 ? 4 : 2;
-    float w = (float)Ancho, h = (float)Alto, s = h / 1080;
-    Rgba color = { 255, 255, 255, (unsigned char)alfa };
+    float w = (float)Ancho, s = (float)Alto / 1080;
     for (int i = 0; i < npiezas; i++) {
         Pieza *p = &piezas[i];
         if (p->tipo != 0 && p->tipo != 1 && p->tipo != tipo) continue;
-        Rect r;
-        if (p->ancla == 0) { // cubre la pantalla sin deformarse, como el video
-            float e = w / p->w > h / p->h ? w / p->w : h / p->h;
-            r.x1 = (w - p->w * e) / 2; r.x2 = r.x1 + p->w * e; r.y2 = (h - p->h * e) / 2; r.y1 = r.y2 + p->h * e;
-        } else {
-            float x = p->ancla == 2 ? w - (1920 - p->x) * s : p->x * s;
-            r.x1 = x; r.x2 = x + p->w * s; r.y2 = p->y * s; r.y1 = (p->y + p->h) * s;
-        }
-        SpriteDibujar(&p->sprite, &r, &color);
+        ponerPieza(p, 0, 0, a);
         if (p->bw > 0) { // un tramo dorado que corre por la linea, ida y vuelta cada 1,6 segundos
             float tramo = p->bw / 4.0f, ida = (float)(ahora % 1600) / 800;
             float x = p->bx + (ida <= 1 ? ida : 2 - ida) * (p->bw - tramo);
             float x0 = p->ancla == 2 ? w - (1920 - x) * s : x * s;
             Rect b = { x0, (p->by + p->bh) * s, x0 + tramo * s, p->by * s };
-            Rgba dorado = { 242, 190, 80, (unsigned char)alfa };
+            Rgba dorado = { 242, 190, 80, a };
             RectDibujar(&b, &dorado);
         }
     }

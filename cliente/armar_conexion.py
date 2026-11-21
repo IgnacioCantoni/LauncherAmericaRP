@@ -8,7 +8,11 @@
 # tipo: 0 fondo, 1 siempre, 2 conectando, 3 entrando al juego, 4 server reiniciando.
 # ancla: 0 cubre toda la pantalla, 1 pegada a la izquierda, 2 pegada a la derecha.
 # brillo: la linea donde el juego hace correr un tramo dorado para que se vea que sigue cargando.
+# Desde el tipo 10 son las pantallas del server despues de conectar (ingreso y seleccion de
+# personaje), que arma pantallas.py con ancla 3: estiradas a toda la pantalla como los TextDraws.
 import io, os, struct, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pantallas
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 1920, 1080
@@ -92,6 +96,9 @@ for tipo, texto in ((2, "Conectando con el servidor"), (3, "Entrando al juego"),
     caja, datos = png(capa(dibujar))
     piezas.append((tipo, 1, caja, brillo, datos))
 
+for tipo, caja, brillo, datos in pantallas.todas(FONDO):
+    piezas.append((tipo, 3, caja, brillo, datos))
+
 salida = b"ACN1" + struct.pack("<I", len(piezas))
 for tipo, ancla, (x1, y1, x2, y2), brillo, datos in piezas:
     salida += struct.pack("<11i", tipo, ancla, x1, y1, x2 - x1, y2 - y1, *brillo, len(datos)) + datos
@@ -101,7 +108,7 @@ n, pos = struct.unpack_from("<I", salida, 4)[0], 8
 for _ in range(n):
     c = struct.unpack_from("<11i", salida, pos)
     pos += 44
-    assert 0 <= c[0] <= 4 and 0 <= c[1] <= 2 and c[4] > 0 and c[5] > 0 and salida[pos:pos + 2] in (b"\xff\xd8", b"\x89P")
+    assert 0 <= c[0] <= 34 and 0 <= c[1] <= 3 and c[4] > 0 and c[5] > 0 and salida[pos:pos + 2] in (b"\xff\xd8", b"\x89P")
     pos += c[10]
 assert pos == len(salida)
 
@@ -117,3 +124,25 @@ if len(sys.argv) > 1:
         if tipo == 2:  # el tramo dorado, como lo dibuja el juego en un momento cualquiera
             ImageDraw.Draw(vista).rectangle([brillo[0] + 140, brillo[1], brillo[0] + 140 + brillo[2] // 4, brillo[1] + brillo[3] - 1], fill=DORADO)
     vista.convert("RGB").save(sys.argv[1])
+    # Y una vista de cada pantalla del server, con todo lo que puede dibujar la ASI encima.
+    raiz_vista = os.path.splitext(sys.argv[1])[0]
+    for nombre, fondo_tipo, extra in (("ingreso", 10, {11: 7, 12: 1, 13: 1}), ("seleccion", 20, {29: 0, 22: 1, 23: 2, 21: 0, 31: 0, 24: 0, 27: 0})):
+        img = None
+        for tipo, ancla, (x1, y1, x2, y2), brillo, datos in piezas:
+            if tipo == fondo_tipo:
+                img = Image.open(io.BytesIO(datos)).convert("RGBA")
+        for t, n in extra.items():
+            for tipo, ancla, (x1, y1, x2, y2), brillo, datos in piezas:
+                if tipo != t:
+                    continue
+                pz = Image.open(io.BytesIO(datos)).convert("RGBA")
+                veces = n if t in (11,) else 1
+                for k in range(veces):
+                    paso = brillo[0] * (k if t == 11 else n if t in (21, 22, 23, 29) else 7 if t == 12 else 0)
+                    if t in (21, 22, 23, 29):
+                        img.alpha_composite(pz, (x1, y1 + paso))
+                    else:
+                        img.alpha_composite(pz, (x1 + paso, y1))
+                if t == 23:
+                    img.alpha_composite(pz, (x1, y1 + brillo[0] * 3))
+        img.convert("RGB").save(raiz_vista + "-" + nombre + ".png")
