@@ -8,10 +8,10 @@ Licencia MIT (ver `LICENSE`). Firma del `.exe`: ver [Code signing policy](#code-
 
 - **Jugar**: guarda tu nick y abre el GTA conectado directo al server. Usa los mismos datos que el cliente SA-MP (nick y carpeta del GTA en el registro, `HKCU\Software\SAMP`).
 - **Estado del server**: cada 15 segundos muestra si está en línea, los jugadores y el ping.
-- **Mi juego**: la carpeta del GTA y si están bien la versión 1.0, el SA-MP 0.3.7 (`samp.exe` y `samp.dll`) y los archivos del server. El resumen también está en la tarjeta del server, junto al botón JUGAR.
-- **Noticias**: muestra `noticias.txt` de este repo, cada noticia con su fecha, etiqueta y título (ver abajo).
+- **Estado del juego**: la carpeta del GTA y si están bien la versión 1.0, el SA-MP 0.3.7 (`samp.exe` y `samp.dll`) y los archivos del server, en las opciones del cliente (los tres puntos). Lo primero que falta se ve en la tarjeta del cliente, en INICIO.
+- **Noticias**: dos listas, PARCHES DEL SERVER (`parches.txt`) y LAUNCHER (`launcher/novedades.txt`), cada entrada con su fecha, etiqueta y título (ver abajo). Un punto rosa en la pestaña avisa si hay un parche que el jugador no abrió.
 - **Mods**: catálogo de mods opcionales que elige el staff (ver "Mods opcionales"). Cada jugador instala y saca los que quiera con un clic. Los archivos que el server reparte a todos (`actualizaciones/archivos/`) se bajan solos antes de jugar, y su estado está en la tarjeta del cliente, en INICIO.
-- **Imagen de fondo**: `fondo/fondo.jpg` va dentro del `.exe`, escalada al tamaño de la ventana (1440x810 si entra en la pantalla; si no, 1280x720).
+- **Diseño**: el mismo de las pantallas del server (conexión, ingreso y personajes): paneles de vidrio sobre la playa y botones en degradé dorado a rosa. La imagen de fondo es `cliente/conexion-fondo.jpg`, la misma de la pantalla de conexión, y va dentro del `.exe` escalada al tamaño de la ventana (1440x810 si entra en la pantalla; si no, 1280x720). Los paneles usan una copia borrosa que se arma una sola vez al abrir.
 - **Se actualiza solo**: al abrir, mira `launcher/version.txt`. Si hay una versión nueva, la baja de la Release de GitHub, revisa su huella, se reemplaza y se vuelve a abrir (ver abajo).
 - **DirectX 9**: antes de jugar revisa que estén `d3dx9_25.dll` (la pide el SA-MP) y, con el ENB activo, `d3dx9_43.dll`. Si faltan, ofrece bajar el instalador oficial de Microsoft de junio de 2010, revisa su huella y lo instala en silencio (Windows pide permiso de administrador). Visual C++ no hace falta: CEF, CLEO y el cargador de ASI no lo usan.
 - **Antes de jugar**: revisa que esté `text\american.gxt` (sin él el juego se cierra al cargar) y avisa si el GTA está en Archivos de programa o Windows (ahí no puede actualizar archivos), en OneDrive o en el Escritorio. Con el ENB activo le pone a `gta_sa.exe` el parche de 4 GB (Large Address Aware), para que no se quede sin memoria; la primera vez guarda la copia original como `gta_sa.exe.sin4gb`. No deja abrir un segundo GTA.
@@ -21,11 +21,12 @@ Licencia MIT (ver `LICENSE`). Firma del `.exe`: ver [Code signing policy](#code-
 - **Soporte**: la pestaña SOPORTE abre un formulario como el de NewGamers: elegís qué te pasa (no abre, se cierra solo, no conecta, descarga o instalación, otra cosa), contás qué pasó y "COPIAR PARA DISCORD" arma el mensaje, con el informe técnico si lo dejás marcado (versión del launcher, nick, Windows, carpeta, cada revisión, el ENB y el último cierre de golpe). Si `Config.Redes` tiene el link de Soporte, ofrece abrirlo.
 - **Clientes**: en INICIO se elige el cliente, como el selector de juego de NewGamers pero sin repartir el GTA: OFICIAL (el GTA del jugador con los archivos del server), o CUSTOM (otra carpeta del jugador, con los mods y aportes que quiera; su ENB y sus mods se anotan aparte). Al elegir uno, SA-MP pasa a abrir ese GTA. La tarjeta muestra si está listo o lo primero que falta.
 - **Opciones del juego**: los tres puntos del cliente elegido muestran el estado completo, abren la carpeta del GTA, repara archivos (borra la memoria de huellas y revisa todo de cero), mueve la carpeta a otro lugar (la copia entera, la revisa y cambia la ruta; la vieja no se borra hasta que el jugador lo decida) o elige otra.
-- **Novedades del launcher**: AJUSTES > NOVEDADES muestra `launcher/novedades.txt`, con el mismo formato que las noticias.
+- **Novedades del launcher**: NOTICIAS > LAUNCHER muestra `launcher/novedades.txt`, con el mismo formato que los parches.
 - **Dos monitores**: con más de un monitor el GTA abre el cuadro "Device Selection" (elegir pantalla), que no tiene botón en la barra de tareas. El launcher no se esconde hasta que aparece la primera ventana del GTA y la trae al frente, así ese cuadro no queda tapado.
 - **Ajustes**: pestaña AJUSTES con una opción que se guarda en `%LOCALAPPDATA%\AmericaRP\ajustes.txt`: esconder el launcher en la bandeja (al lado del reloj) mientras jugás, que viene activado. Las versiones nuevas del launcher se instalan siempre solas, sin preguntar (desde la 1.4.0). También abre la carpeta de informes de cierres.
 - **Archivos prohibidos**: en cada JUGAR lee `prohibidos.txt` de este repo y saca del GTA lo que coincida (ver abajo).
-- **Redes y soporte**: links de Discord, YouTube, TikTok, Instagram y Soporte en el pie; aparecen los que tengan link en `Config.Redes`.
+- **Comunidad**: la tarjeta de arriba a la derecha tiene el botón del Discord (con una invitación que no venza muestra los miembros y conectados) y abajo YouTube, TikTok e Instagram; aparecen los que tengan link en `Config.Redes`. Sin link de Discord, el botón dice "DISCORD MUY PRONTO".
+- **Tarjeta de JUGAR**: tu nick, tu última partida, los jugadores y el ping del server elegido y tus horas jugadas.
 - **Tipografía**: Inter (ExtraBold en títulos, SemiBold en negritas y Regular en textos), la misma del teléfono del server, con licencia libre SIL OFL (ver `fuentes/`). Va dentro del `.exe`.
 
 ## Compilar
@@ -41,14 +42,14 @@ Para probar la lógica sin abrir la ventana: `AmericaRP.exe --prueba` (en Linux,
 Arriba de `src/Launcher.cs`, en `Config`:
 
 - `Servidores`: los servers que se eligen en INICIO (nombre, IP o dominio y puerto). Hoy DESARROLLO está en `127.0.0.1:7777` (el server de la PC del staff) y OFICIAL todavía no tiene IP: aparece como "Todavía sin IP" y no se puede elegir hasta completarla. El launcher consulta todos cada 15 segundos y muestra si están en línea y su ping; JUGAR entra al elegido.
-- `Redes`: los links del pie.
-- `NoticiasUrl`, `ManifiestoUrl` y `EnbUrl`: apuntan a este repo. Si se dejan vacías, esa función se apaga.
+- `Redes`: los links de la tarjeta COMUNIDAD (Discord, YouTube, TikTok e Instagram) y el de Soporte, que se ofrece después de copiar el mensaje en SOPORTE.
+- `ParchesUrl`, `NovedadesUrl`, `ManifiestoUrl` y `EnbUrl`: apuntan a este repo. Si se dejan vacías, esa función se apaga.
 
 Después de cambiarlos, volvé a compilar y repartí el `.exe` nuevo.
 
 ## Publicar noticias
 
-Editá `noticias.txt`, commit y push. Los launchers la leen al abrirse. Las noticias se despliegan: la primera viene abierta y las demás muestran su título hasta tocarlas. Los cambios del server van aparte, en `parches.txt` (mismo formato): si tiene alguno, NOTICIAS muestra arriba la opción PARCHES DEL SERVER. En `parches.txt` y `launcher/novedades.txt`, las líneas con `#` antes de la primera entrada son comentarios. La más nueva va arriba y su título sale también en INICIO.
+Editá `parches.txt` (cambios del server) o `launcher/novedades.txt` (cambios del launcher), commit y push. Los launchers los leen al abrirse. Las entradas se despliegan: la primera viene abierta y las demás muestran su título hasta tocarlas. Las líneas con `#` antes de la primera entrada son comentarios y la más nueva va arriba. Desde la 1.5.0 el launcher ya no lee `noticias.txt`; queda en el repo para las versiones viejas hasta que todos se actualicen.
 
 ```
 ## 2026-11-04 | Actualización | Teléfono nuevo
@@ -155,9 +156,7 @@ Después de conectar, la ASI dibuja las pantallas del server (desde la 0.7.8 de 
 
 ## Cambiar la imagen de fondo
 
-La pantalla de carga del launcher usa `fondo/arranque.jpg` (460x300, la noche con montañas) y `fondo/arranque-estrella.png` (la estrella dorada con transparencia). Para cambiarlas, reemplazalas con el mismo tamaño y volvé a compilar.
-
-Reemplazá `fondo/fondo.jpg` por otra imagen 16:9 (mejor de 1440x810 o más grande) y volvé a compilar. Si no es 16:9 se recorta lo que sobra, sin deformarla.
+El fondo del launcher y de su pantalla de carga es `cliente/conexion-fondo.jpg`, la misma playa de la pantalla de conexión del juego: si la cambiás, cambian las dos (después de compilar el launcher y de correr `python cliente/armar_conexion.py`). Mejor 16:9 y de 1440x810 o más grande; si no es 16:9 se recorta lo que sobra, sin deformarla. La estrella es `fondo/arranque-estrella.png` (con transparencia) y el ícono `fondo/icono.ico` (se arma con `python fondo/armar_icono.py`). La playa y la estrella son imágenes propias del server, hechas con Gemini, y van con la licencia MIT del repo.
 
 ## Publicar archivos o mods
 

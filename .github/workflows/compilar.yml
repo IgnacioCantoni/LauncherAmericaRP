@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['src/**', 'fuentes/**', 'fondo/**', 'compilar.bat', '.github/workflows/compilar.yml']
+    paths: ['src/**', 'fuentes/**', 'fondo/**', 'cliente/conexion-fondo.jpg', 'compilar.bat', '.github/workflows/compilar.yml']
 
 jobs:
   compilar:

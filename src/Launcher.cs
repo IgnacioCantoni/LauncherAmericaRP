@@ -28,7 +28,7 @@ static class Config
 {
     // Lo que cambia de un server a otro. Después de tocarlo, volvé a compilar.
     // Versión de este launcher. Para sacar una nueva, ver "Sacar una versión nueva del launcher" en el README.
-    public const string Version = "1.4.1";
+    public const string Version = "1.5.0";
     // Servidores que se eligen en INICIO: nombre, dirección y puerto. Sin dirección = "Todavía sin IP", no se puede elegir.
     public static readonly Tuple<string, string, int>[] Servidores =
     {
@@ -37,7 +37,6 @@ static class Config
     };
     // Vacío = sin noticias / sin actualizaciones.
     const string Repo = "https://raw.githubusercontent.com/IgnacioCantoni/LauncherAmericaRP/main/";
-    public const string NoticiasUrl = Repo + "noticias.txt";
     public const string ParchesUrl = Repo + "parches.txt";            // cambios del server, mismo formato que las noticias
     public const string NovedadesUrl = Repo + "launcher/novedades.txt"; // qué trae cada versión del launcher
     public const string ManifiestoUrl = Repo + "actualizaciones/manifiesto.txt";
@@ -69,7 +68,9 @@ static class Config
     // más de 100 MB y no entra en el repo: se baja el zip oficial del release y se revisa su huella. Vacío = no se instala.
     public const string CefZipUrl = "https://github.com/aurora-mp/omp-cef/releases/download/v1.4.0/client-files-v1.4.0.zip";
     public const string CefZipSha = "9bdcf634a6b473e648716deaa3779f55ac1211924ee9c55013897582cf34e55f";
-    // Links del pie de la ventana, en este orden. Los que tengan el link vacío no aparecen.
+    // Tarjeta COMUNIDAD (arriba a la derecha, en todas las pestañas): Discord es el botón grande (con una invitación que no venza
+    // muestra los miembros y conectados) y YouTube, TikTok e Instagram van abajo. Los que tengan el link vacío no aparecen.
+    // Soporte no sale en la tarjeta: es el link que ofrece abrir la pestaña SOPORTE después de copiar el mensaje.
     public static readonly KeyValuePair<string, string>[] Redes =
     {
         new KeyValuePair<string, string>("Discord", ""),
@@ -354,10 +355,12 @@ static class Ajustes
         return Leer().TryGetValue(clave, out v) ? v == "si" : porDefecto;
     }
 
-    static void Poner(string clave, bool valor)
+    static void Poner(string clave, bool valor) { Poner(clave, valor ? "si" : "no"); }
+
+    static void Poner(string clave, string valor)
     {
         Dictionary<string, string> d = Leer();
-        d[clave] = valor ? "si" : "no";
+        d[clave] = valor;
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Ruta));
@@ -370,6 +373,12 @@ static class Ajustes
     public static bool Bandeja { get { return Si("bandeja", true); } set { Poner("bandeja", value); } }
     // Jugar sin las pantallas del server: el launcher no baja el CEF y apaga cef.asi. Va por cliente (oficial o personalizado).
     public static bool SinCef { get { return Si("sin_cef" + Registro.Sufijo, false); } set { Poner("sin_cef" + Registro.Sufijo, value); } }
+    // El último parche que se vio en NOTICIAS (fecha y título). Si hay uno más nuevo, la pestaña lleva un punto rosa.
+    public static string ParcheVisto
+    {
+        get { string v; return Leer().TryGetValue("parche_visto", out v) ? v : ""; }
+        set { Poner("parche_visto", value); }
+    }
 }
 
 // Informe para pegar en el canal de soporte: lo que soporte siempre pregunta, en un solo texto.
@@ -1323,9 +1332,17 @@ static class Fuentes
 // Los botones son zonas: cada vez que se pinta se anotan su rectángulo y su acción.
 class Lienzo : Form
 {
-    protected static readonly Color Acento = Color.FromArgb(245, 166, 35), Texto = Color.FromArgb(244, 241, 234), Gris = Color.FromArgb(168, 172, 186),
-        Oscuro = Color.FromArgb(8, 10, 16), Verde = Color.FromArgb(110, 220, 140), Rojo = Color.FromArgb(240, 96, 96), Ambar = Color.FromArgb(245, 196, 80),
-        Panel = Color.FromArgb(16, 18, 26), Campo = Color.FromArgb(24, 26, 36);
+    // Los colores de las pantallas de ingreso y selección del server: dorado que pasa a rosa, sobre vidrio oscuro.
+    protected static readonly Color Acento = Color.FromArgb(242, 190, 80), Rosa = Color.FromArgb(255, 120, 170), Texto = Color.FromArgb(255, 255, 255),
+        Suave = Color.FromArgb(214, 218, 232), Gris = Color.FromArgb(160, 166, 185), Oscuro = Color.FromArgb(30, 18, 40), Verde = Color.FromArgb(110, 230, 160),
+        Rojo = Color.FromArgb(255, 96, 110), Ambar = Color.FromArgb(242, 190, 80), Panel = Color.FromArgb(18, 20, 38), Campo = Color.FromArgb(22, 22, 42);
+    // El fondo de la ventana principal desenfocado, para el vidrio. null = vidrio liso.
+    protected static Bitmap borroso;
+
+    // Tamaños en píxeles, como en las maquetas.
+    protected static Font Fx(float px) { return Fuentes.Titulo(px * 1.25f); }
+    protected static Font Fs(float px) { return Fuentes.Negrita(px * 0.8333f); }
+    protected static Font Fr(float px) { return Fuentes.Texto(px * 0.8333f); }
 
     protected class Zona { public Rectangle R; public Action Click; public bool Menu; }
     protected readonly List<Zona> zonas = new List<Zona>();
@@ -1429,21 +1446,56 @@ class Lienzo : Form
 
     // ---------- piezas ----------
 
-    protected void Boton(Graphics g, Rectangle r, string texto, bool principal, Action click)
+    // Píldora: la principal con el degradé dorado y rosa, la otra de vidrio con borde fino.
+    protected void Boton(Graphics g, Rectangle r, string texto, bool principal, Action click, float px = 14)
     {
         float k = click == null ? 0 : Brillo(r);
-        Color fondo = click == null ? Color.FromArgb(14, 255, 255, 255) : principal ? Mezcla(Acento, Color.FromArgb(255, 196, 92), k) : Color.FromArgb((int)(20 + 22 * k), 255, 255, 255);
-        Relleno(g, r, fondo, 10);
-        Centrado(g, texto, Fuentes.Negrita(11.5f), click == null ? Color.FromArgb(110, Texto) : principal ? Oscuro : Texto, r);
+        if (principal && click != null) Degrade(g, r, r.Height / 2, k);
+        else
+        {
+            Relleno(g, r, Color.FromArgb(click == null ? 12 : (int)(22 + 22 * k), 255, 255, 255), r.Height / 2);
+            Borde(g, r, Color.FromArgb(click == null ? 30 : 64, 255, 255, 255), r.Height / 2, 1f);
+        }
+        Centrado(g, texto, Fx(px), click == null ? Gris : principal ? Oscuro : Texto, r);
         if (click != null) zonas.Add(new Zona { R = r, Click = click });
     }
 
     // Píldora para elegir entre opciones (filtros, secciones).
     protected void Chip(Graphics g, Rectangle r, string texto, bool elegido, Action click)
     {
-        Relleno(g, r, elegido ? Acento : Color.FromArgb((int)(18 + 24 * Brillo(r)), 255, 255, 255), r.Height / 2);
-        Centrado(g, texto, Fuentes.Negrita(9.5f), elegido ? Oscuro : Texto, r);
+        if (elegido) Degrade(g, r, r.Height / 2, 0);
+        else
+        {
+            Relleno(g, r, Color.FromArgb((int)(18 + 24 * Brillo(r)), 255, 255, 255), r.Height / 2);
+            Borde(g, r, Color.FromArgb(50, 255, 255, 255), r.Height / 2, 1f);
+        }
+        Centrado(g, texto, Fs(13), elegido ? Oscuro : Suave, r);
         zonas.Add(new Zona { R = r, Click = click });
+    }
+
+    // Relleno con el degradé de izquierda a derecha; brillo (0 a 1) lo aclara un poco al pasar el mouse.
+    protected static void Degrade(Graphics g, Rectangle r, int radio, float brillo)
+    {
+        Color a = Mezcla(Acento, Color.White, 0.18f * brillo), b = Mezcla(Rosa, Color.White, 0.18f * brillo);
+        using (var pincel = new System.Drawing.Drawing2D.LinearGradientBrush(Rectangle.Inflate(r, 2, 2), a, b, 0f))
+        using (var camino = Redondo(r, radio)) g.FillPath(pincel, camino);
+    }
+
+    protected static void BordeDegrade(Graphics g, Rectangle r, int radio, float ancho)
+    {
+        using (var pincel = new System.Drawing.Drawing2D.LinearGradientBrush(Rectangle.Inflate(r, 2, 2), Acento, Rosa, 0f))
+        using (var lapiz = new Pen(pincel, ancho))
+        using (var camino = Redondo(r, radio)) g.DrawPath(lapiz, camino);
+    }
+
+    // Etiqueta chica redondeada (LISTO, ENB, NUEVO...). Devuelve dónde termina.
+    protected static int Etiqueta(Graphics g, int x, int y, string texto, Color c, bool llena = false)
+    {
+        Font f = Fx(10);
+        var r = new Rectangle(x, y, Medir(g, texto, f) + 20, 22);
+        Relleno(g, r, llena ? c : Color.FromArgb(56, c), 11);
+        Centrado(g, texto, f, llena ? Oscuro : c, r);
+        return r.Right;
     }
 
     // Interruptor de prendido y apagado (44x24).
@@ -1486,58 +1538,22 @@ class Lienzo : Form
         using (var camino = Redondo(r, radio)) using (var b = new SolidBrush(c)) g.FillPath(b, camino);
     }
 
-    // Barra de avance con forma de estrella fugaz: cola que se desvanece hacia atrás y cabeza brillante con destellos.
+    // Barra de avance fina con el degradé; mientras trabaja, un brillo la recorre.
     protected static void Estela(Graphics g, Rectangle pista, float k, double ms, bool viva)
     {
         int radio = pista.Height / 2;
-        Relleno(g, pista, Color.FromArgb(28, 255, 255, 255), radio);
-        if (k <= 0.002f) return;
-        int cabeza = pista.X + (int)(pista.Width * Math.Min(1f, k)), cy = pista.Y + radio;
-        Relleno(g, new Rectangle(pista.X, pista.Y, cabeza - pista.X, pista.Height), Color.FromArgb(60, Acento), radio);
-
-        int largo = Math.Max(2, Math.Min(cabeza - pista.X, 280));
-        var cola = new Rectangle(cabeza - largo, pista.Y, largo, pista.Height);
-        // El pincel es 2 px más ancho para que no repita el color del otro extremo en el borde.
-        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(cola.X - 1, cola.Y, cola.Width + 2, cola.Height), Color.Transparent, Acento, 0f))
-        {
-            b.InterpolationColors = new System.Drawing.Drawing2D.ColorBlend
-            {
-                Colors = new[] { Color.FromArgb(0, Acento), Color.FromArgb(230, Acento), Color.FromArgb(255, 255, 226, 180) },
-                Positions = new[] { 0f, 0.7f, 1f }
-            };
-            using (var camino = Redondo(cola, radio)) g.FillPath(b, camino);
-        }
-        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(cola.X - 1, cy - 1, cola.Width + 2, 2), Color.FromArgb(0, 255, 255, 255), Color.FromArgb(230, 255, 255, 255), 0f))
-            g.FillRectangle(b, cola.X + largo / 3, cy - 1, largo - largo / 3, 2);
-
-        if (viva)
-        {
-            // Estela que recorre la parte llena una y otra vez (la misma de la pantalla de carga).
-            float paso = (float)(ms % 900 / 900), punta = pista.X + paso * (cabeza - pista.X + 90);
-            int desde = (int)Math.Max(pista.X, punta - 90), hasta = (int)Math.Min(cabeza, punta);
-            if (hasta - desde > 1)
-                using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle((int)punta - 91, pista.Y, 92, pista.Height), Color.FromArgb(0, 255, 236, 200), Color.FromArgb(230, 255, 236, 200), 0f))
-                using (var camino = Redondo(new Rectangle(desde, pista.Y, hasta - desde, pista.Height), radio))
-                    g.FillPath(b, camino);
-        }
-
-        float pulso = viva ? 0.85f + 0.15f * (float)Math.Sin(ms / 110) : 1f;
-        int halo = (int)(pista.Height * 3.4f * pulso);
-        using (var camino = new System.Drawing.Drawing2D.GraphicsPath())
-        {
-            camino.AddEllipse(cabeza - halo, cy - halo, halo * 2, halo * 2);
-            using (var b = new System.Drawing.Drawing2D.PathGradientBrush(camino) { CenterColor = Color.FromArgb(170, 255, 205, 130), SurroundColors = new[] { Color.FromArgb(0, Acento) } })
+        Relleno(g, pista, Color.FromArgb(30, 255, 255, 255), radio);
+        int lleno = (int)(pista.Width * Math.Min(1f, k));
+        if (lleno < 2) return;
+        var r = new Rectangle(pista.X, pista.Y, lleno, pista.Height);
+        Degrade(g, r, radio, 0);
+        if (!viva) return;
+        float punta = r.X + (float)(ms % 1100 / 1100) * (lleno + 120);
+        int desde = (int)Math.Max(r.X, punta - 120), hasta = (int)Math.Min(r.Right, punta);
+        if (hasta - desde > 1)
+            using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle((int)punta - 121, r.Y, 122, r.Height), Color.FromArgb(0, 255, 255, 255), Color.FromArgb(170, 255, 255, 255), 0f))
+            using (var camino = Redondo(new Rectangle(desde, r.Y, hasta - desde, r.Height), radio))
                 g.FillPath(b, camino);
-        }
-        if (viva)
-            for (int i = 0; i < 6; i++)
-            {
-                // Chispas que se quedan atrás de la cabeza y se apagan; salen del reloj, así no hace falta guardar estado.
-                double fase = (ms / 900 + i / 6.0) % 1;
-                float x = cabeza - (float)(fase * largo * 0.8), y = cy + (float)Math.Sin(i * 2.3 + ms / 260) * pista.Height * 0.9f, s = 3.4f * (float)(1 - fase) + 1f;
-                using (var b = new SolidBrush(Color.FromArgb((int)(210 * (1 - fase)), 255, 220, 170))) g.FillEllipse(b, x - s / 2, y - s / 2, s, s);
-            }
-        Ventana.Estrella(g, cabeza, cy, (int)Math.Round(pista.Height * 1.6f * pulso), Color.FromArgb(255, 255, 246, 230));
     }
 
     protected static void Borde(Graphics g, Rectangle r, Color c, int radio, float ancho)
@@ -1545,15 +1561,43 @@ class Lienzo : Form
         using (var camino = Redondo(r, radio)) using (var p = new Pen(c, ancho)) g.DrawPath(p, camino);
     }
 
-    protected static void Vidrio(Graphics g, Rectangle r)
+    // Vidrio: el fondo desenfocado, oscurecido, con un brillo arriba y borde fino (o con el degradé, para lo principal).
+    protected static void Vidrio(Graphics g, Rectangle r, bool degrade = false, int radio = 22, int oscuro = 150)
     {
-        Relleno(g, r, Color.FromArgb(200, 12, 14, 20), 16);
-        Borde(g, r, Color.FromArgb(18, 255, 255, 255), 16, 1f);
+        using (var camino = Redondo(r, radio))
+        {
+            var antes = g.Clip;
+            g.SetClip(camino, System.Drawing.Drawing2D.CombineMode.Intersect);
+            // El vidrio muestra lo que hay detrás en la ventana, aunque esté corrido por una animación.
+            // Solo el pedazo de atrás del panel, 1 a 1: más rápido que la imagen entera recortada.
+            if (borroso != null) g.DrawImage(borroso, r, new Rectangle(r.X + (int)g.Transform.OffsetX, r.Y + (int)g.Transform.OffsetY, r.Width, r.Height), GraphicsUnit.Pixel);
+            using (var b = new SolidBrush(Color.FromArgb(borroso != null ? oscuro : 225, 14, 16, 34))) g.FillRectangle(b, r);
+            var brillo = new Rectangle(r.X, r.Y, r.Width, Math.Min(60, r.Height));
+            using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(brillo.X, brillo.Y - 1, brillo.Width, brillo.Height + 2), Color.FromArgb(22, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90f))
+                g.FillRectangle(b, brillo);
+            g.Clip = antes;
+        }
+        if (degrade) BordeDegrade(g, r, radio, 2f);
+        else Borde(g, r, Color.FromArgb(40, 255, 255, 255), radio, 1f);
     }
 
-    protected static void Punto(Graphics g, int x, int y, Color c)
+    // Fondo de las ventanas chicas (avisos, buscador de carpetas): el vidrio sobre la playa, con el borde en degradé.
+    protected void FondoVentana(Graphics g)
     {
-        using (var b = new SolidBrush(c)) g.FillEllipse(b, x - 4, y - 4, 8, 8);
+        if (borroso != null)
+        {
+            // El pedazo del centro sin escalar: es lo que queda detrás de la ventana chica, centrada sobre el launcher.
+            g.DrawImage(borroso, ClientRectangle, new Rectangle((borroso.Width - ClientSize.Width) / 2, (borroso.Height - ClientSize.Height) / 2, ClientSize.Width, ClientSize.Height), GraphicsUnit.Pixel);
+        }
+        using (var b = new SolidBrush(Color.FromArgb(borroso != null ? 170 : 255, Panel))) g.FillRectangle(b, ClientRectangle);
+        BordeDegrade(g, new Rectangle(1, 1, ClientSize.Width - 3, ClientSize.Height - 3), 16, 2f);
+    }
+
+    // Punto de estado con su halo.
+    protected static void Punto(Graphics g, int x, int y, Color c, int radio = 4)
+    {
+        using (var b = new SolidBrush(Color.FromArgb(60, c))) g.FillEllipse(b, x - radio - 3, y - radio - 3, (radio + 3) * 2, (radio + 3) * 2);
+        using (var b = new SolidBrush(c)) g.FillEllipse(b, x - radio, y - radio, radio * 2, radio * 2);
     }
 
     protected static void Escribir(Graphics g, string texto, Font f, Color c, int x, int y)
@@ -1614,8 +1658,8 @@ class Dialogo : Lienzo
         KeyPreview = true;
         altoArrastre = 64;
         using (var bmp = new Bitmap(1, 1)) using (Graphics g = Graphics.FromImage(bmp))
-            altoTexto = (int)Math.Ceiling(g.MeasureString(texto, Fuentes.Texto(12f), 480 - 64).Height);
-        ClientSize = new Size(480, 76 + altoTexto + 96);
+            altoTexto = (int)Math.Ceiling(g.MeasureString(texto, Fr(15), 500 - 64).Height);
+        ClientSize = new Size(500, 80 + altoTexto + 100);
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -1637,13 +1681,14 @@ class Dialogo : Lienzo
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
         zonas.Clear();
-        Punto(g, 36, 44, color);
-        Escribir(g, titulo, Fuentes.Titulo(24f), Texto, 48, 28);
-        using (var b = new SolidBrush(Color.FromArgb(225, Texto))) g.DrawString(texto, Fuentes.Texto(12f), b, new RectangleF(32, 76, ClientSize.Width - 64, altoTexto + 4));
+        FondoVentana(g);
+        Punto(g, 38, 46, color, 5);
+        Escribir(g, titulo, Fx(24), Texto, 54, 28);
+        using (var b = new SolidBrush(Suave)) g.DrawString(texto, Fr(15), b, new RectangleF(32, 80, ClientSize.Width - 64, altoTexto + 4));
         int x = ClientSize.Width - 32;
         for (int i = 0; i < botones.Length; i++)
         {
-            var r = new Rectangle(x - 130, ClientSize.Height - 72, 130, 40);
+            var r = new Rectangle(x - (Medir(g, botones[i], Fx(14)) + 56), ClientSize.Height - 70, Medir(g, botones[i], Fx(14)) + 56, 40);
             int n = i;
             Boton(g, r, botones[i], i == 0, delegate { Elegir(n); });
             x = r.X - 10;
@@ -1753,12 +1798,14 @@ class Explorador : Lienzo
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
         zonas.Clear();
-        Escribir(g, titulo, Fuentes.Titulo(24f), Texto, 32, 26);
-        Escribir(g, Recortar(g, ayuda, Lista.Width, Fuentes.Texto(11f)), Fuentes.Texto(11f), Gris, 32, 64);
+        FondoVentana(g);
+        Escribir(g, titulo, Fx(24), Texto, 32, 24);
+        Escribir(g, Recortar(g, ayuda, Lista.Width, Fr(14)), Fr(14), Suave, 32, 62);
         Linea(g, new Rectangle(ClientSize.Width - 52, 20, 32, 32), true, Close);
 
         var barra = new Rectangle(Lista.X, 92, Lista.Width, 34);
-        Relleno(g, barra, Campo, 10);
+        Relleno(g, barra, Color.FromArgb(150, 10, 10, 26), 14);
+        Borde(g, barra, Color.FromArgb(50, 255, 255, 255), 14, 1f);
         var atras = new Rectangle(barra.X, barra.Y, 40, barra.Height);
         if (actual.Length > 0)
         {
@@ -1776,7 +1823,7 @@ class Explorador : Lienzo
             if (r.Bottom < Lista.Y || r.Y > Lista.Bottom) continue;
             string[] fila = filas[i];
             bool carpeta = fila[2] == "d", esMarcado = fila[1] == marcado;
-            if (esMarcado) Relleno(g, r, Color.FromArgb(60, Acento), 8);
+            if (esMarcado) { Relleno(g, r, Color.FromArgb(40, 255, 255, 255), 12); BordeDegrade(g, r, 12, 2f); }
             else Relleno(g, r, Color.FromArgb((int)(22 * Animar(fila[1], r.Contains(mouse) && Lista.Contains(mouse))), 255, 255, 255), 8);
             // Ícono: carpeta naranja o archivo claro.
             var icono = new Rectangle(r.X + 12, r.Y + 10, 18, 14);
@@ -1800,7 +1847,7 @@ class Explorador : Lienzo
 
         int abajo = ClientSize.Height - 64;
         string elegible = sirve == null ? (actual.Length > 0 ? actual : null) : marcado;
-        Escribir(g, sirve == null ? "Se elige la carpeta abierta." : "Tocá el archivo y después ELEGIR.", Fuentes.Texto(10.5f), Gris, Lista.X, abajo + 12);
+        Escribir(g, sirve == null ? "Se elige la carpeta abierta." : "Tocá el archivo y después ELEGIR.", Fr(13), Gris, Lista.X, abajo + 12);
         Boton(g, new Rectangle(ClientSize.Width - 32 - 130, abajo, 130, 40), "ELEGIR", true, elegible == null ? null : (Action)delegate { Terminar(elegible); });
         Boton(g, new Rectangle(ClientSize.Width - 32 - 270, abajo, 130, 40), "CANCELAR", false, Close);
     }
@@ -1822,7 +1869,10 @@ class Ventana : Lienzo
     // 16:9 como la imagen de fondo: 1440x810 si entra en la pantalla; si no, 1280x720 (notebooks de 1366x768).
     static readonly bool Grande = Screen.PrimaryScreen.WorkingArea.Width >= 1500 && Screen.PrimaryScreen.WorkingArea.Height >= 860;
     static readonly int Ancho = Grande ? 1440 : 1280, Alto = Grande ? 810 : 720;
-    static readonly Rectangle Tarjeta = new Rectangle(Ancho - 356, 92, 316, Alto - 140), Contenido = new Rectangle(40, 92, Ancho - 428, Alto - 140);
+    // A la derecha, en todas las pestañas: COMUNIDAD arriba y la tarjeta de JUGAR abajo. El resto es la hoja de cada pestaña.
+    static readonly int Columna = Ancho - 430;
+    static readonly Rectangle Contenido = new Rectangle(40, 106, Columna - 70, Alto - 172), Tarjeta = new Rectangle(Columna, Alto - 66 - 314, 394, 314),
+        Comunidad = new Rectangle(Columna, 106, 394, Alto - 66 - 314 - 30 - 106);
 
     readonly TextBox nick = new TextBox();
     readonly TextBox detalle = new TextBox();
@@ -1839,11 +1889,10 @@ class Ventana : Lienzo
     EstadoServidor[] estados = Config.Servidores.Select(s => new EstadoServidor()).ToArray();
     EstadoServidor server { get { return estados[Registro.Servidor]; } }
     bool serverConsultado;
-    string pestana = "inicio", noticias = "Cargando noticias...", estado = "Listo para jugar.";
-    List<Noticia> listaNoticias = Noticias.Leer("Cargando noticias...");
+    string pestana = "inicio", estado = "Listo para jugar.", discordInfo = "";
     List<ModOpcional> catalogo = new List<ModOpcional>();
     List<Noticia> listaParches = new List<Noticia>(), listaNovedades = new List<Noticia>();
-    bool verParches, conInforme = true;
+    bool verLauncher, conInforme = true;
     string motivo = "";
     readonly Dictionary<string, bool> abiertas = new Dictionary<string, bool>();
     string catalogoTexto = "Cargando mods...", filtroMods = "";
@@ -1861,12 +1910,15 @@ class Ventana : Lienzo
         StartPosition = FormStartPosition.CenterScreen;
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
 
+        // borroso: el fondo desenfocado que se ve a través del vidrio (también en los avisos y el buscador de carpetas).
+        borroso = Fondo.Desenfocar(fondo, 16);
         nick.BorderStyle = BorderStyle.None;
         nick.BackColor = Campo;
         nick.ForeColor = Texto;
-        nick.Font = new Font("Segoe UI", 13f, FontStyle.Bold);
+        nick.Font = new Font("Segoe UI Semibold", 13f);
         nick.MaxLength = 20;
-        nick.SetBounds(Tarjeta.X + 36, Tarjeta.Y + 262, Tarjeta.Width - 72, 26);
+        nick.SetBounds(Tarjeta.X + 76, Tarjeta.Y + 57, Tarjeta.Width - 120, 26);
+        nick.HandleCreated += delegate { try { SendMessage(nick.Handle, 0x1501, 1, "Escribí tu nick"); } catch (Exception) { } };
         nick.Text = Registro.Nick;
         nick.TextChanged += delegate { Invalidate(); };
 
@@ -1876,7 +1928,7 @@ class Ventana : Lienzo
         detalle.ForeColor = Texto;
         detalle.Font = new Font("Segoe UI", 11f);
         detalle.MaxLength = 1000;
-                detalle.SetBounds(Contenido.X + 36, Contenido.Y + 262, Contenido.Width - 72, 110);
+        detalle.SetBounds(Contenido.X + 56, Contenido.Y + 206, Contenido.Width - 112, 150);
         detalle.Visible = false;
         Controls.Add(detalle);
         Controls.Add(nick);
@@ -1903,11 +1955,15 @@ class Ventana : Lienzo
             cuadros.Start();
             RefrescarServer();
             CargarNoticias();
+            CargarDiscord();
             CargarMods();
             RevisarMods();
             BuscarVersion();
         };
     }
+
+    // EM_SETCUEBANNER: el texto gris del campo vacío.
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessage(IntPtr ventana, int mensaje, int wParam, string lParam);
 
     // ---------- datos ----------
 
@@ -2028,18 +2084,45 @@ class Ventana : Lienzo
         finally { Ocupar(false); Invalidate(); }
     }
 
+    // NOTICIAS muestra solo los parches del server y las novedades del launcher (los eventos y avisos van al Discord).
     async void CargarNoticias()
     {
-        if (Config.NoticiasUrl.Length == 0) noticias = "Todavía no hay noticias.";
-        else
-        {
-            try { noticias = await Task.Run(() => Web.Texto(Config.NoticiasUrl)); }
-            catch (Exception ex) { noticias = "No se pudieron cargar las noticias: " + ex.Message; }
-        }
-        listaNoticias = Noticias.Leer(noticias);
         listaParches = await Lista(Config.ParchesUrl);
         listaNovedades = await Lista(Config.NovedadesUrl);
         Invalidate();
+    }
+
+    async void CargarDiscord()
+    {
+        string url = Red("Discord");
+        if (url.Length == 0) return;
+        try { discordInfo = InfoDiscord(await Task.Run(() => Web.Texto("https://discord.com/api/v9/invites/" + CodigoDiscord(url) + "?with_counts=true"))); }
+        catch (Exception) { } // sin los números la tarjeta anda igual
+        Invalidate();
+    }
+
+    static string Red(string nombre)
+    {
+        return Config.Redes.Where(r => r.Key == nombre).Select(r => r.Value).FirstOrDefault() ?? "";
+    }
+
+    // discord.gg/abc, discord.com/invite/abc -> abc
+    internal static string CodigoDiscord(string url)
+    {
+        string u = url.Trim();
+        int q = u.IndexOf('?');
+        if (q >= 0) u = u.Substring(0, q);
+        u = u.TrimEnd('/');
+        return u.Substring(u.LastIndexOf('/') + 1);
+    }
+
+    // De la respuesta de la API de invitaciones de Discord: "1.240 miembros · 180 conectados".
+    internal static string InfoDiscord(string json)
+    {
+        Match m = Regex.Match(json, "\"approximate_member_count\"\\s*:\\s*(\\d+)"), c = Regex.Match(json, "\"approximate_presence_count\"\\s*:\\s*(\\d+)");
+        if (!m.Success) return "";
+        var es = new System.Globalization.CultureInfo("es-AR");
+        return int.Parse(m.Groups[1].Value).ToString("N0", es) + " miembros" + (c.Success ? " · " + int.Parse(c.Groups[1].Value).ToString("N0", es) + " conectados" : "");
     }
 
     // Una lista opcional con el formato de las noticias. Si no hay o no se puede bajar, queda vacía.
@@ -2401,7 +2484,7 @@ class Ventana : Lienzo
         string texto = Soporte.Pedido(motivo, detalle.Text, informe);
         try { Clipboard.SetText(texto); }
         catch (Exception ex) { Mensaje("No se pudo copiar el mensaje: " + ex.Message, "Soporte", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
-        string soporte = Config.Redes.Where(r => r.Key == "Soporte").Select(r => r.Value).FirstOrDefault() ?? "";
+        string soporte = Red("Soporte");
         Avisar("Mensaje copiado. Pegalo con Ctrl+V en el canal de soporte.", 100);
         if (Mensaje("Copié el mensaje. Pegalo con Ctrl+V en el canal de soporte del Discord y el staff te responde ahí." +
             (soporte.Length > 0 ? "\n\n¿Abrir el soporte ahora?" : ""), "Soporte",
@@ -2448,9 +2531,8 @@ class Ventana : Lienzo
         int ancho = items.Max(it => Medir(g, it.Item1, letra)) + (iconos != null ? 52 : 14) + 34;
         int x = menuAncla.X < Ancho / 2 ? menuAncla.X : menuAncla.Right - ancho;
         var caja = new Rectangle(Math.Min(x, Ancho - ancho - 12), menuAncla.Bottom + 8, ancho, items.Count * 46 + 12);
-        Relleno(g, new Rectangle(caja.X + 2, caja.Y + 6, caja.Width, caja.Height), Color.FromArgb(90, 0, 0, 0), 14);
-        Relleno(g, caja, Color.FromArgb(250, Panel), 14);
-        Borde(g, caja, Color.FromArgb(24, 255, 255, 255), 14, 1f);
+        Relleno(g, new Rectangle(caja.X + 2, caja.Y + 6, caja.Width, caja.Height), Color.FromArgb(90, 0, 0, 0), 18);
+        Vidrio(g, caja, true, 18, 200);
         for (int i = 0; i < items.Count; i++)
         {
             var r = new Rectangle(caja.X + 6, caja.Y + 6 + i * 46, caja.Width - 12, 46);
@@ -2461,8 +2543,8 @@ class Ventana : Lienzo
             if (iconos != null)
             {
                 var cuadro = new Rectangle(r.X + 8, r.Y + 7, 32, 32);
-                Relleno(g, cuadro, Color.FromArgb(18, 255, 255, 255), 8);
-                Centrado(g, items[i].Item2, iconos, c, cuadro);
+                Relleno(g, cuadro, Color.FromArgb(a != null ? 34 : 14, Acento), 8);
+                Centrado(g, items[i].Item2, iconos, a != null ? Acento : c, cuadro);
                 tx = cuadro.Right + 12;
             }
             Escribir(g, items[i].Item1, letra, c, tx, r.Y + 13);
@@ -2507,6 +2589,7 @@ class Ventana : Lienzo
         pestana = p;
         scroll = 0;
         detalle.Visible = p == "soporte";
+        if (p == "noticias" && listaParches.Count > 0) Ajustes.ParcheVisto = ClaveParche();
     }
 
     // ---------- mouse ----------
@@ -2547,9 +2630,10 @@ class Ventana : Lienzo
         zonas.Clear();
 
         if (fondo != null) g.DrawImageUnscaled(fondo, 0, 0);
-        Sombra(g, new Rectangle(0, 0, Ancho, 140), 200, 0, 90f);
-        Sombra(g, new Rectangle(0, Alto - 300, Tarjeta.X + 16, 300), 0, 235, 90f);
-        Sombra(g, new Rectangle(0, 0, 520, Alto), 150, 0, 0f);
+        else using (var b = new SolidBrush(Panel)) g.FillRectangle(b, ClientRectangle);
+        // Arriba y a la izquierda se oscurece un poco para que se lean el logo, las pestañas y el título.
+        Sombra(g, new Rectangle(0, 0, Ancho, 180), 110, 0, 90f);
+        Sombra(g, new Rectangle(0, 0, 700, Alto), 170, 0, 0f);
 
         DibujarArriba(g);
         // Al cambiar de pestaña, el contenido entra subiendo un poco y aclarándose (~200 ms).
@@ -2561,237 +2645,234 @@ class Ventana : Lienzo
         else if (pestana == "mods") DibujarMods(g);
         else if (pestana == "ajustes") DibujarAjustes(g);
         else if (pestana == "soporte") DibujarSoporte(g);
-        else if (pestana == "novedades") DibujarNovedades(g);
         else DibujarInicio(g);
-        if (k < 1 && pestana != "inicio") Relleno(g, Contenido, Color.FromArgb((int)(220 * (1 - k)), 12, 14, 20), 16);
+        if (k < 1 && pestana != "inicio") Relleno(g, Contenido, Color.FromArgb((int)(200 * (1 - k)), 14, 16, 34), 24);
         g.Restore(estado0);
+        DibujarComunidad(g);
         DibujarTarjeta(g);
         DibujarPie(g);
         DibujarMenu(g);
-        if (tapada) using (var b = new SolidBrush(Color.FromArgb(150, 0, 0, 0))) g.FillRectangle(b, ClientRectangle);
+        if (tapada) using (var b = new SolidBrush(Color.FromArgb(160, 6, 6, 18))) g.FillRectangle(b, ClientRectangle);
+    }
+
+    static readonly string[][] Pestanas = { new[] { "inicio", "INICIO" }, new[] { "noticias", "NOTICIAS" }, new[] { "mods", "MODS" }, new[] { "soporte", "SOPORTE" }, new[] { "ajustes", "AJUSTES" } };
+
+    string ClaveParche()
+    {
+        Noticia n = listaParches.FirstOrDefault();
+        return n == null ? "" : n.Fecha + " " + n.Titulo;
     }
 
     void DibujarArriba(Graphics g)
     {
-        // La misma estrella dorada de la pantalla de carga; sin la imagen, la estrella dibujada.
+        // La misma estrella dorada del ícono; sin la imagen, la estrella dibujada.
         if (estrella != null)
         {
             g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-            g.DrawImage(estrella, new Rectangle(52 - 32, 38 - 33, 64, 64));
+            g.DrawImage(estrella, new Rectangle(32, 22, 58, 58));
         }
-        else Estrella(g, 52, 38, 17, Acento);
-        Escribir(g, "America RP", Fuentes.Titulo(32f), Texto, 80, 22);
+        else Estrella(g, 61, 51, 24, Acento);
+        Escribir(g, "AMERICA", Fx(30), Texto, 88, 20);
+        Escribir(g, "ROLEPLAY", Fs(12), Acento, 93, 58);
 
-        int x = 300;
-        foreach (string[] p in new[] { new[] { "inicio", "INICIO" }, new[] { "noticias", "NOTICIAS" }, new[] { "mods", "MODS" }, new[] { "soporte", "SOPORTE" }, new[] { "ajustes", "AJUSTES" } })
+        // Las pestañas, en una cápsula de vidrio; la elegida con el degradé.
+        Font f = Fs(13), fa = Fx(13);
+        int[] anchos = Pestanas.Select(p => Medir(g, p[1], fa) + 36).ToArray();
+        int x = (Ancho - anchos.Sum() - 12) / 2;
+        Vidrio(g, new Rectangle(x, 30, anchos.Sum() + 12, 44), false, 22, 130);
+        x += 6;
+        bool hayParche = listaParches.Count > 0 && ClaveParche() != Ajustes.ParcheVisto;
+        for (int i = 0; i < Pestanas.Length; i++)
         {
-            Font f = Fuentes.Titulo(19f);
-            int w = Medir(g, p[1], f);
-            var r = new Rectangle(x - 8, 20, w + 16, 40);
-            bool activa = pestana == p[0];
-            Escribir(g, p[1], f, activa ? Texto : Mezcla(Gris, Texto, Brillo(r)), x, 26);
-            if (activa) Relleno(g, new Rectangle(x, 56, 18, 3), Acento, 2);
-            string cap = p[0];
+            var r = new Rectangle(x, 36, anchos[i], 32);
+            bool activa = pestana == Pestanas[i][0];
+            if (activa) { Degrade(g, r, 16, 0); Centrado(g, Pestanas[i][1], fa, Oscuro, r); }
+            else Centrado(g, Pestanas[i][1], f, Mezcla(Suave, Texto, Brillo(r)), r);
+            if (Pestanas[i][0] == "noticias" && hayParche && !activa) using (var b = new SolidBrush(Rosa)) g.FillEllipse(b, r.Right - 9, r.Y + 4, 7, 7);
+            string cap = Pestanas[i][0];
             zonas.Add(new Zona { R = r, Click = delegate { Pestana(cap); } });
-            x += w + 30;
+            x += anchos[i];
         }
 
-        Linea(g, new Rectangle(Ancho - 56, 22, 36, 36), true, delegate { Close(); });
-        Linea(g, new Rectangle(Ancho - 96, 22, 36, 36), false, delegate { WindowState = FormWindowState.Minimized; });
+        Linea(g, new Rectangle(Ancho - 56, 34, 36, 36), true, delegate { Close(); });
+        Linea(g, new Rectangle(Ancho - 96, 34, 36, 36), false, delegate { WindowState = FormWindowState.Minimized; });
     }
 
     void DibujarInicio(Graphics g)
     {
+        Escribir(g, "TU HISTORIA", Fx(48), Texto, 36, 104);
+        Escribir(g, "EMPIEZA ACÁ", Fx(48), Acento, 36, 156);
+        Escribir(g, "Elegí tu cliente y el servidor, y tocá JUGAR.", Fr(16), Suave, 40, 224);
         DibujarClientes(g);
-        int y = Contenido.Bottom - 150;
-        Escribir(g, "SERVIDOR DE ROLEPLAY EN ESPAÑOL", Fuentes.Negrita(10f), Acento, 44, y);
-        Escribir(g, "TU HISTORIA EMPIEZA ACÁ", Fuentes.Titulo(58f), Texto, 40, y + 18);
-        Noticia ultima = listaNoticias.FirstOrDefault();
-        string primera = ultima == null ? "" : ultima.Titulo.Length > 0 ? ultima.Titulo : ultima.Lineas.FirstOrDefault(l => l.Trim().Length > 0 && !l.Contains("Bienvenido")) ?? "";
-        using (var b = new SolidBrush(Color.FromArgb(220, Texto)))
-            g.DrawString(primera, Fuentes.Texto(13f), b, new RectangleF(44, y + 104, 600, 50));
     }
+
+    // Tarjeta de INICIO (clientes y servidores): la elegida con el borde en degradé.
+    void Carta(Graphics g, Rectangle r, bool elegida)
+    {
+        Vidrio(g, r, elegida, 18, elegida ? 120 : 150);
+        if (!elegida) Relleno(g, r, Color.FromArgb((int)(18 * Brillo(r)), 255, 255, 255), 18);
+    }
+
+    static string Nombre(string s) { return s.Length == 0 ? s : s.Substring(0, 1) + s.Substring(1).ToLowerInvariant(); }
 
     // Como el selector de juego de otros launchers, pero sin repartir el GTA: todos usan el GTA de cada jugador.
     void DibujarClientes(Graphics g)
     {
-        int x = 40, y = 100, ancho = 440;
-        Escribir(g, "ELEGÍ TU CLIENTE", Fuentes.Negrita(10f), Gris, x + 4, y);
-        y += 24;
+        int x = 40, y = 272, ancho = 480;
+        Escribir(g, "TU CLIENTE", Fs(11), Gris, x + 2, y);
+        y += 22;
         string principal = Registro.GtaPrincipal, custom = Registro.GtaCustom;
         bool hayP = principal.Length > 0 && File.Exists(principal), hayC = custom.Length > 0 && File.Exists(custom);
         bool oficial = Registro.Cliente != "custom", enb = Config.EnbUrl.Length > 0 && EnbActivo();
         var clientes = new[]
         {
-            new { Id = "liviano", Nombre = "OFICIAL", Etiqueta = oficial && enb ? "ENB" : "", Estado = hayP ? "Listo" : "Sin elegir", Color = hayP ? Verde : Gris,
-                Texto = "Tu GTA con los archivos del server." },
-            new { Id = "custom", Nombre = "CUSTOM", Etiqueta = !oficial && enb ? "ENB" : "", Estado = hayC ? "Listo" : "Sin elegir", Color = hayC ? Verde : Gris,
-                Texto = hayC ? "Carpeta: " + Path.GetDirectoryName(custom) : "Tu propio GTA, con los mods y aportes que quieras." },
+            new { Id = "liviano", Nombre = "Oficial", Etiqueta = oficial && enb ? "ENB" : "", Estado = hayP ? "Listo" : "Sin elegir", Color = hayP ? Verde : Gris,
+                Texto = hayP ? "Tu GTA con los archivos del server." : "Tocá acá para elegir la carpeta de tu GTA." },
+            new { Id = "custom", Nombre = "Custom", Etiqueta = !oficial && enb ? "ENB" : "", Estado = hayC ? "Listo" : "Sin elegir", Color = hayC ? Verde : Gris,
+                Texto = hayC ? "Carpeta: " + Path.GetDirectoryName(custom) : "Tu propio GTA, con los mods que quieras." },
         };
         string[] falta = Revisiones().FirstOrDefault(f => f[2] == "mal" || f[2] == "ojo");
         foreach (var c in clientes)
         {
-            var r = new Rectangle(x, y, ancho, 92);
+            var r = new Rectangle(x, y, ancho, 84);
             bool elegido = Registro.Cliente == c.Id;
             // En el elegido, lo primero que falta (DirectX, archivos del server...) reemplaza al "Listo".
-            string estado = elegido && falta != null && Carpeta().Length > 0 ? falta[0] + ": " + falta[1].ToLowerInvariant() : c.Estado;
-            Color colorEstado = elegido && falta != null && Carpeta().Length > 0 ? (falta[2] == "mal" ? Rojo : Ambar) : c.Color;
-            Relleno(g, r, elegido ? Color.FromArgb(225, 14, 16, 22) : Color.FromArgb((int)(170 + 40 * Brillo(r)), 12, 14, 20), 14);
-            Borde(g, r, elegido ? Color.FromArgb(220, Acento) : Color.FromArgb(18, 255, 255, 255), 14, elegido ? 1.5f : 1f);
+            bool conFalta = elegido && falta != null && Carpeta().Length > 0;
+            string estado = conFalta ? (falta[2] == "mal" ? "Falta " + falta[0] : falta[0] + ": " + falta[1].ToLowerInvariant()) : c.Estado;
+            Color colorEstado = conFalta ? (falta[2] == "mal" ? Rojo : Ambar) : c.Color;
+            Carta(g, r, elegido);
             string id = c.Id;
-            zonas.Add(new Zona { R = r, Click = delegate { ElegirCliente(id); } });
+            zonas.Add(new Zona { R = r, Click = delegate { if (Registro.Cliente == id && Carpeta().Length == 0) ElegirCarpeta(); else ElegirCliente(id); } });
 
-            // Botón de radio.
-            using (var p = new Pen(elegido ? Acento : Gris, 1.6f)) g.DrawEllipse(p, r.X + 16, r.Y + 38, 16, 16);
-            if (elegido) using (var b = new SolidBrush(Acento)) g.FillEllipse(b, r.X + 20, r.Y + 42, 8, 8);
-
-            // Ícono: estrella sobre naranja (oficial) o carpeta (personalizado).
-            var icono = new Rectangle(r.X + 46, r.Y + 22, 48, 48);
-            Relleno(g, icono, c.Id == "custom" ? Campo : Acento, 12);
+            // Ícono: estrella (oficial) o carpeta (custom), sobre el degradé si es el elegido.
+            var icono = new Rectangle(r.X + 18, r.Y + 14, 56, 56);
+            if (elegido) Degrade(g, icono, 14, 0);
+            else Relleno(g, icono, Color.FromArgb(30, 255, 255, 255), 14);
+            Color ci = elegido ? Oscuro : Acento;
             if (c.Id == "custom")
             {
-                Relleno(g, new Rectangle(icono.X + 12, icono.Y + 14, 10, 6), Acento, 2);
-                Relleno(g, new Rectangle(icono.X + 12, icono.Y + 17, 24, 18), Acento, 4);
+                Relleno(g, new Rectangle(icono.X + 14, icono.Y + 18, 12, 6), ci, 2);
+                Relleno(g, new Rectangle(icono.X + 14, icono.Y + 22, 28, 18), ci, 4);
             }
-            else Estrella(g, icono.X + 24, icono.Y + 25, 13, Oscuro);
+            else Estrella(g, icono.X + 28, icono.Y + 29, 15, ci);
 
-            int tx = icono.Right + 14, tw = r.Right - 44 - tx;
-            Escribir(g, c.Nombre, Fuentes.Negrita(13.5f), Texto, tx, r.Y + 12);
-            Escribir(g, estado, Fuentes.Negrita(10f), colorEstado, tx, r.Y + 38);
-            if (c.Etiqueta.Length > 0)
-            {
-                Font chica = Fuentes.Negrita(9f);
-                var e = new Rectangle(tx + Medir(g, estado, Fuentes.Negrita(10f)) + 12, r.Y + 37, Medir(g, c.Etiqueta, chica) + 16, 18);
-                Relleno(g, e, Color.FromArgb(40, Acento), 9);
-                Centrado(g, c.Etiqueta, chica, Acento, e);
-            }
-            using (var b = new SolidBrush(Gris)) using (var formato = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
-                g.DrawString(c.Texto, Fuentes.Texto(10f), b, new RectangleF(tx, r.Y + 62, tw, 20), formato);
+            int tx = icono.Right + 18;
+            Escribir(g, c.Nombre, Fx(19), Texto, tx - 2, r.Y + 12);
+            int ex = Etiqueta(g, tx + Medir(g, c.Nombre, Fx(19)) + 10, r.Y + 17, estado.ToUpperInvariant(), colorEstado);
+            if (c.Etiqueta.Length > 0) Etiqueta(g, ex + 8, r.Y + 17, c.Etiqueta, Acento);
+            Escribir(g, Recortar(g, c.Texto, r.Right - 44 - tx, Fr(14)), Fr(14), Suave, tx, r.Y + 46);
 
             if (elegido)
             {
-                var puntos = new Rectangle(r.Right - 40, r.Y + 26, 28, 40);
+                var puntos = new Rectangle(r.Right - 40, r.Y + 22, 28, 40);
                 Relleno(g, puntos, Color.FromArgb((int)(36 * Brillo(puntos)), 255, 255, 255), 8);
-                for (int i = 0; i < 3; i++) Punto(g, puntos.X + 14, puntos.Y + 12 + i * 8, Gris);
+                for (int i = 0; i < 3; i++) using (var b = new SolidBrush(Suave)) g.FillEllipse(b, puntos.X + 11, puntos.Y + 9 + i * 9, 5, 5);
                 zonas.Add(new Zona { R = puntos, Click = delegate { AbrirMenu(puntos, OpcionesJuego()); } });
             }
-            y += 102;
+            y += 96;
         }
         DibujarServidores(g, x, y + 6, ancho);
     }
 
-    // Elegir a qué server entrar, cada uno con su luz (verde en línea, roja apagado) y su ping.
+    // Elegir a qué server entrar, cada uno con su luz: verde en línea, roja apagado. Los números van en la tarjeta de JUGAR.
     void DibujarServidores(Graphics g, int x, int y, int ancho)
     {
-        Escribir(g, "ELEGÍ EL SERVIDOR", Fuentes.Negrita(10f), Gris, x + 4, y);
-        y += 24;
+        Escribir(g, "SERVIDOR", Fs(11), Gris, x + 2, y);
+        y += 22;
         int n = Config.Servidores.Length, w = (ancho - 10 * (n - 1)) / n;
         for (int i = 0; i < n; i++)
         {
             var r = new Rectangle(x + i * (w + 10), y, w, 64);
             bool elegido = Registro.Servidor == i, sinIp = Config.Servidores[i].Item2.Length == 0;
             EstadoServidor e = estados[i];
-            Relleno(g, r, elegido ? Color.FromArgb(225, 14, 16, 22) : Color.FromArgb((int)(170 + 40 * Brillo(r)), 12, 14, 20), 14);
-            Borde(g, r, elegido ? Color.FromArgb(220, Acento) : Color.FromArgb(18, 255, 255, 255), 14, elegido ? 1.5f : 1f);
+            Carta(g, r, elegido);
             int indice = i;
             if (!sinIp) zonas.Add(new Zona { R = r, Click = delegate { Registro.Servidor = indice; Invalidate(); } });
 
             Color luz = sinIp || !serverConsultado ? Gris : e.EnLinea ? Verde : Rojo;
-            using (var b = new SolidBrush(Color.FromArgb(60, luz))) g.FillEllipse(b, r.X + 14, r.Y + 22, 20, 20);
-            using (var b = new SolidBrush(luz)) g.FillEllipse(b, r.X + 19, r.Y + 27, 10, 10);
-            Escribir(g, Config.Servidores[i].Item1, Fuentes.Negrita(13f), Texto, r.X + 46, r.Y + 12);
-            string detalle = sinIp ? "Todavía sin IP" : !serverConsultado ? "Consultando..." : e.EnLinea ? e.Ping + " ms · " + e.Jugadores + "/" + e.Maximo + " jugadores" : "Apagado";
-            Escribir(g, Recortar(g, detalle, r.Right - 14 - (r.X + 46), Fuentes.Texto(10f)), Fuentes.Texto(10f), e.EnLinea ? Gris : Color.FromArgb(200, Gris), r.X + 46, r.Y + 36);
+            Punto(g, r.X + 26, r.Y + 32, luz, 5);
+            Escribir(g, Nombre(Config.Servidores[i].Item1), Fx(16), sinIp ? Gris : Texto, r.X + 44, r.Y + 9);
+            string detalle = sinIp ? "Todavía sin IP" : !serverConsultado ? "Consultando..." : e.EnLinea ? "En línea" : "Apagado";
+            Escribir(g, detalle, Fr(13), sinIp ? Gris : Suave, r.X + 46, r.Y + 36);
         }
     }
 
     Rectangle Hoja(Graphics g, string titulo)
     {
-        Vidrio(g, Contenido);
-        Escribir(g, titulo, Fuentes.Titulo(34f), Texto, Contenido.X + 28, Contenido.Y + 20);
-        return new Rectangle(Contenido.X + 28, Contenido.Y + 76, Contenido.Width - 56, Contenido.Height - 96);
+        Vidrio(g, Contenido, false, 24, 150);
+        Escribir(g, titulo, Fx(34), Texto, Contenido.X + 28, Contenido.Y + 20);
+        return new Rectangle(Contenido.X + 32, Contenido.Y + 90, Contenido.Width - 64, Contenido.Height - 114);
     }
 
     void DibujarNoticias(Graphics g)
     {
         Rectangle area = Hoja(g, "NOTICIAS");
-        if (listaParches.Count > 0)
+        // Como el título no es un botón, la elección va a la derecha del título.
+        int x = Contenido.Right - 32;
+        foreach (string[] o in new[] { new[] { "l", "LAUNCHER" }, new[] { "p", "PARCHES DEL SERVER" } })
         {
-            // Como el título no es un botón, la elección va a la derecha del título.
-            int x = Contenido.Right - 28;
-            foreach (string[] o in new[] { new[] { "p", "PARCHES DEL SERVER" }, new[] { "n", "NOTICIAS" } })
-            {
-                Font chica = Fuentes.Negrita(9.5f);
-                var r = new Rectangle(x - Medir(g, o[1], chica) - 28, Contenido.Y + 28, Medir(g, o[1], chica) + 28, 28);
-                bool parches = o[0] == "p";
-                Chip(g, r, o[1], verParches == parches, delegate { verParches = parches; scroll = 0; });
-                x = r.X - 8;
-            }
+            var r = new Rectangle(x - Medir(g, o[1], Fx(12)) - 36, Contenido.Y + 32, Medir(g, o[1], Fx(12)) + 36, 32);
+            bool launcher = o[0] == "l";
+            Chip(g, r, o[1], verLauncher == launcher, delegate { verLauncher = launcher; scroll = 0; });
+            x = r.X - 8;
         }
-        Feed(g, area, verParches ? listaParches : listaNoticias, verParches ? "p" : "n");
-    }
-
-    void DibujarNovedades(Graphics g)
-    {
-        Rectangle area = Hoja(g, "NOVEDADES DEL LAUNCHER");
-        if (listaNovedades.Count == 0) { Escribir(g, "Todavía no hay novedades cargadas.", Fuentes.Texto(13f), Gris, area.X, area.Y); return; }
-        Feed(g, area, listaNovedades, "v");
+        List<Noticia> lista = verLauncher ? listaNovedades : listaParches;
+        if (lista.Count == 0) { Escribir(g, verLauncher ? "Todavía no hay novedades del launcher." : "Todavía no hay parches.", Fr(15), Gris, area.X, area.Y); return; }
+        Feed(g, area, lista, verLauncher ? "v" : "p");
     }
 
     // Lista de noticias desplegables: la primera viene abierta y las demás muestran solo su título hasta tocarlas.
     void Feed(Graphics g, Rectangle area, List<Noticia> lista, string clave)
     {
-        Font texto = Fuentes.Texto(12.5f), titulo = Fuentes.Titulo(22f), chica = Fuentes.Negrita(9.5f);
+        Font texto = Fr(14), titulo = Fx(18);
         g.SetClip(area);
-        int y = area.Y - scroll;
+        int y = area.Y - scroll, tx = area.X + 20, ancho = area.Width - 40;
         for (int i = 0; i < lista.Count; i++)
         {
             Noticia n = lista[i];
             string k = clave + i;
             bool abierta;
             if (!abiertas.TryGetValue(k, out abierta)) abierta = i == 0 || n.Titulo.Length == 0;
-            int arriba = y;
-            if (n.Etiqueta.Length > 0 || n.Fecha.Length > 0)
-            {
-                int x = area.X;
-                if (n.Etiqueta.Length > 0)
+            // Primero se mide, para dibujar la tarjeta del tamaño justo.
+            var lineas = new List<Tuple<string, bool, int>>();
+            if (abierta)
+                foreach (string l in n.Lineas)
                 {
-                    string e = n.Etiqueta.ToUpperInvariant();
-                    int w = Medir(g, e, chica) + 22;
-                    Color ce = ColorEtiqueta(n.Etiqueta);
-                    Relleno(g, new Rectangle(x, y, w, 20), Color.FromArgb(45, ce), 10);
-                    Centrado(g, e, chica, ce, new Rectangle(x, y, w, 20));
-                    x += w + 10;
+                    bool punto = l.StartsWith("- ");
+                    string t = punto ? l.Substring(2) : l;
+                    lineas.Add(Tuple.Create(t, punto, t.Length == 0 ? 10 : (int)g.MeasureString(t, texto, ancho - (punto ? 22 : 0)).Height));
                 }
-                Escribir(g, n.Fecha, chica, Gris, x, y + 3);
-                y += 26;
+            int alto = 76 + (lineas.Count > 0 ? lineas.Sum(l => l.Item3 + 4) + 12 : 0);
+            var carta = new Rectangle(area.X, y, area.Width, alto);
+            if (abierta) Vidrio(g, carta, true, 16, 110);
+            else
+            {
+                Relleno(g, carta, Color.FromArgb((int)(14 + 14 * Brillo(carta)), 255, 255, 255), 16);
+                Borde(g, carta, Color.FromArgb(24, 255, 255, 255), 16, 1f);
             }
+            int x = tx;
+            if (n.Etiqueta.Length > 0) x = Etiqueta(g, x, y + 16, n.Etiqueta.ToUpperInvariant(), ColorEtiqueta(n.Etiqueta)) + 12;
+            Escribir(g, n.Fecha, Fr(12), Gris, x, y + 18);
             if (n.Titulo.Length > 0)
             {
-                Escribir(g, Recortar(g, n.Titulo, area.Width - 40, titulo), titulo, Texto, area.X, y);
-                Escribir(g, abierta ? "–" : "+", Fuentes.Titulo(22f), Acento, area.Right - 18, y);
-                y += 36;
-                var cabeza = Rectangle.Intersect(new Rectangle(area.X, arriba, area.Width, y - arriba), area);
+                Escribir(g, Recortar(g, n.Titulo, ancho - 30, titulo), titulo, Texto, tx - 2, y + 40);
+                Escribir(g, abierta ? "–" : "+", Fs(22), Acento, area.Right - 40, y + 26);
+                var cabeza = Rectangle.Intersect(new Rectangle(area.X, y, area.Width, 76), area);
                 if (cabeza.Height > 0)
                 {
                     bool estaba = abierta;
                     zonas.Add(new Zona { R = cabeza, Click = delegate { abiertas[k] = !estaba; Invalidate(); } });
                 }
             }
-            if (abierta)
-                foreach (string l in n.Lineas)
-                {
-                    bool punto = l.StartsWith("- ");
-                    string t = punto ? l.Substring(2) : l;
-                    int sangria = punto ? 18 : 0;
-                    int alto = t.Length == 0 ? 10 : (int)g.MeasureString(t, texto, area.Width - sangria).Height;
-                    if (punto) Punto(g, area.X + 5, y + 11, Acento);
-                    using (var b = new SolidBrush(Color.FromArgb(225, Texto))) g.DrawString(t, texto, b, new RectangleF(area.X + sangria, y, area.Width - sangria, alto + 4));
-                    y += alto + 2;
-                }
-            y += abierta ? 14 : 6;
-            using (var p = new Pen(Color.FromArgb(28, 255, 255, 255))) g.DrawLine(p, area.X, y, area.Right, y);
-            y += 16;
+            int ly = y + 78;
+            foreach (var l in lineas)
+            {
+                if (l.Item2) using (var b = new SolidBrush(Acento)) g.FillEllipse(b, tx + 3, ly + 8, 6, 6);
+                int sangria = l.Item2 ? 22 : 0;
+                using (var b = new SolidBrush(Suave)) g.DrawString(l.Item1, texto, b, new RectangleF(tx + sangria, ly, ancho - sangria, l.Item3 + 4));
+                ly += l.Item3 + 4;
+            }
+            y += alto + 12;
         }
         g.ResetClip();
         int total = y + scroll - area.Y;
@@ -2801,37 +2882,36 @@ class Ventana : Lienzo
     void DibujarSoporte(Graphics g)
     {
         Rectangle area = Hoja(g, "SOPORTE");
-        Escribir(g, "¿QUÉ TE PASA?", Fuentes.Negrita(10f), Gris, area.X, area.Y);
-        int ancho = (area.Width - 10) / 2;
-        for (int i = 0; i < Soporte.Motivos.Length; i++)
+        Escribir(g, "¿QUÉ TE PASA?", Fs(11), Gris, area.X, area.Y - 2);
+        int x = area.X, y = area.Y + 20;
+        foreach (string m in Soporte.Motivos)
         {
-            string m = Soporte.Motivos[i];
-            var r = new Rectangle(area.X + (i % 2) * (ancho + 10), area.Y + 22 + (i / 2) * 38, ancho, 32);
-            bool elegido = motivo == m;
-            Relleno(g, r, elegido ? Color.FromArgb(55, Acento) : Color.FromArgb((int)(16 + 20 * Brillo(r)), 255, 255, 255), 10);
-            Punto(g, r.X + 14, r.Y + 16, elegido ? Acento : Gris);
-            Escribir(g, m, Fuentes.Negrita(11.5f), Texto, r.X + 26, r.Y + 7);
-            zonas.Add(new Zona { R = r, Click = delegate { motivo = m; Invalidate(); } });
+            int w = Medir(g, m, Fs(13)) + 40;
+            if (x + w > area.Right) { x = area.X; y += 44; }
+            var r = new Rectangle(x, y, w, 34);
+            string este = m;
+            Chip(g, r, m, motivo == m, delegate { motivo = este; Invalidate(); });
+            x += w + 10;
         }
-        var caja = new Rectangle(detalle.Left - 8, detalle.Top - 6, detalle.Width + 16, detalle.Height + 12);
-        Escribir(g, "CONTANOS QUÉ PASÓ: QUÉ ESTABAS HACIENDO, QUÉ VISTE, DESDE CUÁNDO", Fuentes.Negrita(10f), Gris, area.X, caja.Y - 22);
-        Relleno(g, caja, Campo, 10);
-        if (detalle.Focused) Borde(g, caja, Acento, 10, 1.5f);
+        var caja = new Rectangle(detalle.Left - 24, detalle.Top - 18, detalle.Width + 48, detalle.Height + 34);
+        Escribir(g, "CONTANOS QUÉ PASÓ: QUÉ ESTABAS HACIENDO, QUÉ VISTE, DESDE CUÁNDO", Fs(11), Gris, area.X, caja.Y - 22);
+        Relleno(g, caja, Campo, 16);
+        Borde(g, caja, detalle.Focused ? Acento : Color.FromArgb(60, 255, 255, 255), 16, detalle.Focused ? 2f : 1f);
 
-        var marca = new Rectangle(area.X, caja.Bottom + 14, 40, 22);
+        var marca = new Rectangle(area.X, caja.Bottom + 26, 50, 26);
         Interruptor(g, marca, conInforme, delegate { conInforme = !conInforme; });
-        Escribir(g, "Sumar el informe técnico (versión, Windows, revisiones y último cierre del GTA)", Fuentes.Texto(11f), Texto, marca.Right + 12, marca.Y + 2);
+        Escribir(g, "Sumar el informe técnico (versión, Windows, revisiones y último cierre del GTA)", Fr(14), Suave, marca.Right + 14, marca.Y + 3);
 
-        Boton(g, new Rectangle(area.X, area.Bottom - 44, 240, 40), "COPIAR PARA DISCORD", true, EnviarSoporte);
-        Escribir(g, "Se copia el mensaje: pegalo con Ctrl+V en el canal de soporte.", Fuentes.Texto(10.5f), Gris, area.X + 256, area.Bottom - 32);
+        Boton(g, new Rectangle(area.X, area.Bottom - 54, 284, 54), "COPIAR PARA DISCORD", true, EnviarSoporte, 16);
+        Escribir(g, "Se copia el mensaje: pegalo con Ctrl+V en el canal de soporte.", Fr(13), Gris, area.X + 304, area.Bottom - 36);
     }
 
     Color ColorEtiqueta(string etiqueta)
     {
         string e = etiqueta.ToLowerInvariant();
-        if (e.StartsWith("actualiz")) return Acento;
+        if (e.StartsWith("actualiz") || e.StartsWith("parche")) return Acento;
         if (e.StartsWith("arreglo") || e.StartsWith("fix")) return Verde;
-        if (e.StartsWith("evento")) return Color.FromArgb(110, 170, 255);
+        if (e.StartsWith("evento")) return Rosa;
         if (e.StartsWith("aviso")) return Rojo;
         return Gris;
     }
@@ -2840,107 +2920,162 @@ class Ventana : Lienzo
     {
         Rectangle area = Hoja(g, "AJUSTES");
         int y = area.Y;
-        FilaAjuste(g, area, ref y, "ESCONDER EL LAUNCHER MIENTRAS JUGÁS", "Se va a la bandeja, al lado del reloj, y vuelve solo cuando cerrás el GTA. Si no, queda minimizado.",
-            Ajustes.Bandeja, delegate { Ajustes.Bandeja = !Ajustes.Bandeja; });
-        FilaAjuste(g, area, ref y, "JUGAR SIN LAS PANTALLAS DEL SERVER (CEF)", "No baja el CEF y lo apaga en el GTA de este cliente. Se juega con los diálogos de siempre.",
+        FilaAjuste(g, area, ref y, "", "Esconder el launcher mientras jugás", "Se va a la bandeja, al lado del reloj, y vuelve cuando cerrás el GTA. Si no, queda minimizado.",
+            Ajustes.Bandeja, delegate { Ajustes.Bandeja = !Ajustes.Bandeja; }, null);
+        FilaAjuste(g, area, ref y, "", "Jugar sin las pantallas del server (CEF)", "No baja el CEF y lo apaga en el GTA de este cliente. Se juega con los diálogos de siempre.",
             Ajustes.SinCef, delegate
             {
                 if (Juego.Abierto()) { Mensaje("Cerrá el GTA antes de cambiar esto.", "CEF", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
                 Ajustes.SinCef = !Ajustes.SinCef;
                 // Si se vuelve a prender y falta, se baja al tocar JUGAR.
                 try { if (Carpeta().Length > 0) Actualizador.ApagarCef(Carpeta(), Ajustes.SinCef); } catch (Exception) { }
-            });
-        Escribir(g, "NOVEDADES DEL LAUNCHER", Fuentes.Negrita(13f), Texto, area.X, y + 10);
-        Boton(g, new Rectangle(area.Right - 150, y + 4, 150, 34), "VER", false, delegate { Pestana("novedades"); });
-        Escribir(g, "Qué trajo cada versión del launcher.", Fuentes.Texto(11f), Gris, area.X, y + 40);
-        using (var p = new Pen(Color.FromArgb(28, 255, 255, 255))) g.DrawLine(p, area.X, y + 66, area.Right, y + 66);
-        y += 76;
-        Escribir(g, "INFORMES DE CIERRES DEL GTA", Fuentes.Negrita(13f), Texto, area.X, y + 10);
-        Boton(g, new Rectangle(area.Right - 150, y + 4, 150, 34), "ABRIR", false, delegate
+            }, null);
+        FilaAjuste(g, area, ref y, "", "Informes de cierres del GTA", "Si el juego se cerró de golpe, acá queda lo que pasó. Soporte te lo puede pedir.", false, delegate
         {
             Directory.CreateDirectory(Soporte.DirInformes());
             Abrir(Soporte.DirInformes());
-        });
-        Escribir(g, "Si el juego se cerró de golpe, acá queda lo que pasó. Soporte te lo puede pedir.", Fuentes.Texto(11f), Gris, area.X, y + 40);
-        Escribir(g, "VERSIÓN DEL LAUNCHER " + Config.Version, Fuentes.Negrita(10f), Gris, area.X, area.Bottom - 20);
+        }, "ABRIR");
+        Escribir(g, "Versión del launcher " + Config.Version, Fr(12), Gris, area.X, area.Bottom - 20);
     }
 
-    void FilaAjuste(Graphics g, Rectangle area, ref int y, string nombre, string detalle, bool activo, Action cambiar)
+    // Una fila de AJUSTES: ícono, nombre y detalle, y a la derecha un interruptor (boton null) o un botón.
+    void FilaAjuste(Graphics g, Rectangle area, ref int y, string icono, string nombre, string detalle, bool activo, Action accion, string boton)
     {
-        Escribir(g, nombre, Fuentes.Negrita(13f), Texto, area.X, y + 10);
-        Interruptor(g, new Rectangle(area.Right - 44, y + 10, 44, 24), activo, cambiar);
-        Escribir(g, detalle, Fuentes.Texto(11f), Gris, area.X, y + 40);
-        using (var p = new Pen(Color.FromArgb(28, 255, 255, 255))) g.DrawLine(p, area.X, y + 66, area.Right, y + 66);
-        y += 76;
+        var r = new Rectangle(area.X, y, area.Width, 82);
+        Relleno(g, r, Color.FromArgb(16, 255, 255, 255), 16);
+        var cuadro = new Rectangle(r.X + 18, r.Y + 17, 48, 48);
+        Relleno(g, cuadro, Color.FromArgb(34, Acento), 12);
+        Font iconos = Fuentes.Iconos(14f);
+        if (iconos != null) Centrado(g, icono, iconos, Acento, cuadro);
+        int derecha = boton == null ? 80 : 140;
+        Escribir(g, nombre, Fx(17), Texto, r.X + 84, r.Y + 14);
+        Escribir(g, Recortar(g, detalle, r.Width - 86 - derecha, Fr(13)), Fr(13), Suave, r.X + 86, r.Y + 46);
+        if (boton == null) Interruptor(g, new Rectangle(r.Right - 70, r.Y + 28, 50, 26), activo, accion);
+        else Boton(g, new Rectangle(r.Right - 130, r.Y + 24, 110, 34), boton, false, accion, 12);
+        y += 94;
     }
 
     void DibujarMods(Graphics g)
     {
         Rectangle area = Hoja(g, "MODS");
-        if (catalogo.Count == 0) { Escribir(g, catalogoTexto, Fuentes.Texto(13f), Gris, area.X, area.Y); return; }
+        if (catalogo.Count == 0) { Escribir(g, catalogoTexto, Fr(15), Gris, area.X, area.Y); return; }
         int instalados = catalogo.Count(m => Mods.Instalado(m.Id));
-        Escribir(g, instalados + " de " + catalogo.Count + " instalados · Los elige el staff. Se instalan y se sacan con un clic.", Fuentes.Texto(11.5f), Gris, area.X, area.Y);
+        Escribir(g, instalados + " de " + catalogo.Count + " instalados · Los elige el staff. Se instalan y se sacan con un clic.", Fr(14), Suave, area.X, area.Y - 8);
 
         // Filtro por categoría.
-        int x = area.X, y = area.Y + 28;
-        Font chica = Fuentes.Negrita(9.5f);
+        int x = area.X, y = area.Y + 22;
         foreach (string cat in new[] { "" }.Concat(catalogo.Select(m => m.Categoria).Where(c => c.Length > 0).Distinct()))
         {
             string t = cat.Length == 0 ? "TODOS" : cat.ToUpperInvariant();
-            var r = new Rectangle(x, y, Medir(g, t, chica) + 28, 28);
+            var r = new Rectangle(x, y, Medir(g, t, Fs(13)) + 32, 30);
             if (r.Right > area.Right) break;
             string c = cat;
             Chip(g, r, t, filtroMods == cat, delegate { filtroMods = c; scroll = 0; });
             x = r.Right + 8;
         }
 
+        // Tarjetas en dos columnas; la de un mod instalado, con el borde en degradé.
         var visibles = catalogo.Where(m => filtroMods.Length == 0 || m.Categoria == filtroMods).ToList();
-        var lista = new Rectangle(area.X, y + 44, area.Width, area.Bottom - y - 44);
-        const int alto = 104;
-        scroll = Math.Min(scroll, Math.Max(0, visibles.Count * alto - lista.Height));
+        var lista = new Rectangle(area.X, y + 46, area.Width, area.Bottom - y - 46);
+        const int alto = 186, hueco = 12;
+        int ancho = (lista.Width - hueco) / 2, filas = (visibles.Count + 1) / 2;
+        scroll = Math.Min(scroll, Math.Max(0, filas * (alto + hueco) - hueco - lista.Height));
         g.SetClip(lista);
         for (int i = 0; i < visibles.Count; i++)
         {
             ModOpcional m = visibles[i];
-            int fy = lista.Y + i * alto - scroll;
-            if (fy + alto < lista.Y || fy > lista.Bottom) continue;
-            var foto = new Rectangle(lista.X, fy, 150, 86);
+            var r = new Rectangle(lista.X + (i % 2) * (ancho + hueco), lista.Y + (i / 2) * (alto + hueco) - scroll, ancho, alto);
+            if (r.Bottom < lista.Y || r.Y > lista.Bottom) continue;
+            bool puesto = Mods.Instalado(m.Id), viejo = modsViejos.Contains(m.Id);
+            if (puesto) Vidrio(g, r, true, 18, 110);
+            else
+            {
+                Relleno(g, r, Color.FromArgb(14, 255, 255, 255), 18);
+                Borde(g, r, Color.FromArgb(26, 255, 255, 255), 18, 1f);
+            }
+            int textoAncho = r.Width - 40;
             Image img;
             if (fotosMods.TryGetValue(m.Id, out img) && img != null)
             {
-                // La foto llena el recuadro recortando lo que sobra, sin deformarla.
-                float escala = Math.Max((float)foto.Width / img.Width, (float)foto.Height / img.Height);
-                float w = foto.Width / escala, h = foto.Height / escala;
+                // La foto llena su recuadro recortando lo que sobra, sin deformarla.
+                var foto = new Rectangle(r.Right - 20 - 120, r.Y + 18, 120, 68);
+                float escala = Math.Max((float)foto.Width / img.Width, (float)foto.Height / img.Height), w = foto.Width / escala, h = foto.Height / escala;
                 using (var camino = Redondo(foto, 10)) g.SetClip(camino, System.Drawing.Drawing2D.CombineMode.Intersect);
                 g.DrawImage(img, foto, new RectangleF((img.Width - w) / 2, (img.Height - h) / 2, w, h), GraphicsUnit.Pixel);
                 g.SetClip(lista);
+                textoAncho -= 130;
             }
-            else
-            {
-                Relleno(g, foto, Color.FromArgb(18, 255, 255, 255), 10);
-                string letra = m.Nombre.Length > 0 ? m.Nombre.Substring(0, 1).ToUpperInvariant() : "?";
-                Font f = Fuentes.Titulo(34f);
-                Escribir(g, letra, f, Color.FromArgb(120, Acento), foto.X + (foto.Width - Medir(g, letra, f)) / 2, foto.Y + 18);
-            }
-            int tx = foto.Right + 16, ancho = lista.Right - 170 - tx;
-            Escribir(g, Recortar(g, m.Nombre, ancho, Fuentes.Titulo(20f)), Fuentes.Titulo(20f), Texto, tx, fy - 2);
-            string sub = string.Join(" · ", new[] { m.Categoria, m.Autor.Length > 0 ? "por " + m.Autor : "" }.Where(t => t.Length > 0));
-            Escribir(g, Recortar(g, sub, ancho, Fuentes.Negrita(9.5f)), Fuentes.Negrita(9.5f), Acento, tx, fy + 30);
-            using (var b = new SolidBrush(Color.FromArgb(215, Texto)))
+            if (m.Categoria.Length > 0) Etiqueta(g, r.X + 20, r.Y + 18, m.Categoria.ToUpperInvariant(), Acento);
+            Escribir(g, Recortar(g, m.Nombre, textoAncho, Fx(20)), Fx(20), Texto, r.X + 18, r.Y + 48);
+            if (m.Autor.Length > 0) Escribir(g, Recortar(g, "por " + m.Autor, textoAncho, Fr(12)), Fr(12), Gris, r.X + 20, r.Y + 80);
+            using (var b = new SolidBrush(Suave))
             using (var formato = new StringFormat { Trimming = StringTrimming.EllipsisWord })
-                g.DrawString(m.Descripcion, Fuentes.Texto(11f), b, new RectangleF(tx, fy + 48, ancho, 38), formato);
+                g.DrawString(m.Descripcion, Fr(14), b, new RectangleF(r.X + 20, r.Y + 102, r.Width - 40, 38), formato);
 
-            bool puesto = Mods.Instalado(m.Id), viejo = modsViejos.Contains(m.Id);
-            var boton = new Rectangle(lista.Right - 150, fy + 24, 150, 38);
+            if (puesto && !viejo)
+            {
+                Punto(g, r.X + 28, r.Y + 156, Verde);
+                Escribir(g, "Instalado", Fs(13), Verde, r.X + 40, r.Y + 147);
+            }
+            var boton = new Rectangle(r.Right - 142, r.Y + 140, 122, 32);
             if (boton.Y >= lista.Y && boton.Bottom <= lista.Bottom)
             {
                 ModOpcional este = m;
-                Boton(g, boton, viejo ? "ACTUALIZAR" : puesto ? "QUITAR" : "INSTALAR", viejo || !puesto, delegate { CambiarMod(este); });
+                Boton(g, boton, viejo ? "ACTUALIZAR" : puesto ? "SACAR" : "INSTALAR", viejo || !puesto, delegate { CambiarMod(este); }, 12);
             }
-            if (puesto && !viejo) Escribir(g, "INSTALADO", Fuentes.Negrita(9.5f), Verde, boton.X + (boton.Width - Medir(g, "INSTALADO", Fuentes.Negrita(9.5f))) / 2, fy + 66);
-            using (var p = new Pen(Color.FromArgb(28, 255, 255, 255))) g.DrawLine(p, lista.X, fy + alto - 9, lista.Right, fy + alto - 9);
         }
         g.ResetClip();
+    }
+
+    // COMUNIDAD, arriba a la derecha en todas las pestañas: Discord grande y las demás redes abajo. Sin links, invita igual pero sin botones.
+    void DibujarComunidad(Graphics g)
+    {
+        Rectangle c = Comunidad;
+        Vidrio(g, c, false, 24, 150);
+        int x = c.X + 30, ancho = c.Width - 60;
+        bool chica = c.Height < 260;
+        Escribir(g, "COMUNIDAD", Fs(11), Gris, x, c.Y + 24);
+        Escribir(g, "Sumate al Discord", Fx(24), Texto, x - 2, c.Y + 42);
+        if (!chica)
+        {
+            Escribir(g, "Soporte, eventos y anuncios del staff.", Fr(14), Suave, x, c.Y + 80);
+            if (discordInfo.Length > 0) Escribir(g, discordInfo, Fr(12), Gris, x, c.Y + 102);
+        }
+        else if (discordInfo.Length > 0) Escribir(g, discordInfo, Fr(12), Gris, c.Right - 30 - Medir(g, discordInfo, Fr(12)), c.Y + 25);
+
+        var redes = Config.Redes.Where(r => r.Key != "Discord" && r.Key != "Soporte" && r.Value.Length > 0).ToList();
+        int abajo = c.Bottom - (chica ? 24 : 30);
+        if (redes.Count > 0)
+        {
+            int alto = chica ? 34 : 40, w = (ancho - 8 * (redes.Count - 1)) / redes.Count;
+            for (int i = 0; i < redes.Count; i++)
+            {
+                var r = new Rectangle(x + i * (w + 8), abajo - alto, w, alto);
+                string url = redes[i].Value;
+                Relleno(g, r, Color.FromArgb((int)(22 + 20 * Brillo(r)), 255, 255, 255), alto / 2);
+                Borde(g, r, Color.FromArgb(60, 255, 255, 255), alto / 2, 1f);
+                Centrado(g, redes[i].Key.ToUpperInvariant(), Fs(12), Suave, r);
+                zonas.Add(new Zona { R = r, Click = delegate { Abrir(url); } });
+            }
+            abajo -= alto + (chica ? 10 : 20);
+        }
+        string discord = Red("Discord");
+        var b = new Rectangle(x, abajo - (chica ? 44 : 52), ancho, chica ? 44 : 52);
+        if (discord.Length == 0)
+        {
+            // Todavía sin link: el lugar del botón queda marcado, apagado.
+            Relleno(g, b, Color.FromArgb(18, 255, 255, 255), b.Height / 2);
+            Borde(g, b, Color.FromArgb(50, 255, 255, 255), b.Height / 2, 1f);
+            Centrado(g, "DISCORD MUY PRONTO", Fx(15), Gris, b);
+            return;
+        }
+        Relleno(g, b, Mezcla(Color.FromArgb(88, 101, 242), Color.FromArgb(118, 130, 255), Brillo(b)), b.Height / 2);
+        // Globito de chat como ícono.
+        int gx = b.X + 22, gy = b.Y + b.Height / 2 - 10;
+        Relleno(g, new Rectangle(gx, gy, 24, 17), Texto, 6);
+        using (var br = new SolidBrush(Texto)) g.FillPolygon(br, new[] { new Point(gx + 6, gy + 16), new Point(gx + 12, gy + 16), new Point(gx + 5, gy + 23) });
+        Centrado(g, "ENTRAR AL DISCORD", Fx(16), Texto, new Rectangle(b.X + 30, b.Y, b.Width - 30, b.Height));
+        zonas.Add(new Zona { R = b, Click = delegate { Abrir(discord); } });
     }
 
     // [nombre, valor, ok|ojo|mal|nada]
@@ -2961,66 +3096,71 @@ class Ventana : Lienzo
         };
     }
 
+
+    // Ícono chico de la tarjeta de JUGAR; sin la fuente de íconos de Windows, un punto del mismo color.
+    static void Icono(Graphics g, string icono, Color c, int x, int y)
+    {
+        Font f = Fuentes.Iconos(12f);
+        if (f != null) Escribir(g, icono, f, c, x, y);
+        else Punto(g, x + 10, y + 11, c, 5);
+    }
+
     void DibujarTarjeta(Graphics g)
     {
         Rectangle t = Tarjeta;
-        Vidrio(g, t);
-        int x = t.X + 28;
+        Vidrio(g, t, true, 24, 150);
+        int x = t.X + 30, y = t.Y + 24, ancho = t.Width - 60;
 
-        Escribir(g, "SERVIDOR", Fuentes.Negrita(9.5f), Gris, x, t.Y + 24);
-        Escribir(g, Recortar(g, server.EnLinea && server.Nombre.Length > 0 ? server.Nombre.ToUpperInvariant() : "AMERICA RP", t.Width - 56, Fuentes.Titulo(28f)), Fuentes.Titulo(28f), Texto, x, t.Y + 40);
-        Color c = !serverConsultado ? Gris : server.EnLinea ? Verde : Rojo;
-        Punto(g, x + 4, t.Y + 88, c);
-        Escribir(g, !serverConsultado ? "CONSULTANDO..." : server.EnLinea ? "EN LÍNEA · " + server.Ping + " MS" : "APAGADO", Fuentes.Negrita(10f), c, x + 14, t.Y + 79);
-
-        string num = server.EnLinea ? server.Jugadores.ToString() : "0";
-        Escribir(g, num, Fuentes.Titulo(80f), Texto, x - 4, t.Y + 100);
-        int nx = x + Medir(g, num, Fuentes.Titulo(80f)) + 4;
-        Escribir(g, "/ " + (server.EnLinea ? server.Maximo : 0), Fuentes.Titulo(26f), Gris, nx, t.Y + 132);
-        Escribir(g, "JUGADORES", Fuentes.Negrita(9.5f), Gris, nx + 2, t.Y + 164);
-
-        using (var p = new Pen(Color.FromArgb(36, 255, 255, 255))) g.DrawLine(p, x, t.Y + 212, t.Right - 28, t.Y + 212);
-        Escribir(g, "TU NICK", Fuentes.Negrita(9.5f), Gris, x, t.Y + 228);
-        var caja = new Rectangle(x, t.Y + 250, t.Width - 56, 48);
-        Relleno(g, caja, Campo, 10);
-        if (nick.Focused) Borde(g, caja, Acento, 10, 1.5f);
-
-        Escribir(g, "TU TIEMPO JUGADO", Fuentes.Negrita(9.5f), Gris, x, t.Y + 320);
+        Escribir(g, "TU NICK", Fs(11), Gris, x, y);
+        var caja = new Rectangle(x, y + 20, ancho, 50);
+        Relleno(g, caja, Campo, 14); // opaco: del mismo color que la caja de texto de Windows que va encima
+        Borde(g, caja, nick.Focused ? Acento : Color.FromArgb(90, Acento), 14, 2f);
+        Icono(g, "", Acento, x + 12, y + 34);
         DateTime fin = Registro.FinUltima;
-        if (fin == DateTime.MinValue) Escribir(g, "Todavía no jugaste", Fuentes.Negrita(13f), Texto, x, t.Y + 340);
-        else
+        string ultima = "Todavía no jugaste";
+        if (fin != DateTime.MinValue)
         {
-            Escribir(g, Juego.Duracion(Registro.MinutosJugados) + " en total", Fuentes.Negrita(13f), Texto, x, t.Y + 340);
             string cuando = fin.Date == DateTime.Today ? "hoy" : fin.Date == DateTime.Today.AddDays(-1) ? "ayer" : fin.ToString("dd/MM");
-            Escribir(g, "Última partida: " + Juego.Duracion(Registro.MinutosUltima) + " · " + cuando, Fuentes.Texto(10f), Gris, x, t.Y + 364);
+            ultima = "Tu última partida: " + Juego.Duracion(Registro.MinutosUltima) + ", " + cuando;
+        }
+        Escribir(g, ultima, Fr(12), Gris, x, y + 80);
+
+        y += 110;
+        using (var p = new Pen(Color.FromArgb(34, 255, 255, 255))) g.DrawLine(p, x, y, x + ancho, y);
+        bool on = serverConsultado && server.EnLinea;
+        var columnas = new[]
+        {
+            new { Icono = "", Valor = on ? server.Jugadores + " / " + server.Maximo : "0 / 0", Nombre = "Jugadores", Color = on ? Acento : Gris },
+            new { Icono = "", Valor = on ? server.Ping + " ms" : !serverConsultado ? "..." : "—", Nombre = !serverConsultado ? "Consultando" : on ? "Ping" : "Apagado", Color = !serverConsultado ? Gris : on ? Verde : Rojo },
+            new { Icono = "", Valor = Registro.MinutosJugados / 60 + " hs", Nombre = "Jugadas", Color = Acento },
+        };
+        int cw = ancho / 3;
+        for (int i = 0; i < 3; i++)
+        {
+            int cx = x + i * cw;
+            if (i > 0) using (var p = new Pen(Color.FromArgb(30, 255, 255, 255))) g.DrawLine(p, cx - 6, y + 14, cx - 6, y + 68);
+            Icono(g, columnas[i].Icono, columnas[i].Color, cx + 2, y + 22);
+            Escribir(g, Recortar(g, columnas[i].Valor, cw - 40, Fx(17)), Fx(17), Texto, cx + 32, y + 12);
+            Escribir(g, columnas[i].Nombre, Fr(12), Gris, cx + 34, y + 40);
         }
 
-        var jugar = new Rectangle(x, t.Bottom - 92, t.Width - 56, 64);
-        Relleno(g, jugar, ocupado ? Color.FromArgb(120, Acento) : Mezcla(Acento, Color.FromArgb(255, 196, 92), Brillo(jugar)), 14);
-        Centrado(g, ocupado ? "ESPERÁ..." : "JUGAR", Fuentes.Titulo(34f), Oscuro, jugar);
-        if (!ocupado) zonas.Add(new Zona { R = jugar, Click = Jugar });
+        var jugar = new Rectangle(x, t.Bottom - 90, ancho, 60);
+        if (ocupado)
+        {
+            Relleno(g, jugar, Color.FromArgb(22, 255, 255, 255), 30);
+            Borde(g, jugar, Color.FromArgb(60, 255, 255, 255), 30, 1f);
+            Centrado(g, "ESPERÁ...", Fx(26), Gris, jugar);
+        }
+        else Boton(g, jugar, "JUGAR", true, Jugar, 26);
     }
 
+    // Abajo: lo que está haciendo el launcher y, solo mientras baja algo, la barra en degradé.
     void DibujarPie(Graphics g)
     {
-        // La barra avanza suave hacia el porcentaje real (llega cada 250 ms); si vuelve a empezar, salta.
         float objetivo = progreso / 100f;
         avance = objetivo < avance ? objetivo : avance + (objetivo - avance) * 0.2f;
-        Estela(g, new Rectangle(40, Alto - 14, Ancho - 80, 6), avance, tiempo.Elapsed.TotalMilliseconds, ocupado);
-        Escribir(g, Recortar(g, (ocupado ? "● " : "") + estado, Tarjeta.X - 80, Fuentes.Texto(11f)), Fuentes.Texto(11f), Gris, 40, Alto - 42);
-
-        int x = Tarjeta.Right;
-        for (int i = Config.Redes.Length - 1; i >= 0; i--)
-        {
-            if (Config.Redes[i].Value.Length == 0) continue;
-            string t = Config.Redes[i].Key.ToUpperInvariant(), url = Config.Redes[i].Value;
-            int w = Medir(g, t, Fuentes.Titulo(17f));
-            x -= w;
-            var r = new Rectangle(x - 4, Alto - 46, w + 8, 30);
-            Escribir(g, t, Fuentes.Titulo(17f), r.Contains(mouse) ? Acento : Gris, x, Alto - 43);
-            zonas.Add(new Zona { R = r, Click = delegate { Abrir(url); } });
-            x -= 22;
-        }
+        Escribir(g, Recortar(g, estado, Ancho - 80, Fr(13)), Fr(13), Suave, 40, Alto - 44);
+        if (ocupado && avance > 0.001f) Estela(g, new Rectangle(40, Alto - 18, Ancho - 80, 5), avance, tiempo.Elapsed.TotalMilliseconds, true);
     }
 
     // ---------- piezas ----------
@@ -3046,14 +3186,14 @@ class Ventana : Lienzo
     }
 }
 
-// Pantalla chica de carga antes de la ventana principal: logo que aparece, barra que se llena y se cierra sola.
+// Pantalla chica de carga antes de la ventana principal: la playa borrosa, la estrella y una barra en degradé; se cierra sola.
 class Arranque : Lienzo
 {
     const int Duracion = 1600;
     readonly Stopwatch reloj = Stopwatch.StartNew();
     readonly Timer cuadros = new Timer { Interval = 16 };
-    // Fondo de noche con montañas y estrella dorada brillante (fondo/arranque.jpg y fondo/arranque-estrella.png).
-    static readonly Bitmap cielo = Fondo.Cargar(460, 300, "arranque.jpg"), estrella = Fondo.Imagen("arranque-estrella.png");
+    // La misma playa de la ventana, ya borrosa (se hace una vez), y la estrella del ícono.
+    static readonly Bitmap playa = Fondo.Desenfocar(Fondo.Cargar(460, 300), 12), estrella = Fondo.Imagen("arranque-estrella.png");
 
     public Arranque() : base(460, 300)
     {
@@ -3074,62 +3214,31 @@ class Arranque : Lienzo
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
         g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
         float t = Math.Min(1f, reloj.ElapsedMilliseconds / (float)Duracion), aparece = Math.Min(1f, t * 4), k = 1 - (1 - t) * (1 - t);
-        double ms = reloj.ElapsedMilliseconds;
 
-        if (cielo != null) g.DrawImage(cielo, 0, 0);
-        else using (var b = new SolidBrush(Panel)) g.FillRectangle(b, ClientRectangle);
-        // Abajo se oscurece un poco para que se lean la barra y el texto.
-        using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, 149, ClientSize.Width, 152), Color.FromArgb(0, 0, 0, 0), Color.FromArgb(150, 0, 0, 0), 90f))
-            g.FillRectangle(b, 0, 150, ClientSize.Width, 150);
+        if (playa != null) g.DrawImageUnscaled(playa, 0, 0);
+        using (var b = new SolidBrush(Color.FromArgb(playa != null ? 120 : 255, 12, 12, 30))) g.FillRectangle(b, ClientRectangle);
 
-        // Una estrella fugaz cruza el cielo mientras carga.
-        float f0 = (float)((ms - 250) / 650);
-        if (f0 > 0 && f0 < 1)
-        {
-            float cx = 40 + f0 * 300, cy = 30 + f0 * 70;
-            using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new PointF(cx - 70, cy - 16), new PointF(cx, cy), Color.FromArgb(0, 255, 255, 255), Color.FromArgb((int)(220 * Math.Sin(f0 * Math.PI)), 255, 240, 220)))
-            using (var p = new Pen(b, 1.6f)) g.DrawLine(p, cx - 70, cy - 16, cx, cy);
-        }
-
-        // Logo: la estrella brillante a la izquierda (late despacio) y "America RP" adelante.
-        Font f = Fuentes.Titulo(40f);
-        int ancho = Medir(g, "America RP", f) + 64, x = (ClientSize.Width - ancho) / 2;
+        // Logo: la estrella a la izquierda y AMERICA / ROLEPLAY adelante, como arriba en la ventana.
+        Font f = Fx(40);
+        int ancho = Medir(g, "AMERICA", f) + 86, x = (ClientSize.Width - ancho) / 2;
         if (estrella != null)
         {
-            float lado = 104 * (1 + 0.05f * (float)Math.Sin(ms / 220));
             var m = new System.Drawing.Imaging.ColorMatrix { Matrix33 = aparece };
             using (var atributos = new System.Drawing.Imaging.ImageAttributes())
             {
                 atributos.SetColorMatrix(m);
-                g.DrawImage(estrella, new Rectangle((int)(x + 22 - lado / 2), (int)(126 - lado / 2), (int)lado, (int)lado), 0, 0, estrella.Width, estrella.Height, GraphicsUnit.Pixel, atributos);
+                g.DrawImage(estrella, new Rectangle(x, 70, 92, 92), 0, 0, estrella.Width, estrella.Height, GraphicsUnit.Pixel, atributos);
             }
         }
-        else Ventana.Estrella(g, x + 22, 128, 22, Color.FromArgb((int)(255 * aparece), Acento));
-        Escribir(g, "America RP", f, Color.FromArgb((int)(140 * aparece), 0, 0, 0), x + 66, 106);
-        Escribir(g, "America RP", f, Color.FromArgb((int)(255 * aparece), Texto), x + 64, 104);
+        else Ventana.Estrella(g, x + 46, 116, 36, Color.FromArgb((int)(255 * aparece), Acento));
+        Escribir(g, "AMERICA", f, Color.FromArgb((int)(255 * aparece), Texto), x + 84, 78);
+        Escribir(g, "ROLEPLAY", Fs(14), Color.FromArgb((int)(255 * aparece), Acento), x + 89, 130);
 
-        // Barra mínima: una línea fina que se llena en blanco, con un brillo suave en la punta.
-        var barra = new Rectangle((ClientSize.Width - 200) / 2, 210, 200, 2);
-        Relleno(g, barra, Color.FromArgb(45, 255, 255, 255), 1);
+        var barra = new Rectangle((ClientSize.Width - 220) / 2, 206, 220, 4);
+        Relleno(g, barra, Color.FromArgb(50, 255, 255, 255), 2);
         int lleno = (int)(barra.Width * k);
-        if (lleno > 2)
-        {
-            using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(barra.X - 1, barra.Y, lleno + 2, 2), Color.FromArgb(60, 255, 255, 255), Color.FromArgb(255, 255, 255, 255), 0f))
-                g.FillRectangle(b, barra.X, barra.Y, lleno, 2);
-            // Estela que recorre la parte llena una y otra vez mientras carga.
-            float paso = (float)(ms % 900 / 900), punta = barra.X + paso * (lleno + 70);
-            int desde = (int)Math.Max(barra.X, punta - 70), hasta = (int)Math.Min(barra.X + lleno, punta);
-            if (hasta - desde > 1)
-                using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle((int)punta - 71, barra.Y - 1, 72, 4), Color.FromArgb(0, 255, 236, 200), Color.FromArgb(255, 255, 236, 200), 0f))
-                    g.FillRectangle(b, desde, barra.Y - 1, hasta - desde, 4);
-            using (var camino = new System.Drawing.Drawing2D.GraphicsPath())
-            {
-                camino.AddEllipse(barra.X + lleno - 10, barra.Y - 9, 20, 20);
-                using (var b = new System.Drawing.Drawing2D.PathGradientBrush(camino) { CenterColor = Color.FromArgb(110, 255, 255, 255), SurroundColors = new[] { Color.FromArgb(0, 255, 255, 255) } })
-                    g.FillPath(b, camino);
-            }
-        }
-        Centrado(g, "Iniciando", Fuentes.Texto(9f), Color.FromArgb(170, Texto), new Rectangle(0, 222, ClientSize.Width, 22));
+        if (lleno > 4) Degrade(g, new Rectangle(barra.X, barra.Y, lleno, barra.Height), 2, 0);
+        Centrado(g, "Iniciando", Fr(12), Suave, new Rectangle(0, 220, ClientSize.Width, 22));
     }
 }
 
@@ -3141,7 +3250,7 @@ static class Web
     }
 }
 
-// Imagen de fondo (fondo/fondo.jpg dentro del .exe), escalada una sola vez al tamaño de la ventana y recortada sin deformar.
+// Imagen de fondo (la playa de cliente/conexion-fondo.jpg, embebida como fondo.jpg), escalada una sola vez al tamaño de la ventana y recortada sin deformar.
 // Sin la imagen (compilado sin el recurso o rota) el fondo queda liso.
 static class Fondo
 {
@@ -3154,6 +3263,30 @@ static class Fondo
                 return s == null ? null : new Bitmap(s);
         }
         catch (Exception) { return null; }
+    }
+
+    // Copia borrosa para el vidrio: achicar y volver a agrandar con bicúbico da un desenfoque parejo y barato (se hace una vez).
+    public static Bitmap Desenfocar(Bitmap img, int factor)
+    {
+        if (img == null) return null;
+        using (var chica = new Bitmap(Math.Max(1, img.Width / factor), Math.Max(1, img.Height / factor)))
+        {
+            var atributos = new System.Drawing.Imaging.ImageAttributes();
+            atributos.SetWrapMode(System.Drawing.Drawing2D.WrapMode.TileFlipXY); // sin bordes oscuros
+            using (Graphics g = Graphics.FromImage(chica))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.DrawImage(img, new Rectangle(0, 0, chica.Width, chica.Height), 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, atributos);
+            }
+            var b = new Bitmap(img.Width, img.Height);
+            using (Graphics g = Graphics.FromImage(b))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.DrawImage(chica, new Rectangle(0, 0, b.Width, b.Height), 0, 0, chica.Width, chica.Height, GraphicsUnit.Pixel, atributos);
+            }
+            atributos.Dispose();
+            return b;
+        }
     }
 
     public static Bitmap Cargar(int ancho, int alto, string recurso = "fondo.jpg")
@@ -3541,6 +3674,9 @@ static class Prueba
         finally { Directory.Delete(carpeta, true); }
 
         Ver(Instalacion.NickValido.IsMatch("Juan_Perez") && !Instalacion.NickValido.IsMatch("ab") && !Instalacion.NickValido.IsMatch("con espacio"), "nick");
+        Ver(Ventana.CodigoDiscord("https://discord.gg/abc123") == "abc123" && Ventana.CodigoDiscord("https://discord.com/invite/abc123/?x=1") == "abc123", "discord: código de la invitación");
+        Ver(Ventana.InfoDiscord("{\"approximate_member_count\": 1240, \"approximate_presence_count\": 180}") == "1.240 miembros · 180 conectados"
+            && Ventana.InfoDiscord("{\"message\": \"Unknown Invite\"}") == "", "discord: miembros y conectados");
         Console.WriteLine(fallas == 0 ? "Todo bien." : fallas + " falla(s).");
         return fallas == 0 ? 0 : 1;
     }

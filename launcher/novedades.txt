@@ -1,5 +1,12 @@
-# Qué trae cada versión del launcher. Se ve en AJUSTES > NOVEDADES DEL LAUNCHER. La más nueva arriba.
+# Qué trae cada versión del launcher. Se ve en NOTICIAS > LAUNCHER. La más nueva arriba.
 # Formato: "## fecha | Launcher | versión" y abajo los cambios, cada uno con "- ".
+
+## 2026-11-21 | Launcher | 1.5.0
+- Diseño nuevo con el mismo estilo que las pantallas del server: paneles de vidrio sobre la playa y botones en degradé dorado a rosa.
+- Tarjeta COMUNIDAD arriba a la derecha, con el Discord (miembros y conectados) y las redes del server.
+- La tarjeta de JUGAR muestra jugadores, ping y tus horas jugadas.
+- NOTICIAS junta los parches del server y las novedades del launcher; un punto rosa avisa si hay un parche que no viste.
+- Pantalla de carga nueva con la playa y la estrella, y el ícono del launcher pasa a ser la estrella.
 
 ## 2026-11-20 | Launcher | 1.4.1
 - En AJUSTES podés jugar sin las pantallas del server (CEF), por separado para cada cliente.
