@@ -128,6 +128,16 @@ Mientras el GTA carga, en vez de las imágenes de siempre (las de `loadscs.txd`)
 - Fuente en `cliente/carga_video.c` (lee los JPEG con `cliente/stb_image.h`, de dominio público). Se compila con `i686-w64-mingw32-gcc -O2 -s -shared -static-libgcc -o carga_video.asi carga_video.c` desde `cliente/`.
 - Para cambiar el video: reemplazá `cliente/carga.mp4` (mejor 16:9), corré `python cliente/armar_carga.py` (necesita ffmpeg), después `generar-manifiesto.bat`, commit y push. El sonido del video no se usa: suena la música de carga del GTA.
 
+## Pantalla de conexión al server
+
+Cuando termina la carga y el SA-MP se conecta al server, la misma `carga_video.asi` tapa el juego con la pantalla del server: la playa de fondo, el logo, el estado ("Conectando con el servidor…", "Entrando al juego…" o "El servidor se está reiniciando…") y una línea con un tramo dorado que corre. Cuando el server termina de conectar se funde en medio segundo y queda lo que muestre el server. Si se corta la conexión, vuelve a aparecer.
+
+También pasa al español los mensajes del SA-MP en el chat ("Conectando al servidor...", "Conectado. Entrando al juego...", los rechazos y reintentos, la captura con F8). El de conexión ya no muestra la IP. Lo hace cambiando en memoria cada `push "texto en inglés"` de `samp.dll` por el texto nuestro, sin tocar el archivo.
+
+- Solo con SA-MP 0.3.7-R5 (el estado lo lee de `samp.dll + 0x26EB94`, `+0x3CD`). Con otra versión no hace nada de esto y lo anota en `americarp/carga.log`, igual que cuántos mensajes tradujo y cuántas piezas cargó.
+- Las imágenes van en `americarp/conexion.bin`. Para cambiar el fondo, reemplazá `cliente/conexion-fondo.jpg` (mejor 16:9), corré `python cliente/armar_conexion.py` (necesita Pillow; con `python cliente/armar_conexion.py vista.png` deja además cómo se ve en 1920x1080), después `generar-manifiesto.bat`, commit y push. Los textos y el logo están en ese mismo script.
+- El fondo se escala para cubrir la pantalla; el logo y el estado van pegados a la izquierda y el consejo a la derecha, así en 4:3 no se cortan.
+
 ## Cambiar la imagen de fondo
 
 La pantalla de carga del launcher usa `fondo/arranque.jpg` (460x300, la noche con montañas) y `fondo/arranque-estrella.png` (la estrella dorada con transparencia). Para cambiarlas, reemplazalas con el mismo tamaño y volvé a compilar.
