@@ -426,7 +426,10 @@ static void ingreso(DWORD ahora, unsigned char alfa)
     if (!dlg || !*(int *)(dlg + 0x28) || *(int *)(dlg + 0x2C) != ESTILO_CONTRASENIA) return;
     DWORD dxut = *(DWORD *)(dlg + 0x1C), campo = *(DWORD *)(dlg + 0x24);
     // El cartel sigue abierto (es el que recibe lo que se escribe y se lo manda al server), pero
-    // lejos de la pantalla. Se pone en cada cuadro porque el SA-MP lo vuelve a centrar.
+    // lejos de la pantalla. Se pone en cada cuadro porque el SA-MP lo vuelve a centrar (samp+0x6F500).
+    // Son dos posiciones: la del CDXUTDialog (botones y campo) y la del CDialog (+4/+8), con la que
+    // CDialog::Draw (samp+0x6F890) escribe el texto del cartel.
+    *(int *)(dlg + 0x4) = -8000; *(int *)(dlg + 0x8) = -8000;
     if (dxut) { *(int *)(dxut + 0x116) = -8000; *(int *)(dxut + 0x11A) = -8000; }
     if (!campo) return;
     // Un clic fuera de sus controles le saca el teclado al campo: se lo devuelve.
