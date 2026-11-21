@@ -126,10 +126,28 @@ Dos arreglos van con las actualizaciones para todos, porque el cliente de CEF lo
 - Sin `wndmode.ini`: la ventana sin bordes del Ultimate ASI Loader se repartió un día y se sacó, porque con dos monitores el GTA crasheaba después de elegir la pantalla. `prohibidos.txt` la saca de las carpetas que la recibieron. Con el ENB activo, el `enblocal.ini` del paquete ENB (`paquetes/enb/archivos`) sigue pidiendo ventana sin bordes (`ForceBorderless` y `ForceBorderlessFullscreen`).
 ## Video de la pantalla de carga del GTA
 
-Mientras el GTA carga, en vez de las imágenes de siempre (las de `loadscs.txd`) y su barra gris, se ve el video del server, que ya trae su propio círculo de carga. Lo hace `carga_video.asi`, que va con las actualizaciones junto con `americarp/carga.bin` (el video en cuadros JPEG de 1280x720 como el original, a 24 por segundo, unos 21 MB). El video se repite mientras dure la carga. Si `carga.bin` falta o está roto, se ven las pantallas de siempre, sin barra. Solo funciona con GTA SA 1.0 US; en otra versión la ASI no toca nada. Cada vez que arranca el GTA deja en `americarp/carga.log` qué pasó (si cargó el video, si pudo crear la textura, si dibujó el primer cuadro).
+Mientras el GTA carga, en vez de las imágenes de siempre (las de `loadscs.txd`) y su barra gris, se ve la imagen del server, fija, con una barra de carga dorada propia abajo que avanza con lo que lleva cargado el GTA. Lo hace `carga_video.asi`, que va con las actualizaciones junto con `americarp/carga.bin` (la imagen en JPEG de 1280x720; también acepta un video en cuadros, que se repite mientras dure la carga). Si `carga.bin` falta o está roto, se ven las pantallas de siempre, sin barra. Solo funciona con GTA SA 1.0 US; en otra versión la ASI no toca nada. Cada vez que arranca el GTA deja en `americarp/carga.log` qué pasó (si cargó la imagen, si pudo crear la textura, si dibujó el primer cuadro).
 
 - Fuente en `cliente/carga_video.c` (lee los JPEG con `cliente/stb_image.h`, de dominio público). Se compila con `i686-w64-mingw32-gcc -O2 -s -shared -static-libgcc -o carga_video.asi carga_video.c` desde `cliente/`.
-- Para cambiar el video: reemplazá `cliente/carga.mp4` (mejor 16:9), corré `python cliente/armar_carga.py` (necesita ffmpeg), después `generar-manifiesto.bat`, commit y push. El sonido del video no se usa: suena la música de carga del GTA.
+- Para cambiar la imagen: reemplazá `cliente/carga.jpg` (mejor 16:9; si no, se recorta lo que sobra), corré `python cliente/armar_carga.py` (necesita ffmpeg; con `python cliente/armar_carga.py algo.mp4` arma un video), después `generar-manifiesto.bat`, commit y push. Suena la música de carga del GTA.
+
+## Pantalla de conexión al server
+
+Cuando termina la carga y el SA-MP se conecta al server, la misma `carga_video.asi` tapa el juego con la pantalla del server: la playa de fondo, el logo, el estado ("Conectando con el servidor…", "Entrando al juego…" o "El servidor se está reiniciando…") y una línea con un tramo dorado que corre. Cuando el server termina de conectar se funde en medio segundo y queda lo que muestre el server. Si se corta la conexión, vuelve a aparecer.
+
+También pasa al español los mensajes del SA-MP en el chat ("Conectando al servidor...", "Conectado. Entrando al juego...", los rechazos y reintentos, la captura con F8). El de conexión ya no muestra la IP. Lo hace cambiando en memoria cada `push "texto en inglés"` de `samp.dll` por el texto nuestro, sin tocar el archivo.
+
+- Solo con SA-MP 0.3.7-R5 (el estado lo lee de `samp.dll + 0x26EB94`, `+0x3CD`). Con otra versión no hace nada de esto y lo anota en `americarp/carga.log`, igual que cuántos mensajes tradujo y cuántas piezas cargó.
+- Las imágenes van en `americarp/conexion.bin`. Para cambiar el fondo, reemplazá `cliente/conexion-fondo.jpg` (mejor 16:9), corré `python cliente/armar_conexion.py` (necesita Pillow; con `python cliente/armar_conexion.py vista.png` deja además cómo se ve en 1920x1080), después `generar-manifiesto.bat`, commit y push. Los textos y el logo están en ese mismo script.
+- El fondo se escala para cubrir la pantalla; el logo y el estado van pegados a la izquierda y el consejo a la derecha, así en 4:3 no se cortan.
+
+### Ingreso y selección de personaje
+
+Después de conectar, la ASI dibuja las pantallas del server (desde la 0.7.8 de GABU-RP): el cuadro de ingreso, la selección de personaje y un fondo simple para el registro y la creación de personaje. Las pide el server con un TextDraw invisible que dice `ACN:` y la pantalla (`I`, `F` o `S` con las ranuras, ver `gamemode/cuentas/pantallas.inc` en GABU-RP). La ASI dibuja lo fijo (el vidrio, los íconos, los botones) y el SA-MP dibuja encima los TextDraws del server con lo que cambia (nombres, números, el personaje en 3D). Sin marca del server, a los 4 segundos de conectar se funde como antes.
+
+- En el ingreso esconde el cartel de contraseña del SA-MP (lo deja abierto lejos de la pantalla: es el que manda la clave), dibuja un punto por letra en el campo propio y hace que ENTRAR y "Salir del servidor" funcionen como los botones del cartel. Enter y Esc andan como siempre.
+- Las piezas están en el mismo `americarp/conexion.bin`, desde el tipo 10. Las arma `cliente/pantallas.py` (lo llama `armar_conexion.py`, que con `vista.png` deja también `vista-ingreso.png` y `vista-seleccion.png`). Van estiradas a toda la pantalla como los TextDraws, en medidas de 1920x1080: si se mueve algo, hay que moverlo igual en GABU-RP.
+- Usa más direcciones de `samp.dll` 0.3.7-R5 (el cartel en `+0x26EB50`, los TextDraws en el pool `+0x3DE` / `+0x1C`, el foco de DXUT en `+0x142780`). Al arrancar revisa los bytes de esas partes del código; si no coinciden, no dibuja estas pantallas, lo anota en `americarp/carga.log` y se ve el cartel de siempre.
 
 ## Cambiar la imagen de fondo
 
