@@ -1,8 +1,8 @@
 // carga_video.asi (AMERICA RP)
 // 1) Cambia la pantalla de carga del GTA (las imagenes de loadscs.txd que se van fundiendo)
-//    por el video del server, y saca la barra de carga gris: el video ya trae su circulo de carga.
-//    El video va en americarp\carga.bin al lado de esta ASI (lo arma cliente/armar_carga.py),
-//    en cuadros JPEG del tamanio original (1280x720).
+//    por la imagen del server (o un video) y cambia la barra de carga gris por una propia abajo.
+//    La imagen va en americarp\carga.bin al lado de esta ASI (lo arma cliente/armar_carga.py),
+//    en cuadros JPEG de 1280x720: con un solo cuadro queda fija.
 //    Si el archivo falta o esta roto, se ven las pantallas de siempre, sin barra.
 // 2) Mientras el SA-MP se conecta al server tapa la pantalla con la del server (americarp\conexion.bin,
 //    lo arma cliente/armar_conexion.py) y pasa al espaniol los mensajes del SA-MP en el chat.
@@ -49,6 +49,7 @@ static Textura *(*const TexturaCrear)(Raster *) = (void *)0x7F37C0;
 #define Alfa         (*(unsigned char *)0xBAB320)
 #define ParaBorrar   (*(unsigned char *)0xBAB33D)
 #define Pantallas    ((Sprite *)0xBAB35C)
+#define Porcentaje   (*(float *)0xBAB330)  // CLoadingScreen::m_PercentLoaded, 0 a 100 (lo lee RenderLoadingBar)
 
 // carga.bin: "ARV1", cuadros, ancho, alto, cuadros por segundo, tamanio de cada cuadro y los JPEG seguidos.
 static unsigned char *video;
@@ -153,6 +154,17 @@ static void pantalla(void)
         if (w / h < 16.0f / 9) { float a = h * 16 / 9; r.x1 = (w - a) / 2; r.x2 = r.x1 + a; r.y1 = h; r.y2 = 0; }
         else { float a = w * 9 / 16; r.y2 = (h - a) / 2; r.y1 = r.y2 + a; r.x1 = 0; r.x2 = w; }
         SpriteDibujar(&cuadro, &r, &blanco);
+        // Barra de carga: avanza suave hacia lo que lleva cargado el GTA y nunca vuelve para atrás.
+        static float barra;
+        float p = Porcentaje / 100;
+        if (p > 1) p = 1;
+        if (p > barra) barra += (p - barra) * 0.08f + 0.001f;
+        if (barra > 1) barra = 1;
+        float bw = w * 0.36f, bh = h * 0.006f < 4 ? 4 : h * 0.006f, bx = (w - bw) / 2, by = h * 0.93f;
+        Rect pista = { bx, by + bh, bx + bw, by }, lleno = { bx, by + bh, bx + bw * barra, by };
+        Rgba fondo = { 25, 10, 30, 150 }, oro = { 255, 196, 72, 255 };
+        RectDibujar(&pista, &fondo);
+        RectDibujar(&lleno, &oro);
     } else {
         // Sin video: las pantallas de siempre, con el mismo fundido que el original.
         SpriteDibujar(&Pantallas[Actual], &todo, &blanco);
