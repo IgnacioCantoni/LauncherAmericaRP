@@ -21,7 +21,7 @@ static class Config
 {
     // Lo que cambia de un server a otro. Después de tocarlo, volvé a compilar.
     // Versión de este launcher. Para sacar una nueva, ver "Sacar una versión nueva del launcher" en el README.
-    public const string Version = "1.4.0";
+    public const string Version = "1.4.1";
     // Servidores que se eligen en INICIO: nombre, dirección y puerto. Sin dirección = "Todavía sin IP", no se puede elegir.
     public static readonly Tuple<string, string, int>[] Servidores =
     {

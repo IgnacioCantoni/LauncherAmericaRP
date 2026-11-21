@@ -1,6 +1,10 @@
 # Qué trae cada versión del launcher. Se ve en AJUSTES > NOVEDADES DEL LAUNCHER. La más nueva arriba.
 # Formato: "## fecha | Launcher | versión" y abajo los cambios, cada uno con "- ".
 
+## 2026-11-20 | Launcher | 1.4.1
+- En AJUSTES podés jugar sin las pantallas del server (CEF), por separado para cada cliente.
+- Abre siempre el GTA del cliente que elegiste en INICIO.
+
 ## 2026-11-04 | Launcher | 1.4.0
 - Pestaña MODS nueva: mods opcionales elegidos por el staff, que se instalan y se sacan con un clic.
 - Soporte: elegís qué te pasa, contás qué pasó y el launcher arma el mensaje para Discord, con el informe técnico si querés.
