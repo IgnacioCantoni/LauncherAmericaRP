@@ -333,7 +333,7 @@ def seleccion(pl, fondo):
     piezas.append(pieza(PANEL_PERSONAJE, c, (0, 0, 0, 0)))
     for tipo, titulo, lineas, ic in (
         (PANEL_LIBRE, "Ranura libre", ["Creá un personaje nuevo: elegí su nombre,", "edad, origen y aspecto.", "", "Cada personaje tiene su propio dinero,", "trabajo y progreso."], None),
-        (PANEL_BLOQUEADA, "Ranura bloqueada", ["Desbloqueala con CASH para tener", "otro personaje. Es para siempre,", "aunque después borres el personaje.", "", "No da dinero ni ventajas: cada personaje", "empieza de cero."], "candado_linea")):
+        (PANEL_BLOQUEADA, "Ranura bloqueada", ["Desbloqueala con CASH para tener", "otro personaje. Queda en tu cuenta", "para siempre.", "", "No da dinero ni ventajas: el personaje", "empieza de cero, sin dinero inicial."], "candado_linea")):
         c, d = capa()
         d.text((PX1 + 40, PY1 + 40), titulo, font=fuente("x", 38), fill=BLANCO)
         d.line([(PX1 + 40, PY1 + 184), (PX2 - 40, PY1 + 184)], fill=(255, 255, 255, 40))
