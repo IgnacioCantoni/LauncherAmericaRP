@@ -1,0 +1,43 @@
+# Compila AmericaRP.exe en GitHub, igual que compilar.bat, y lo deja como artefacto.
+# Cuando SignPath apruebe el proyecto, cargá en Settings > Secrets and variables > Actions:
+#   secreto SIGNPATH_API_TOKEN y variables SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG y SIGNPATH_SIGNING_POLICY_SLUG.
+# Con eso, cada compilación pide la firma y espera a que la apruebes en SignPath.
+name: Compilar launcher
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['src/**', 'fuentes/**', 'fondo/**', 'compilar.bat', '.github/workflows/compilar.yml']
+
+jobs:
+  compilar:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compilar
+        shell: cmd
+        run: compilar.bat
+      - name: Subir AmericaRP.exe
+        id: subir
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmericaRP
+          path: AmericaRP.exe
+      - name: Pedir la firma a SignPath
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.subir.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: firmado
+      - name: Subir AmericaRP.exe firmado
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmericaRP-firmado
+          path: firmado
