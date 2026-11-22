@@ -1,9 +1,9 @@
 # Arma americarp.txd: deja tal cual las texturas que ya tiene (el puño) y agrega/reemplaza obj_<id>
-# con los íconos realistas, en el mismo formato que el puño (D3D9, 8888 con alfa, un nivel).
+# (objetos) y hud_* (HUD sin CEF) con los íconos realistas, en el mismo formato que el puño (D3D9, 8888 con alfa, un nivel).
 # Uso: python3 txd.py <carpeta de iconos.py> <txd entrada> <txd salida> <lado>
 import struct, sys
 sys.path.insert(0, sys.argv[1])
-from iconos import POR_ID, icono
+from iconos import HUD, POR_ID, icono
 
 VER = 0x1803FFFF
 
@@ -40,8 +40,9 @@ def textura(nombre, im):
 def main():
     _, carpeta, entrada, salida, lado = sys.argv
     lado = int(lado)
-    viejas = [(n, c) for n, c in leer(entrada) if not n.startswith("obj_")]
+    viejas = [(n, c) for n, c in leer(entrada) if not n.startswith(("obj_", "hud_"))]
     nuevas = [(f"obj_{k}", textura(f"obj_{k}", icono(POR_ID[k], lado))) for k in sorted(POR_ID)]
+    nuevas += [(n, textura(n, icono(f, lado))) for n, f in HUD.items()]
     todas = viejas + nuevas
     cuerpo = chunk(0x1, struct.pack("<HH", len(todas), 0)) + b"".join(c for _, c in todas) + chunk(0x3, b"")
     open(salida, "wb").write(chunk(0x16, cuerpo))

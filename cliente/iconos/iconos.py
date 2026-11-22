@@ -279,6 +279,80 @@ def frasco(p):
     p.brillo((32, 28, 37, 90), 150, 1.2, ell=False)
 
 
+# ---------- Íconos del HUD sin CEF (van chicos, dentro de los círculos oscuros: formas simples y llenas) ----------
+
+def hud_hambre(p):
+    # tenedor y cuchillo plateados
+    PL = ((250, 252, 255), (140, 148, 160))
+    for x in (17, 27, 37):
+        p.shape("rect", (x, 6, x + 6, 36), *PL, vertical=False, y0=x, y1=x + 6, r=3, borde=3)
+    p.shape("rect", (15, 30, 45, 44), *PL, vertical=False, y0=15, y1=45, r=6, borde=3)
+    p.shape("rect", (25, 40, 35, 94), *PL, vertical=False, y0=25, y1=35, r=5, borde=3)
+    m = p.mask(lambda d: (d.pieslice([u(56), u(6), u(88), u(76)], 90, 270, fill=255), d.rectangle([u(71), u(6), u(80), u(50)], fill=255)))
+    p.fill(m, *PL, vertical=False, y0=56, y1=80, borde=3)
+    p.shape("rect", (67, 48, 79, 94), *PL, vertical=False, y0=67, y1=79, r=5, borde=3)
+    p.brillo((19, 8, 21, 34), 200, 0.6, ell=False)
+    p.brillo((60, 12, 64, 60), 170, 0.8, ell=False)
+
+
+def hud_sed(p):
+    m = p.mask(lambda d: (d.polygon([(u(50), u(4)), (u(20), u(56)), (u(80), u(56))], fill=255), d.ellipse([u(18), u(36), u(82), u(96)], fill=255)))
+    p.fill(m, (140, 215, 255), (20, 100, 220), y0=10, y1=96, borde=8)
+    p.brillo((30, 50, 42, 80), 210, 1.5)
+    p.brillo((56, 74, 70, 86), 90, 2)
+
+
+def hud_cansancio(p):
+    m = p.mask(lambda d: (d.ellipse([u(8), u(8), u(92), u(92)], fill=255), d.ellipse([u(32), u(-6), u(108), u(70)], fill=0)))
+    p.fill(m, (255, 248, 200), (225, 180, 70), vertical=False, y0=8, y1=70, borde=8)
+    p.brillo((14, 34, 26, 70), 150, 2)
+    for x, y, r in ((30, 70, 4), (48, 80, 3), (22, 52, 2.5)):
+        p.shape("ell", (x - r, y - r, x + r, y + r), (215, 170, 70), (180, 135, 50), borde=2, sombra=0.4)
+
+
+def hud_auto(p):
+    p.poly([(24, 26), (70, 26), (84, 48), (12, 48)], (235, 60, 55), (170, 25, 25))
+    p.poly([(29, 31), (47, 31), (47, 46), (19, 46)], (190, 225, 250), (90, 140, 190), sombra=0.3)
+    p.poly([(51, 31), (67, 31), (77, 46), (51, 46)], (190, 225, 250), (90, 140, 190), sombra=0.3)
+    p.shape("rect", (4, 44, 96, 72), (240, 70, 60), (150, 20, 20), r=9)
+    p.brillo((10, 47, 90, 52), 150, 1.2)
+    p.shape("rect", (4, 56, 14, 62), (255, 230, 120), (220, 170, 50), r=2, sombra=0)
+    for x in (14, 64):
+        p.shape("ell", (x, 58, x + 24, 82), (70, 70, 76), (15, 15, 18), borde=6)
+        p.shape("ell", (x + 7, 65, x + 17, 75), (220, 222, 228), (140, 145, 155), borde=3)
+
+
+def hud_nafta(p):
+    p.linea([(58, 34), (76, 34), (84, 46), (84, 74), (90, 80), (90, 86)], (60, 60, 64), 6)
+    p.shape("rect", (78, 12, 92, 32), (70, 70, 75), (25, 25, 28), r=3)
+    p.shape("rect", (10, 8, 60, 92), (240, 70, 60), (150, 20, 20), vertical=False, y0=10, y1=60, r=7)
+    p.shape("rect", (18, 16, 52, 40), (210, 245, 220), (110, 180, 130), r=3, sombra=0.6)
+    p.shape("rect", (4, 86, 66, 96), (90, 92, 98), (40, 40, 44), r=2)
+    p.brillo((14, 44, 19, 84), 120, 1.0, ell=False)
+
+
+def hud_vida(p):
+    m = p.mask(lambda d: (d.ellipse([u(6), u(10), u(52), u(56)], fill=255), d.ellipse([u(48), u(10), u(94), u(56)], fill=255),
+                          d.polygon([(u(9), u(42)), (u(91), u(42)), (u(50), u(92))], fill=255)))
+    p.fill(m, (255, 110, 100), (175, 20, 30), y0=10, y1=92, borde=8)
+    p.brillo((16, 18, 34, 34), 200, 2)
+
+
+def hud_chaleco(p):
+    # chaleco antibalas visto de frente: cuerpo con cuello en V y placas
+    m = p.mask(lambda d: d.polygon([(u(26), u(6)), (u(40), u(6)), (u(50), u(26)), (u(60), u(6)), (u(74), u(6)), (u(88), u(22)),
+                                     (u(88), u(90)), (u(12), u(90)), (u(12), u(22))], fill=255))
+    p.fill(m, (150, 175, 205), (55, 75, 105), vertical=False, y0=12, y1=88, borde=8)
+    p.shape("rect", (20, 40, 46, 62), (110, 135, 165), (60, 80, 110), r=3, sombra=0.4)
+    p.shape("rect", (54, 40, 80, 62), (110, 135, 165), (60, 80, 110), r=3, sombra=0.4)
+    p.shape("rect", (12, 70, 88, 78), (45, 60, 85), (30, 40, 60), sombra=0.2)
+    p.brillo((16, 24, 24, 84), 120, 1.2, ell=False)
+
+
+HUD = {"hud_hambre": hud_hambre, "hud_sed": hud_sed, "hud_cansancio": hud_cansancio, "hud_auto": hud_auto,
+       "hud_nafta": hud_nafta, "hud_vida": hud_vida, "hud_chaleco": hud_chaleco}
+
+
 OBJETOS = [
     ("Sándwich", sandwich), ("Hamburguesa", hamburguesa), ("Pizza", pizza),
     ("Agua", agua), ("Gaseosa", gaseosa), ("Energizante", energizante),
