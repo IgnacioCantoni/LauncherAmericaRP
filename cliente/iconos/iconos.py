@@ -353,6 +353,145 @@ HUD = {"hud_hambre": hud_hambre, "hud_sed": hud_sed, "hud_cansancio": hud_cansan
        "hud_nafta": hud_nafta, "hud_vida": hud_vida, "hud_chaleco": hud_chaleco}
 
 
+# ---------- Apps del teléfono sin CEF (el cuadrado redondeado con su dibujo, como en un celular) ----------
+
+def _app(p, c1, c2):
+    p.shape("rect", (4, 4, 96, 96), c1, c2, r=22, borde=5, sombra=0.35)
+    p.brillo((8, 6, 92, 40), 70, 4)
+
+
+def _blanco(p, m):
+    p.fill(m, (255, 255, 255), (225, 230, 240), borde=3, sombra=0.25)
+
+
+def app_banco(p):
+    _app(p, (60, 205, 120), (15, 120, 60))
+    _blanco(p, p.mask(lambda d: (d.polygon([(u(50), u(18)), (u(84), u(36)), (u(16), u(36))], fill=255),
+                                 d.rectangle([u(18), u(72), u(82), u(82)], fill=255),
+                                 [d.rectangle([u(x), u(40), u(x + 8), u(70)], fill=255) for x in (22, 38, 54, 70)])))
+
+
+def app_taxi(p):
+    _app(p, (255, 215, 60), (215, 150, 0))
+    p.poly([(30, 36), (68, 36), (78, 54), (20, 54)], (40, 40, 44), (15, 15, 18))
+    p.poly([(34, 40), (48, 40), (48, 52), (27, 52)], (190, 225, 250), (90, 140, 190), sombra=0.2)
+    p.poly([(52, 40), (66, 40), (72, 52), (52, 52)], (190, 225, 250), (90, 140, 190), sombra=0.2)
+    p.shape("rect", (12, 52, 88, 72), (40, 40, 44), (15, 15, 18), r=7)
+    p.shape("rect", (40, 26, 60, 34), (255, 255, 255), (220, 220, 225), r=2, sombra=0.2)
+    for x in (20, 62):
+        p.shape("ell", (x, 64, x + 18, 82), (90, 90, 96), (20, 20, 24), borde=4)
+
+
+def app_maps(p):
+    _app(p, (90, 175, 255), (20, 95, 210))
+    p.linea([(10, 70), (40, 50), (60, 62), (92, 40)], (255, 255, 255), 5, c2=(225, 235, 250))
+    m = p.mask(lambda d: (d.ellipse([u(32), u(14), u(68), u(50)], fill=255), d.polygon([(u(34), u(38)), (u(66), u(38)), (u(50), u(74))], fill=255),
+                          d.ellipse([u(43), u(25), u(57), u(39)], fill=0)))
+    p.fill(m, (255, 95, 85), (190, 25, 30), borde=5)
+
+
+def app_miamerica(p):
+    _app(p, (240, 80, 95), (160, 20, 45))
+    pts = []
+    for k in range(10):
+        a = math.radians(-90 + k * 36)
+        r = 36 if k % 2 == 0 else 15
+        pts.append((50 + r * math.cos(a), 53 + r * math.sin(a)))
+    p.poly(pts, (255, 235, 150), (230, 170, 40), sombra=0.3)
+
+
+def app_llamadas(p):
+    # tubo de teléfono clásico: un arco grueso con el auricular arriba a la izquierda y el micrófono abajo a la derecha
+    def tubo(d):
+        d.arc([u(18), u(14), u(86), u(82)], 95, 175, fill=255, width=int(u(13)))
+        d.rounded_rectangle([u(14), u(20), u(36), u(48)], radius=u(7), fill=255)
+        d.rounded_rectangle([u(52), u(66), u(80), u(88)], radius=u(7), fill=255)
+    _app(p, (90, 230, 120), (20, 150, 60))
+    _blanco(p, p.mask(tubo))
+
+
+def app_mensajes(p):
+    _app(p, (90, 230, 120), (20, 150, 60))
+    _blanco(p, p.mask(lambda d: (d.ellipse([u(16), u(20), u(84), u(72)], fill=255),
+                                 d.polygon([(u(26), u(60)), (u(40), u(66)), (u(18), u(82))], fill=255))))
+
+
+def app_agenda(p):
+    _app(p, (170, 178, 190), (90, 98, 112))
+    _blanco(p, p.mask(lambda d: (d.ellipse([u(36), u(16), u(64), u(44)], fill=255), d.pieslice([u(20), u(48), u(80), u(108)], 180, 360, fill=255))))
+
+
+# ---------- Datos de la concesionaria y formas de pago ----------
+
+def dato_velocidad(p):
+    p.shape("ell", (6, 10, 94, 98), (70, 72, 80), (20, 20, 24), borde=8)
+    p.shape("ell", (14, 18, 86, 90), (35, 36, 42), (15, 15, 18), sombra=0.3)
+    for k in range(7):
+        a = math.radians(150 + k * 40)
+        x1, y1 = 50 + 30 * math.cos(a), 54 + 30 * math.sin(a)
+        x2, y2 = 50 + 24 * math.cos(a), 54 + 24 * math.sin(a)
+        p.linea([(x1, y1), (x2, y2)], (255, 255, 255) if k < 5 else (255, 80, 70), 3)
+    p.linea([(50, 54), (72, 34)], (255, 80, 70), 5, c2=(200, 30, 30))
+    p.shape("ell", (43, 47, 57, 61), (220, 222, 228), (130, 135, 145), borde=3)
+
+
+def dato_asientos(p):
+    p.shape("rect", (26, 6, 66, 62), (120, 90, 70), (60, 40, 30), vertical=False, y0=26, y1=66, r=12)
+    p.shape("rect", (32, 12, 60, 56), (150, 115, 90), (90, 65, 50), r=8, sombra=0.4)
+    p.shape("rect", (18, 58, 84, 80), (120, 90, 70), (60, 40, 30), r=8)
+    p.shape("rect", (30, 80, 38, 94), (60, 60, 64), (25, 25, 28), r=1)
+    p.shape("rect", (66, 80, 74, 94), (60, 60, 64), (25, 25, 28), r=1)
+
+
+def dato_tanque(p):
+    p.shape("rect", (56, 6, 76, 20), (60, 60, 64), (25, 25, 28), r=3)
+    p.poly([(18, 18), (70, 18), (84, 32), (84, 94), (18, 94)], (235, 60, 50), (150, 20, 20), vertical=False, y0=18, y1=84)
+    p.shape("rect", (24, 22, 50, 34), (0, 0, 0), r=4, sombra=0)
+    p.linea([(32, 46), (70, 84)], (190, 35, 30), 5)
+    p.linea([(70, 46), (32, 84)], (190, 35, 30), 5)
+    p.brillo((22, 40, 27, 90), 120, 1.0, ell=False)
+
+
+def dato_maletero(p):
+    p.shape("rect", (36, 8, 64, 24), (70, 70, 76), (30, 30, 34), r=5)
+    p.img.paste((0, 0, 0, 0), [int(u(42)), int(u(14)), int(u(58)), int(u(24))])
+    p.shape("rect", (8, 22, 92, 92), (185, 120, 65), (110, 60, 25), vertical=False, y0=8, y1=92, r=8)
+    for x in (26, 70):
+        p.shape("rect", (x, 22, x + 6, 92), (120, 70, 35), (80, 45, 20), sombra=0.2)
+    p.brillo((12, 26, 88, 34), 90, 2)
+
+
+def dato_guantera(p):
+    p.shape("rect", (6, 18, 94, 86), (75, 78, 86), (30, 32, 36), r=8)
+    p.shape("rect", (14, 26, 86, 78), (50, 52, 58), (25, 26, 30), r=5, sombra=0.4)
+    p.shape("rect", (38, 44, 62, 54), (200, 205, 212), (120, 125, 135), r=4)
+    p.brillo((10, 20, 90, 28), 80, 2)
+
+
+def dato_licencia(p):
+    p.shape("rect", (6, 18, 94, 82), (240, 244, 250), (190, 198, 210), vertical=False, y0=6, y1=94, r=7)
+    p.shape("rect", (6, 18, 94, 32), (50, 100, 190), (25, 60, 140), r=7, sombra=0.2)
+    p.img.paste((0, 0, 0, 0), [0, 0, 1, 1])
+    p.shape("rect", (14, 38, 40, 72), (170, 185, 205), (110, 125, 150), r=3, sombra=0.3)
+    p.shape("ell", (21, 42, 33, 54), (90, 100, 120), sombra=0)
+    for j, w in enumerate((40, 32, 36)):
+        p.shape("rect", (48, 42 + j * 10, 48 + w, 46 + j * 10), (140, 150, 168), r=1.5, sombra=0)
+
+
+def pago_efectivo(p):
+    for k, dy in enumerate((0, -10)):
+        p.shape("rect", (6, 34 + dy, 94, 80 + dy), (130, 210, 120), (50, 130, 60), vertical=False, y0=6, y1=94, r=4)
+        p.shape("ell", (38, 44 + dy, 62, 70 + dy), (90, 170, 90), (40, 110, 50), sombra=0.3)
+    p.d = None
+
+
+OTROS = {"app_banco": app_banco, "app_taxi": app_taxi, "app_maps": app_maps, "app_miamerica": app_miamerica,
+         "app_llamadas": app_llamadas, "app_mensajes": app_mensajes, "app_agenda": app_agenda,
+         "dato_velocidad": dato_velocidad, "dato_asientos": dato_asientos, "dato_tanque": dato_tanque,
+         "dato_maletero": dato_maletero, "dato_guantera": dato_guantera, "dato_licencia": dato_licencia,
+         "pago_efectivo": pago_efectivo}
+
+
 OBJETOS = [
     ("Sándwich", sandwich), ("Hamburguesa", hamburguesa), ("Pizza", pizza),
     ("Agua", agua), ("Gaseosa", gaseosa), ("Energizante", energizante),
