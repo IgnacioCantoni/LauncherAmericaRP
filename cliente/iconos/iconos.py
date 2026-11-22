@@ -529,11 +529,33 @@ def pago_efectivo(p):
     p.d = None
 
 
+# ---------- Botones de la llamada en la isla del teléfono ----------
+
+def _tubo_boton(p, c1, c2, angulo):
+    p.shape("ell", (6, 6, 94, 94), c1, c2, borde=6, sombra=0.35)
+    p.brillo((18, 10, 82, 40), 80, 4)
+
+    def tubo(d):
+        d.arc([u(30), u(28), u(74), u(72)], 95, 175, fill=255, width=int(u(9)))
+        d.rounded_rectangle([u(27), u(32), u(41), u(50)], radius=u(5), fill=255)
+        d.rounded_rectangle([u(52), u(61), u(70), u(75)], radius=u(5), fill=255)
+    _blanco(p, p.mask(tubo).rotate(angulo, resample=Image.BICUBIC, center=(N / 2, N / 2)))
+
+
+def tel_atender(p):
+    _tubo_boton(p, (90, 230, 120), (25, 160, 65), 0)
+
+
+def tel_colgar(p):
+    # el tubo acostado, como el botón rojo del iPhone
+    _tubo_boton(p, (255, 105, 95), (205, 40, 35), -135)
+
+
 OTROS = {"app_banco": app_banco, "app_taxi": app_taxi, "app_maps": app_maps, "app_miamerica": app_miamerica,
          "app_llamadas": app_llamadas, "app_mensajes": app_mensajes, "app_agenda": app_agenda,
          "dato_velocidad": dato_velocidad, "dato_asientos": dato_asientos, "dato_tanque": dato_tanque,
          "dato_maletero": dato_maletero, "dato_guantera": dato_guantera, "dato_licencia": dato_licencia,
-         "pago_efectivo": pago_efectivo}
+         "pago_efectivo": pago_efectivo, "tel_atender": tel_atender, "tel_colgar": tel_colgar}
 
 
 OBJETOS = [
