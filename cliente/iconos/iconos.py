@@ -436,12 +436,17 @@ def dato_velocidad(p):
 
 
 def dato_asientos(p):
-    p.shape("rect", (26, 6, 66, 62), (120, 90, 70), (60, 40, 30), vertical=False, y0=26, y1=66, r=12)
-    p.shape("rect", (32, 12, 60, 56), (150, 115, 90), (90, 65, 50), r=8, sombra=0.4)
-    p.shape("rect", (18, 58, 84, 80), (120, 90, 70), (60, 40, 30), r=8)
-    p.shape("rect", (30, 80, 38, 94), (60, 60, 64), (25, 25, 28), r=1)
-    p.shape("rect", (66, 80, 74, 94), (60, 60, 64), (25, 25, 28), r=1)
-
+    # asiento de auto visto de costado: apoyacabezas, respaldo inclinado y grueso, almohadón y riel
+    CU = ((170, 120, 85), (95, 60, 38))
+    p.poly([(18, 26), (46, 22), (62, 64), (34, 72)], *CU, vertical=False, y0=20, y1=60)          # respaldo
+    p.shape("rect", (16, 4, 48, 22), *CU, vertical=False, y0=16, y1=48, r=8)                      # apoyacabezas
+    p.shape("rect", (28, 18, 36, 28), (60, 60, 64), (25, 25, 28), r=1, sombra=0)                  # varilla
+    p.shape("rect", (32, 56, 94, 78), *CU, y0=56, y1=78, r=9)                                     # almohadón
+    p.shape("rect", (44, 78, 51, 88), (60, 60, 64), (25, 25, 28), r=1)
+    p.shape("rect", (76, 78, 83, 88), (60, 60, 64), (25, 25, 28), r=1)
+    p.shape("rect", (30, 86, 96, 93), (80, 82, 88), (35, 36, 40), r=2)                            # riel
+    p.brillo((24, 28, 32, 64), 110, 1.2, ell=False)
+    p.brillo((38, 59, 88, 64), 100, 1.2, ell=False)
 
 def dato_tanque(p):
     p.shape("rect", (56, 6, 76, 20), (60, 60, 64), (25, 25, 28), r=3)
