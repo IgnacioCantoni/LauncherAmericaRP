@@ -435,18 +435,57 @@ def dato_velocidad(p):
     p.shape("ell", (43, 47, 57, 61), (220, 222, 228), (130, 135, 145), borde=3)
 
 
+def suave(pts, n=3):
+    for _ in range(n):
+        q=[]
+        for i in range(len(pts)):
+            (x0,y0),(x1,y1)=pts[i],pts[(i+1)%len(pts)]
+            q+= [(x0*.75+x1*.25,y0*.75+y1*.25),(x0*.25+x1*.75,y0*.25+y1*.75)]
+        pts=q
+    return pts
+
+def costura(p, pts, color=(60,35,20,170), w=0.7):
+    q=[(u(x),u(y)) for x,y in pts]
+    lay=Image.new("RGBA",p.img.size,(0,0,0,0)); dl=ImageDraw.Draw(lay)
+    dl.line(q, fill=color, width=max(1,int(u(w))), joint="curve")
+    a=p.img.getchannel("A")
+    lay.putalpha(ImageChops.multiply(lay.getchannel("A"),a))
+    p.img.alpha_composite(lay)
+
+CL=(196,140,96); CM=(150,98,62); CO=(92,56,34); CX=(60,36,22)
 def dato_asientos(p):
-    # asiento de auto visto de costado: apoyacabezas, respaldo inclinado y grueso, almohadón y riel
-    CU = ((170, 120, 85), (95, 60, 38))
-    p.poly([(18, 26), (46, 22), (62, 64), (34, 72)], *CU, vertical=False, y0=20, y1=60)          # respaldo
-    p.shape("rect", (16, 4, 48, 22), *CU, vertical=False, y0=16, y1=48, r=8)                      # apoyacabezas
-    p.shape("rect", (28, 18, 36, 28), (60, 60, 64), (25, 25, 28), r=1, sombra=0)                  # varilla
-    p.shape("rect", (32, 56, 94, 78), *CU, y0=56, y1=78, r=9)                                     # almohadón
-    p.shape("rect", (44, 78, 51, 88), (60, 60, 64), (25, 25, 28), r=1)
-    p.shape("rect", (76, 78, 83, 88), (60, 60, 64), (25, 25, 28), r=1)
-    p.shape("rect", (30, 86, 96, 93), (80, 82, 88), (35, 36, 40), r=2)                            # riel
-    p.brillo((24, 28, 32, 64), 110, 1.2, ell=False)
-    p.brillo((38, 59, 88, 64), 100, 1.2, ell=False)
+    # asiento de auto de costado con un poco de perspectiva: cuero, panel acolchado, costuras, varillas y riel
+    # respaldo lado lejano (se ve un poco: da profundidad)
+    p.poly(suave([(29,22),(45,19),(52,26),(64,62),(62,70),(50,71),(36,30)]), CM, CX, vertical=False, y0=30, y1=64)
+    # respaldo: costado cercano
+    back=suave([(18,26),(32,19),(44,22),(48,30),(58,64),(54,72),(36,74),(28,70),(24,56)])
+    p.poly(back, CL, CO, vertical=False, y0=20, y1=58)
+    # panel central acolchado (franja más clara, con costuras)
+    ins=suave([(30,25),(40,23),(44,29),(53,63),(50,68),(41,68),(38,60)],2)
+    p.poly(ins, (214,164,118), (150,100,64), vertical=False, y0=28, y1=58, sombra=0.35, borde=3)
+    for t in (0.22,0.42,0.62,0.82):
+        y=25+t*43; x0=31+t*7.5; x1=41+t*11
+        costura(p, [(x0,y),(x1,y+0.6)], (70,40,22,190), 0.6)
+    # apoyacabezas con varillas
+    for x in (27,33):
+        p.shape("rect",(x,14,x+2.6,24),(200,200,206),(110,110,118),vertical=False,y0=x,y1=x+3,sombra=0.2,borde=1)
+    head=suave([(16,6),(34,3),(42,8),(41,16),(36,18),(19,19),(14,13)])
+    p.poly(head, CL, CO, y0=3, y1=20)
+    p.brillo((20,5,34,9),120,1.3)
+    # almohadón: cara de arriba y costado
+    p.poly(suave([(36,62),(80,57),(92,60),(90,66),(40,70)],2), (214,164,118),(160,108,70), y0=57, y1=68, sombra=0.35, borde=3)
+    cush=suave([(34,66),(82,61),(93,63),(94,72),(88,79),(42,81),(33,76)])
+    p.poly(cush, CL, CO, y0=60, y1=82)
+    costura(p, [(40,69),(84,64.5),(91,66)], (70,40,22,190), 0.6)
+    # tapa de plástico abajo, palanca y riel
+    p.shape("rect",(40,79,88,86),(70,72,78),(30,31,35),r=2)
+    p.linea([(80,83),(90,85)],(120,120,126),1.6,sombra=0.2)
+    p.shape("rect",(36,86,94,92),(150,152,160),(60,62,68),r=1.5)
+    # brillos del cuero
+    p.brillo((22,30,30,62),95,1.6)
+    p.brillo((46,62,86,66),110,1.2)
+    p.brillo((60,70,90,74),60,1.5)
+
 
 def dato_tanque(p):
     p.shape("rect", (56, 6, 76, 20), (60, 60, 64), (25, 25, 28), r=3)
