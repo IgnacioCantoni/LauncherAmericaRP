@@ -3,7 +3,8 @@
 # Uso: python3 txd.py <carpeta de iconos.py> <txd entrada> <txd salida> <lado>
 import struct, sys
 sys.path.insert(0, sys.argv[1])
-from iconos import HUD, OTROS, icono
+from iconos import OTROS, icono
+from otros3d import HUD, DATOS
 from telefono import GRANDES
 from objetos3d import POR_ID
 from celdas import celda
@@ -49,7 +50,7 @@ def main():
     for k in sorted(objetos):
         grande = icono(objetos[k], 256)
         nuevas += [(f"inv_{k}", textura(f"inv_{k}", celda(grande))), (f"inv_{k}_e", textura(f"inv_{k}_e", celda(grande, True)))]
-    nuevas += [(n, textura(n, icono(f, lado))) for n, f in list(HUD.items()) + list(OTROS.items())]
+    nuevas += [(n, textura(n, icono(f, lado))) for n, f in list(HUD.items()) + list(DATOS.items()) + list(OTROS.items())]
     nuevas += [(n, textura(n, f())) for n, f in GRANDES.items()]
     todas = viejas + nuevas
     cuerpo = chunk(0x1, struct.pack("<HH", len(todas), 0)) + b"".join(c for _, c in todas) + chunk(0x3, b"")

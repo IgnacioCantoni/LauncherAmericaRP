@@ -97,80 +97,6 @@ class R:
         return out.resize((px, px), Image.LANCZOS)
 
 
-# ---------- Íconos del HUD sin CEF (van chicos, dentro de los círculos oscuros: formas simples y llenas) ----------
-
-def hud_hambre(p):
-    # tenedor y cuchillo plateados
-    PL = ((250, 252, 255), (140, 148, 160))
-    for x in (17, 27, 37):
-        p.shape("rect", (x, 6, x + 6, 36), *PL, vertical=False, y0=x, y1=x + 6, r=3, borde=3)
-    p.shape("rect", (15, 30, 45, 44), *PL, vertical=False, y0=15, y1=45, r=6, borde=3)
-    p.shape("rect", (25, 40, 35, 94), *PL, vertical=False, y0=25, y1=35, r=5, borde=3)
-    m = p.mask(lambda d: (d.pieslice([u(56), u(6), u(88), u(76)], 90, 270, fill=255), d.rectangle([u(71), u(6), u(80), u(50)], fill=255)))
-    p.fill(m, *PL, vertical=False, y0=56, y1=80, borde=3)
-    p.shape("rect", (67, 48, 79, 94), *PL, vertical=False, y0=67, y1=79, r=5, borde=3)
-    p.brillo((19, 8, 21, 34), 200, 0.6, ell=False)
-    p.brillo((60, 12, 64, 60), 170, 0.8, ell=False)
-
-
-def hud_sed(p):
-    m = p.mask(lambda d: (d.polygon([(u(50), u(4)), (u(20), u(56)), (u(80), u(56))], fill=255), d.ellipse([u(18), u(36), u(82), u(96)], fill=255)))
-    p.fill(m, (140, 215, 255), (20, 100, 220), y0=10, y1=96, borde=8)
-    p.brillo((30, 50, 42, 80), 210, 1.5)
-    p.brillo((56, 74, 70, 86), 90, 2)
-
-
-def hud_cansancio(p):
-    m = p.mask(lambda d: (d.ellipse([u(8), u(8), u(92), u(92)], fill=255), d.ellipse([u(32), u(-6), u(108), u(70)], fill=0)))
-    p.fill(m, (255, 248, 200), (225, 180, 70), vertical=False, y0=8, y1=70, borde=8)
-    p.brillo((14, 34, 26, 70), 150, 2)
-    for x, y, r in ((30, 70, 4), (48, 80, 3), (22, 52, 2.5)):
-        p.shape("ell", (x - r, y - r, x + r, y + r), (215, 170, 70), (180, 135, 50), borde=2, sombra=0.4)
-
-
-def hud_auto(p):
-    p.poly([(24, 26), (70, 26), (84, 48), (12, 48)], (235, 60, 55), (170, 25, 25))
-    p.poly([(29, 31), (47, 31), (47, 46), (19, 46)], (190, 225, 250), (90, 140, 190), sombra=0.3)
-    p.poly([(51, 31), (67, 31), (77, 46), (51, 46)], (190, 225, 250), (90, 140, 190), sombra=0.3)
-    p.shape("rect", (4, 44, 96, 72), (240, 70, 60), (150, 20, 20), r=9)
-    p.brillo((10, 47, 90, 52), 150, 1.2)
-    p.shape("rect", (4, 56, 14, 62), (255, 230, 120), (220, 170, 50), r=2, sombra=0)
-    for x in (14, 64):
-        p.shape("ell", (x, 58, x + 24, 82), (70, 70, 76), (15, 15, 18), borde=6)
-        p.shape("ell", (x + 7, 65, x + 17, 75), (220, 222, 228), (140, 145, 155), borde=3)
-
-
-def hud_nafta(p):
-    p.linea([(58, 34), (76, 34), (84, 46), (84, 74), (90, 80), (90, 86)], (60, 60, 64), 6)
-    p.shape("rect", (78, 12, 92, 32), (70, 70, 75), (25, 25, 28), r=3)
-    p.shape("rect", (10, 8, 60, 92), (240, 70, 60), (150, 20, 20), vertical=False, y0=10, y1=60, r=7)
-    p.shape("rect", (18, 16, 52, 40), (210, 245, 220), (110, 180, 130), r=3, sombra=0.6)
-    p.shape("rect", (4, 86, 66, 96), (90, 92, 98), (40, 40, 44), r=2)
-    p.brillo((14, 44, 19, 84), 120, 1.0, ell=False)
-
-
-def hud_vida(p):
-    m = p.mask(lambda d: (d.ellipse([u(6), u(10), u(52), u(56)], fill=255), d.ellipse([u(48), u(10), u(94), u(56)], fill=255),
-                          d.polygon([(u(9), u(42)), (u(91), u(42)), (u(50), u(92))], fill=255)))
-    p.fill(m, (255, 110, 100), (175, 20, 30), y0=10, y1=92, borde=8)
-    p.brillo((16, 18, 34, 34), 200, 2)
-
-
-def hud_chaleco(p):
-    # chaleco antibalas visto de frente: cuerpo con cuello en V y placas
-    m = p.mask(lambda d: d.polygon([(u(26), u(6)), (u(40), u(6)), (u(50), u(26)), (u(60), u(6)), (u(74), u(6)), (u(88), u(22)),
-                                     (u(88), u(90)), (u(12), u(90)), (u(12), u(22))], fill=255))
-    p.fill(m, (150, 175, 205), (55, 75, 105), vertical=False, y0=12, y1=88, borde=8)
-    p.shape("rect", (20, 40, 46, 62), (110, 135, 165), (60, 80, 110), r=3, sombra=0.4)
-    p.shape("rect", (54, 40, 80, 62), (110, 135, 165), (60, 80, 110), r=3, sombra=0.4)
-    p.shape("rect", (12, 70, 88, 78), (45, 60, 85), (30, 40, 60), sombra=0.2)
-    p.brillo((16, 24, 24, 84), 120, 1.2, ell=False)
-
-
-HUD = {"hud_hambre": hud_hambre, "hud_sed": hud_sed, "hud_cansancio": hud_cansancio, "hud_auto": hud_auto,
-       "hud_nafta": hud_nafta, "hud_vida": hud_vida, "hud_chaleco": hud_chaleco}
-
-
 # ---------- Apps del teléfono sin CEF (el cuadrado redondeado con su dibujo, como en un celular) ----------
 
 def _app(p, c1, c2):
@@ -239,114 +165,6 @@ def app_agenda(p):
     _blanco(p, p.mask(lambda d: (d.ellipse([u(36), u(16), u(64), u(44)], fill=255), d.pieslice([u(20), u(48), u(80), u(108)], 180, 360, fill=255))))
 
 
-# ---------- Datos de la concesionaria y formas de pago ----------
-
-def dato_velocidad(p):
-    p.shape("ell", (6, 10, 94, 98), (70, 72, 80), (20, 20, 24), borde=8)
-    p.shape("ell", (14, 18, 86, 90), (35, 36, 42), (15, 15, 18), sombra=0.3)
-    for k in range(7):
-        a = math.radians(150 + k * 40)
-        x1, y1 = 50 + 30 * math.cos(a), 54 + 30 * math.sin(a)
-        x2, y2 = 50 + 24 * math.cos(a), 54 + 24 * math.sin(a)
-        p.linea([(x1, y1), (x2, y2)], (255, 255, 255) if k < 5 else (255, 80, 70), 3)
-    p.linea([(50, 54), (72, 34)], (255, 80, 70), 5, c2=(200, 30, 30))
-    p.shape("ell", (43, 47, 57, 61), (220, 222, 228), (130, 135, 145), borde=3)
-
-
-def suave(pts, n=3):
-    for _ in range(n):
-        q=[]
-        for i in range(len(pts)):
-            (x0,y0),(x1,y1)=pts[i],pts[(i+1)%len(pts)]
-            q+= [(x0*.75+x1*.25,y0*.75+y1*.25),(x0*.25+x1*.75,y0*.25+y1*.75)]
-        pts=q
-    return pts
-
-def costura(p, pts, color=(60,35,20,170), w=0.7):
-    q=[(u(x),u(y)) for x,y in pts]
-    lay=Image.new("RGBA",p.img.size,(0,0,0,0)); dl=ImageDraw.Draw(lay)
-    dl.line(q, fill=color, width=max(1,int(u(w))), joint="curve")
-    a=p.img.getchannel("A")
-    lay.putalpha(ImageChops.multiply(lay.getchannel("A"),a))
-    p.img.alpha_composite(lay)
-
-CL=(196,140,96); CM=(150,98,62); CO=(92,56,34); CX=(60,36,22)
-def dato_asientos(p):
-    # asiento de auto de costado con un poco de perspectiva: cuero, panel acolchado, costuras, varillas y riel
-    # respaldo lado lejano (se ve un poco: da profundidad)
-    p.poly(suave([(29,22),(45,19),(52,26),(64,62),(62,70),(50,71),(36,30)]), CM, CX, vertical=False, y0=30, y1=64)
-    # respaldo: costado cercano
-    back=suave([(18,26),(32,19),(44,22),(48,30),(58,64),(54,72),(36,74),(28,70),(24,56)])
-    p.poly(back, CL, CO, vertical=False, y0=20, y1=58)
-    # panel central acolchado (franja más clara, con costuras)
-    ins=suave([(30,25),(40,23),(44,29),(53,63),(50,68),(41,68),(38,60)],2)
-    p.poly(ins, (214,164,118), (150,100,64), vertical=False, y0=28, y1=58, sombra=0.35, borde=3)
-    for t in (0.22,0.42,0.62,0.82):
-        y=25+t*43; x0=31+t*7.5; x1=41+t*11
-        costura(p, [(x0,y),(x1,y+0.6)], (70,40,22,190), 0.6)
-    # apoyacabezas con varillas
-    for x in (27,33):
-        p.shape("rect",(x,14,x+2.6,24),(200,200,206),(110,110,118),vertical=False,y0=x,y1=x+3,sombra=0.2,borde=1)
-    head=suave([(16,6),(34,3),(42,8),(41,16),(36,18),(19,19),(14,13)])
-    p.poly(head, CL, CO, y0=3, y1=20)
-    p.brillo((20,5,34,9),120,1.3)
-    # almohadón: cara de arriba y costado
-    p.poly(suave([(36,62),(80,57),(92,60),(90,66),(40,70)],2), (214,164,118),(160,108,70), y0=57, y1=68, sombra=0.35, borde=3)
-    cush=suave([(34,66),(82,61),(93,63),(94,72),(88,79),(42,81),(33,76)])
-    p.poly(cush, CL, CO, y0=60, y1=82)
-    costura(p, [(40,69),(84,64.5),(91,66)], (70,40,22,190), 0.6)
-    # tapa de plástico abajo, palanca y riel
-    p.shape("rect",(40,79,88,86),(70,72,78),(30,31,35),r=2)
-    p.linea([(80,83),(90,85)],(120,120,126),1.6,sombra=0.2)
-    p.shape("rect",(36,86,94,92),(150,152,160),(60,62,68),r=1.5)
-    # brillos del cuero
-    p.brillo((22,30,30,62),95,1.6)
-    p.brillo((46,62,86,66),110,1.2)
-    p.brillo((60,70,90,74),60,1.5)
-
-
-def dato_tanque(p):
-    p.shape("rect", (56, 6, 76, 20), (60, 60, 64), (25, 25, 28), r=3)
-    p.poly([(18, 18), (70, 18), (84, 32), (84, 94), (18, 94)], (235, 60, 50), (150, 20, 20), vertical=False, y0=18, y1=84)
-    p.shape("rect", (24, 22, 50, 34), (0, 0, 0), r=4, sombra=0)
-    p.linea([(32, 46), (70, 84)], (190, 35, 30), 5)
-    p.linea([(70, 46), (32, 84)], (190, 35, 30), 5)
-    p.brillo((22, 40, 27, 90), 120, 1.0, ell=False)
-
-
-def dato_maletero(p):
-    p.shape("rect", (36, 8, 64, 24), (70, 70, 76), (30, 30, 34), r=5)
-    p.img.paste((0, 0, 0, 0), [int(u(42)), int(u(14)), int(u(58)), int(u(24))])
-    p.shape("rect", (8, 22, 92, 92), (185, 120, 65), (110, 60, 25), vertical=False, y0=8, y1=92, r=8)
-    for x in (26, 70):
-        p.shape("rect", (x, 22, x + 6, 92), (120, 70, 35), (80, 45, 20), sombra=0.2)
-    p.brillo((12, 26, 88, 34), 90, 2)
-
-
-def dato_guantera(p):
-    p.shape("rect", (6, 18, 94, 86), (75, 78, 86), (30, 32, 36), r=8)
-    p.shape("rect", (14, 26, 86, 78), (50, 52, 58), (25, 26, 30), r=5, sombra=0.4)
-    p.shape("rect", (38, 44, 62, 54), (200, 205, 212), (120, 125, 135), r=4)
-    p.brillo((10, 20, 90, 28), 80, 2)
-
-
-def dato_licencia(p):
-    p.shape("rect", (6, 18, 94, 82), (240, 244, 250), (190, 198, 210), vertical=False, y0=6, y1=94, r=7)
-    p.shape("rect", (6, 18, 94, 32), (50, 100, 190), (25, 60, 140), r=7, sombra=0.2)
-    p.img.paste((0, 0, 0, 0), [0, 0, 1, 1])
-    p.shape("rect", (14, 38, 40, 72), (170, 185, 205), (110, 125, 150), r=3, sombra=0.3)
-    p.shape("ell", (21, 42, 33, 54), (90, 100, 120), sombra=0)
-    for j, w in enumerate((40, 32, 36)):
-        p.shape("rect", (48, 42 + j * 10, 48 + w, 46 + j * 10), (140, 150, 168), r=1.5, sombra=0)
-
-
-def pago_efectivo(p):
-    for k, dy in enumerate((0, -10)):
-        p.shape("rect", (6, 34 + dy, 94, 80 + dy), (130, 210, 120), (50, 130, 60), vertical=False, y0=6, y1=94, r=4)
-        p.shape("ell", (38, 44 + dy, 62, 70 + dy), (90, 170, 90), (40, 110, 50), sombra=0.3)
-    p.d = None
-
-
 # ---------- Botones de la llamada en la isla del teléfono ----------
 
 def _tubo_boton(p, c1, c2, angulo):
@@ -371,9 +189,7 @@ def tel_colgar(p):
 
 OTROS = {"app_banco": app_banco, "app_taxi": app_taxi, "app_maps": app_maps, "app_miamerica": app_miamerica,
          "app_llamadas": app_llamadas, "app_mensajes": app_mensajes, "app_agenda": app_agenda,
-         "dato_velocidad": dato_velocidad, "dato_asientos": dato_asientos, "dato_tanque": dato_tanque,
-         "dato_maletero": dato_maletero, "dato_guantera": dato_guantera, "dato_licencia": dato_licencia,
-         "pago_efectivo": pago_efectivo, "tel_atender": tel_atender, "tel_colgar": tel_colgar}
+         "tel_atender": tel_atender, "tel_colgar": tel_colgar}
 
 
 _cache = {}
