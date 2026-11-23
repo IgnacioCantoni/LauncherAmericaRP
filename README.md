@@ -153,6 +153,7 @@ Después de conectar, la ASI dibuja las pantallas del server (desde la 0.7.8 de 
 - En el ingreso esconde el cartel de contraseña del SA-MP (lo deja abierto lejos de la pantalla: es el que manda la clave), dibuja un punto por letra en el campo propio y hace que ENTRAR y "Salir del servidor" funcionen como los botones del cartel. Enter y Esc andan como siempre.
 - Las piezas están en el mismo `americarp/conexion.bin`, desde el tipo 10. Las arma `cliente/pantallas.py` (lo llama `armar_conexion.py`, que con `vista.png` deja también `vista-ingreso.png` y `vista-seleccion.png`). Van estiradas a toda la pantalla como los TextDraws, en medidas de 1920x1080: si se mueve algo, hay que moverlo igual en GABU-RP.
 - Usa más direcciones de `samp.dll` 0.3.7-R5 (el cartel en `+0x26EB50`, los TextDraws en el pool `+0x3DE` / `+0x1C`, el foco de DXUT en `+0x142780`). Al arrancar revisa los bytes de esas partes del código; si no coinciden, no dibuja estas pantallas, lo anota en `americarp/carga.log` y se ve el cartel de siempre.
+- Skins nítidos: el SA-MP arma la imagen de cada skin de los TextDraws de modelo en 256x256 y la muestra sin suavizar, así que en un cuadro grande (el personaje de la selección) se ve en escalones. La ASI la pasa a 1024x1024 con filtro lineal (con una profundidad propia de 1024, porque la del SA-MP es de 256): se achica en vez de estirarse y los bordes quedan suaves. Solo los skins; objetos y vehículos siguen igual. Si los bytes de `samp.dll` no coinciden, lo anota en `carga.log` y quedan como siempre.
 
 ## Cambiar la imagen de fondo
 

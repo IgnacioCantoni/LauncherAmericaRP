@@ -232,6 +232,7 @@ static int npiezas, conexionProbada;
 static DWORD samp, conectadoDesde;
 static int pantallasOk;
 static void verificarPantallas(void);
+static void skinHD(void);
 
 // Busca el texto exacto (con su 0 al final) en samp.dll y cambia cada "push texto" del codigo por el nuestro.
 static int traducir(const char *ingles, const char *espaniol, DWORD ini, DWORD fin, DWORD codigo, DWORD codigoFin)
@@ -266,6 +267,7 @@ static void prepararSamp(void)
     wsprintfA(t, "SA-MP 0.3.7-R5: %u mensajes traducidos", total);
     anotar(t);
     verificarPantallas();
+    skinHD();
     sampEstado = 1;
 }
 
@@ -350,6 +352,39 @@ static void verificarPantallas(void)
         && igual(0x1E84A, "\x8B\x8C\xB7\x00\x24\x00\x00", 7)
         && igual(0xC5037, "\x8B\x80\xDE\x03\x00\x00\x8B\x48\x1C", 9);
     if (!pantallasOk) anotar("samp.dll no coincide con lo esperado: sin pantallas de ingreso ni seleccion");
+}
+
+// ---------- Skins nitidos en las vistas previas (TextDraws de modelo) ----------
+// El SA-MP R5 arma la imagen de cada skin (CSnapShotHelper, samp+0x6C140) en un raster de 256x256 que
+// la textura muestra con filtro "nearest": estirada a un cuadro grande (la seleccion de personaje) se
+// ve en escalones. Se cambia a 1024x1024 con filtro lineal, asi se achica en vez de estirarse y los
+// bordes quedan suaves. El raster de profundidad que comparte el SA-MP es de 256 y no se puede agrandar
+// (puede estar creado antes que esta ASI), asi que los skins usan uno propio de 1024.
+// Solo los skins: los objetos y vehiculos (inventario, concesionaria) siguen en 256.
+#define SKIN_LADO 1024
+DWORD skinZ;
+void skinStub(void);
+// Reemplaza "mov edx,[ebp+14h]; mov eax,[esp+14h]" (samp+0x6C2C6) antes de RwCameraSetRaster/ZRaster.
+// Con el call encima la pila corre 4: [esp+1Ch] es la textura y [esp+18h] el raster del skin.
+__asm__(".text\n.globl _skinStub\n_skinStub:\n"
+        "  movl 0x1C(%esp), %eax\n  testl %eax, %eax\n  jz 1f\n"
+        "  movb $2, 0x50(%eax)\n"   // RwTexture::filterAddressing: rwFILTERLINEAR
+        "1:\n  movl 0x18(%esp), %eax\n  movl _skinZ, %edx\n  ret\n");
+
+static void skinHD(void)
+{
+    static const char crear[] = "\x68\x05\x05\x00\x00\x33\xDB\x53\x68\x00\x01\x00\x00\x68\x00\x01\x00\x00\x8B\xE9\xE8\x5B\x55\x04\x00";
+    static const char camara[] = "\x8B\x55\x14\x8B\x44\x24\x14\x8B\x4D\x00\x52\x50\x51\xE8\xD8\x56\x04\x00";
+    if (!igual(0x6C15C, crear, sizeof crear - 1) || !igual(0x6C2C6, camara, sizeof camara - 1)) { anotar("samp.dll no coincide: skins en 256"); return; }
+    skinZ = (DWORD)RasterCrear(SKIN_LADO, SKIN_LADO, 0, 0x01); // rwRASTERTYPEZBUFFER
+    if (!skinZ) { anotar("no se pudo crear la profundidad de 1024: skins en 256"); return; }
+    DWORD lado = SKIN_LADO;
+    escribir(samp + 0x6C165, &lado, 4);
+    escribir(samp + 0x6C16A, &lado, 4);
+    unsigned char llamada[7] = { 0xE8, 0, 0, 0, 0, 0x90, 0x90 };
+    *(DWORD *)(llamada + 1) = (DWORD)skinStub - (samp + 0x6C2C6 + 5);
+    escribir(samp + 0x6C2C6, llamada, 7);
+    anotar("skins de las vistas previas en 1024x1024");
 }
 
 // Lo que pidio el server: "ACN:I" ingreso, "ACN:F" solo el fondo (registro, creacion de personaje)
