@@ -631,8 +631,8 @@ def _ajustado(fn, lado=90):
     return f
 
 
-# id del objeto (tabla objetos) -> ícono; la textura en americarp.txd se llama obj_<id>. Las armas (20 a 40) no
-# tienen: el server las muestra con su modelo del juego.
+# id del objeto (tabla objetos) -> ícono; la textura en americarp.txd se llama obj_<id>. Las armas (20 a 40)
+# están en armas3d.py.
 POR_ID = {1: sandwich, 2: hamburguesa, 3: pizza, 4: agua, 5: gaseosa, 6: energizante, 7: celular, 8: tarjeta,
           9: radio, 10: mochila, 11: cana, 12: latas, 13: botellas, 14: ropa, 15: radio_vieja, 16: anteojos,
           17: bolso, 18: maletin, 19: reloj, 41: balas_pistola, 42: cartuchos, 43: balas_subfusil,

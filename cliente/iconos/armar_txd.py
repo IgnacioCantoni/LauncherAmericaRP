@@ -1,5 +1,5 @@
 # Arma americarp.txd: deja tal cual las texturas que ya tiene (el puño) y agrega/reemplaza obj_<id>
-# (objetos), inv_* (celdas del inventario), hud_* (HUD sin CEF), app_* y tel_* (teléfono) y dato_*/pago_* (concesionaria) con los íconos realistas, en el mismo formato que el puño (D3D9, 8888 con alfa, un nivel).
+# (objetos y armas), inv_* (celdas del inventario), hud_* (HUD sin CEF), app_* y tel_* (teléfono) y dato_*/pago_* (concesionaria) con los íconos realistas, en el mismo formato que el puño (D3D9, 8888 con alfa, un nivel).
 # Uso: python3 txd.py <carpeta de iconos.py> <txd entrada> <txd salida> <lado>
 import struct, sys
 sys.path.insert(0, sys.argv[1])
@@ -7,6 +7,9 @@ from iconos import OTROS, icono
 from otros3d import HUD, DATOS, PANEL
 from telefono import GRANDES
 from objetos3d import POR_ID
+from armas3d import POR_ID as ARMAS
+import iconos
+from multiprocessing import Pool
 from celdas import celda, boton
 
 VER = 0x1803FFFF
@@ -41,11 +44,32 @@ def textura(nombre, im):
     return chunk(0x15, chunk(0x1, cab) + chunk(0x3, b""))
 
 
+_TODAS = []
+
+
+def _foto(i):
+    p = iconos.R()
+    _TODAS[i](p)
+    return p.img
+
+
+def _fotografiar(fns):
+    """Renderiza todos los íconos en paralelo (uno por núcleo) y los deja en la caché de iconos.icono."""
+    _TODAS[:] = list(dict.fromkeys(fns))
+    with Pool() as pl:
+        imgs = pl.map(_foto, range(len(_TODAS)))
+    for fn, im in zip(_TODAS, imgs):
+        r = iconos.R()
+        r.img = im
+        iconos._cache[fn] = r
+
+
 def main():
     _, carpeta, entrada, salida, lado = sys.argv
     lado = int(lado)
     viejas = [(n, c) for n, c in leer(entrada) if not n.startswith(("obj_", "inv_", "hud_", "app_", "dato_", "pago_", "tel_", "pv_"))]
-    objetos = POR_ID
+    objetos = {**POR_ID, **ARMAS}
+    _fotografiar(list(objetos.values()) + list(HUD.values()) + list(DATOS.values()) + list(OTROS.values()) + list(PANEL.values()))
     nuevas = [(f"obj_{k}", textura(f"obj_{k}", icono(objetos[k], lado))) for k in sorted(objetos)]
     for k in sorted(objetos):
         grande = icono(objetos[k], 256)

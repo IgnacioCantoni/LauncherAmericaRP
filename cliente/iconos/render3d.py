@@ -206,6 +206,13 @@ def render(esc, px=640, pasos=110, sombras=True):
     gx, gy = np.meshgrid(g * s, -g * s)
     org = gx.reshape(-1, 1) * right + gy.reshape(-1, 1) * up - fwd * 4.0
     M = len(org)
+    D = getattr(esc, "persp", 0)
+    if D:   # cámara con perspectiva a distancia D: los reflejos cambian a lo largo de las caras planas (metal)
+        cam = -fwd * D
+        dirs = norm(org + fwd * 4.0 - cam)
+        org = np.broadcast_to(cam, (M, 3)).copy()
+    else:
+        dirs = np.broadcast_to(fwd, (M, 3))
     t = np.zeros(M)
     vivo = np.ones(M, bool)
     golpe = np.zeros(M, bool)
@@ -213,22 +220,22 @@ def render(esc, px=640, pasos=110, sombras=True):
         idx = np.nonzero(vivo)[0]
         if not len(idx):
             break
-        d = esc.sdf(org[idx] + fwd * t[idx, None])
+        d = esc.sdf(org[idx] + dirs[idx] * t[idx, None])
         t[idx] += d
         hit = d < 1e-3
         golpe[idx[hit]] = True
-        lejos = t[idx] > 8.0
+        lejos = t[idx] > 8.0 + D
         vivo[idx[hit | lejos]] = False
     img = np.zeros((M, 4))
     h = np.nonzero(golpe)[0]
     if len(h):
-        p = org[h] + fwd * t[h, None]
+        p = org[h] + dirs[h] * t[h, None]
         e = 1e-3
         n = norm(np.stack([esc.sdf(p + v3(e, 0, 0)) - esc.sdf(p - v3(e, 0, 0)),
                            esc.sdf(p + v3(0, e, 0)) - esc.sdf(p - v3(0, e, 0)),
                            esc.sdf(p + v3(0, 0, e)) - esc.sdf(p - v3(0, 0, e))], axis=1))
         ids = esc.ids(p)
-        v = -fwd
+        v = -dirs[h]
         # oclusión ambiental
         ao = np.ones(len(p))
         for i, dd in enumerate((0.02, 0.05, 0.1, 0.18)):
@@ -239,9 +246,10 @@ def render(esc, px=640, pasos=110, sombras=True):
             sel = ids == k
             if not sel.any():
                 continue
-            pp, nn, aa = p[sel], n[sel], ao[sel]
+            pp, nn, aa, vv = p[sel], n[sel], ao[sel], v[sel]
             alb = mat.albedo(pp, nn)
-            ndv = np.clip(nn @ v, 0, 1)
+            nv = np.einsum("ij,ij->i", nn, vv)
+            ndv = np.clip(nv, 0, 1)
             f0 = np.where(mat.metal > 0.5, 1.0, 0.0) * alb + (1 - mat.metal) * 0.04 * (0.5 + mat.brillo)
             if mat.metal <= 0.5:
                 f0 = np.full_like(alb, 0.04 * (0.5 + mat.brillo))
@@ -258,13 +266,13 @@ def render(esc, px=640, pasos=110, sombras=True):
                 luz += (ndl * I)[:, None]
                 if mat.transl:
                     luz += (np.clip(-(nn @ L), 0, 1) * I * mat.transl)[:, None]
-                hh = norm(L + v)
+                hh = norm(L + vv)
                 expo = 2.0 / max(mat.rugoso ** 4, 1e-4) - 2
-                spec = np.clip(nn @ hh, 0, 1) ** expo * (expo + 8) / 25.0
+                spec = np.clip(np.einsum("ij,ij->i", nn, hh), 0, 1) ** expo * (expo + 8) / 25.0
                 if j == 0 and sombras:
                     spec = spec * sh_cache
                 esp += (spec * I * ndl.clip(0, 1) ** 0.0)[:, None]
-            r = 2 * (nn @ v)[:, None] * nn - v
+            r = 2 * nv[:, None] * nn - vv
             env = ambiente(r, mat.rugoso)
             amb = ambiente(nn, 1.0) * 0.35 + 0.08
             c = difu * (luz + amb * aa[:, None]) + fres * (env * aa[:, None]) + fres * esp * (1 - mat.rugoso * 0.6)
