@@ -232,7 +232,7 @@ static int npiezas, conexionProbada;
 static DWORD samp, conectadoDesde;
 static int pantallasOk;
 static void verificarPantallas(void);
-static void skinHD(void);
+static void vistasHD(void);
 
 // Busca el texto exacto (con su 0 al final) en samp.dll y cambia cada "push texto" del codigo por el nuestro.
 static int traducir(const char *ingles, const char *espaniol, DWORD ini, DWORD fin, DWORD codigo, DWORD codigoFin)
@@ -267,7 +267,7 @@ static void prepararSamp(void)
     wsprintfA(t, "SA-MP 0.3.7-R5: %u mensajes traducidos", total);
     anotar(t);
     verificarPantallas();
-    skinHD();
+    vistasHD();
     sampEstado = 1;
 }
 
@@ -354,37 +354,52 @@ static void verificarPantallas(void)
     if (!pantallasOk) anotar("samp.dll no coincide con lo esperado: sin pantallas de ingreso ni seleccion");
 }
 
-// ---------- Skins nitidos en las vistas previas (TextDraws de modelo) ----------
-// El SA-MP R5 arma la imagen de cada skin (CSnapShotHelper, samp+0x6C140) en un raster de 256x256 que
-// la textura muestra con filtro "nearest": estirada a un cuadro grande (la seleccion de personaje) se
-// ve en escalones. Se cambia a 1024x1024 con filtro lineal, asi se achica en vez de estirarse y los
-// bordes quedan suaves. El raster de profundidad que comparte el SA-MP es de 256 y no se puede agrandar
-// (puede estar creado antes que esta ASI), asi que los skins usan uno propio de 1024.
-// Solo los skins: los objetos y vehiculos (inventario, concesionaria) siguen en 256.
-#define SKIN_LADO 1024
-DWORD skinZ;
+// ---------- Skins y autos nitidos en las vistas previas (TextDraws de modelo) ----------
+// El SA-MP R5 (CSnapShotHelper) arma la imagen de cada vista previa en un raster de 256x256 que la
+// textura muestra con filtro "nearest": estirada a un cuadro grande (la seleccion de personaje, la
+// concesionaria) se ve en escalones. Para skins (samp+0x6C140) y vehiculos (samp+0x6C3C0) se cambia a
+// 1024x1024 con filtro lineal: se achica en vez de estirarse y los bordes quedan suaves. El raster de
+// profundidad que comparte el SA-MP es de 256 y no se puede agrandar (puede estar creado antes que esta
+// ASI), asi que usan uno propio de 1024. Los objetos (inventario) siguen en 256.
+#define VISTA_LADO 1024
+DWORD vistaZ;
 void skinStub(void);
-// Reemplaza "mov edx,[ebp+14h]; mov eax,[esp+14h]" (samp+0x6C2C6) antes de RwCameraSetRaster/ZRaster.
-// Con el call encima la pila corre 4: [esp+1Ch] es la textura y [esp+18h] el raster del skin.
-__asm__(".text\n.globl _skinStub\n_skinStub:\n"
-        "  movl 0x1C(%esp), %eax\n  testl %eax, %eax\n  jz 1f\n"
-        "  movb $2, 0x50(%eax)\n"   // RwTexture::filterAddressing: rwFILTERLINEAR
-        "1:\n  movl 0x18(%esp), %eax\n  movl _skinZ, %edx\n  ret\n");
+void autoStub(void);
+// Reemplazan "mov edx,[ebp+14h]; mov eax,[esp+14h]" antes de RwCameraSetRaster/ZRaster. Con el call
+// encima la pila corre 4: [esp+18h] es el raster; la textura esta en [esp+1Ch] (skin) o [esp+14h] (auto).
+// 0x50 es RwTexture::filterAddressing y 2 rwFILTERLINEAR.
+__asm__(".text\n"
+        ".globl _skinStub\n_skinStub:\n  movl 0x1C(%esp), %eax\n  jmp 1f\n"
+        ".globl _autoStub\n_autoStub:\n  movl 0x14(%esp), %eax\n"
+        "1:\n  testl %eax, %eax\n  jz 2f\n  movb $2, 0x50(%eax)\n"
+        "2:\n  movl 0x18(%esp), %eax\n  movl _vistaZ, %edx\n  ret\n");
 
-static void skinHD(void)
+static const char vistaCamara[] = "\x8B\x55\x14\x8B\x44\x24\x14\x8B\x4D\x00\x52\x50\x51\xE8";
+static const struct { DWORD crear, camara; const char *llamada; void (*stub)(void); } vistas[] = {
+    { 0x6C15C, 0x6C2C6, "\x5B\x55\x04\x00\xD8\x56\x04\x00", skinStub }, // skins
+    { 0x6C3DC, 0x6C598, "\xDB\x52\x04\x00\x06\x54\x04\x00", autoStub }, // vehiculos
+};
+
+static void vistasHD(void)
 {
-    static const char crear[] = "\x68\x05\x05\x00\x00\x33\xDB\x53\x68\x00\x01\x00\x00\x68\x00\x01\x00\x00\x8B\xE9\xE8\x5B\x55\x04\x00";
-    static const char camara[] = "\x8B\x55\x14\x8B\x44\x24\x14\x8B\x4D\x00\x52\x50\x51\xE8\xD8\x56\x04\x00";
-    if (!igual(0x6C15C, crear, sizeof crear - 1) || !igual(0x6C2C6, camara, sizeof camara - 1)) { anotar("samp.dll no coincide: skins en 256"); return; }
-    skinZ = (DWORD)RasterCrear(SKIN_LADO, SKIN_LADO, 0, 0x01); // rwRASTERTYPEZBUFFER
-    if (!skinZ) { anotar("no se pudo crear la profundidad de 1024: skins en 256"); return; }
-    DWORD lado = SKIN_LADO;
-    escribir(samp + 0x6C165, &lado, 4);
-    escribir(samp + 0x6C16A, &lado, 4);
-    unsigned char llamada[7] = { 0xE8, 0, 0, 0, 0, 0x90, 0x90 };
-    *(DWORD *)(llamada + 1) = (DWORD)skinStub - (samp + 0x6C2C6 + 5);
-    escribir(samp + 0x6C2C6, llamada, 7);
-    anotar("skins de las vistas previas en 1024x1024");
+    static const char crear[] = "\x68\x05\x05\x00\x00\x33\xDB\x53\x68\x00\x01\x00\x00\x68\x00\x01\x00\x00\x8B\xE9\xE8";
+    int n = sizeof vistas / sizeof vistas[0], ok = 1;
+    // Se revisan todas antes de tocar nada; los "call" se comparan para estar seguros de que es el lugar.
+    for (int i = 0; i < n; i++)
+        ok = ok && igual(vistas[i].crear, crear, sizeof crear - 1) && igual(vistas[i].crear + 21, vistas[i].llamada, 4)
+                && igual(vistas[i].camara, vistaCamara, sizeof vistaCamara - 1) && igual(vistas[i].camara + 14, vistas[i].llamada + 4, 4);
+    if (!ok) { anotar("samp.dll no coincide: vistas previas en 256"); return; }
+    vistaZ = (DWORD)RasterCrear(VISTA_LADO, VISTA_LADO, 0, 0x01); // rwRASTERTYPEZBUFFER
+    if (!vistaZ) { anotar("no se pudo crear la profundidad de 1024: vistas previas en 256"); return; }
+    DWORD lado = VISTA_LADO;
+    for (int i = 0; i < n; i++) {
+        escribir(samp + vistas[i].crear + 9, &lado, 4);
+        escribir(samp + vistas[i].crear + 14, &lado, 4);
+        unsigned char llamada[7] = { 0xE8, 0, 0, 0, 0, 0x90, 0x90 };
+        *(DWORD *)(llamada + 1) = (DWORD)vistas[i].stub - (samp + vistas[i].camara + 5);
+        escribir(samp + vistas[i].camara, llamada, 7);
+    }
+    anotar("skins y autos de las vistas previas en 1024x1024");
 }
 
 // Lo que pidio el server: "ACN:I" ingreso, "ACN:F" solo el fondo (registro, creacion de personaje)
