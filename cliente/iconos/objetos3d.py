@@ -44,6 +44,16 @@ def dentro(u, v, pts):
     return r.astype(float)
 
 
+def poligono(u, v, pts):
+    """Distancia con signo al polígono pts (negativa adentro), para extruir formas planas."""
+    d = np.full(len(u), 1e9)
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:] + pts[:1]):
+        ex, ey = x2 - x1, y2 - y1
+        t = np.clip(((u - x1) * ex + (v - y1) * ey) / (ex * ex + ey * ey), 0, 1)
+        d = np.minimum(d, np.hypot(u - x1 - t * ex, v - y1 - t * ey))
+    return np.where(dentro(u, v, pts) > 0, -d, d)
+
+
 def mezcla(base, encima, m):
     return base * (1 - m[:, None]) + encima * m[:, None]
 
@@ -85,57 +95,72 @@ def hamburguesa(p):
 
 
 def sandwich(p):
-    e = Escena(yaw=-30, pitch=24)
+    # medio sándwich de miga: el corte (miga con poros) mira a la cámara, pan tostado arriba y abajo,
+    # jamón, queso que se cae un poco, tomate y lechuga ondulada
+    e = Escena(yaw=-20, pitch=22)
+    pl = [(-1, -0.75), (1, -0.75), (-1, 0.95)]
+    hx, hz = 0.65, 0.76   # hacia afuera del corte
 
-    def triangulo(alto):
-        pl = [(-1, -0.75), (1, -0.75), (-1, 0.95)]
-
+    def capa(alto, extra=0.0, onda=0.0, frec=14.0):
         def f(q):
-            x, z = q[:, 0], -q[:, 2]
-            d = np.full(len(q), -9.0)
-            for (x1, z1), (x2, z2) in zip(pl, pl[1:] + pl[:1]):
-                nx, nz = z2 - z1, -(x2 - x1)
-                l = np.hypot(nx, nz)
-                d = np.maximum(d, ((x - x1) * nx + (z - z1) * nz) / l)
-            return np.maximum(d + 0.12, np.abs(q[:, 1]) - alto + 0.06) - 0.06 if False else \
-                np.linalg.norm(np.stack([np.maximum(d + 0.1, 0), np.maximum(np.abs(q[:, 1]) - alto + 0.06, 0)], 1), axis=1) \
-                + np.minimum(np.maximum(d + 0.1, np.abs(q[:, 1]) - alto + 0.06), 0) - 0.06
+            x, z = q[:, 0], q[:, 2]
+            d = poligono(x, z, pl) - extra + onda * np.sin(x * frec + z * frec * 0.7)
+            b = np.abs(q[:, 1]) - alto
+            r = min(0.05, alto * 0.8)
+            return np.minimum(np.maximum(d + r, b + r), 0) + np.hypot(np.maximum(d + r, 0), np.maximum(b + r, 0)) - r
         return f
-    corteza = Mat(lambda q, n: mezcla(lin((175, 105, 45)), lin((190, 130, 60)), _smooth(0.55, 0.9, np.abs(n[:, 1]))
-                                       * (0.92 + 0.08 * ruido(q, 25))), rugoso=0.6)
-    e.add(mover(triangulo(0.12), y=0.32), corteza)
-    e.add(mover(triangulo(0.12), y=-0.28), corteza)
-    e.add(mover(lambda q: triangulo(0.035)(q) - 0.04, y=0.13), Mat((255, 190, 40), rugoso=0.3, transl=0.2))
-    e.add(mover(lambda q: triangulo(0.04)(q) - 0.02 + 0.02 * np.sin(q[:, 0] * 22) * np.sin(q[:, 2] * 19), y=0.04),
-          Mat((230, 120, 120), rugoso=0.4))
-    lech = lambda q: triangulo(0.025)(q) - 0.07 + 0.05 * np.sin(q[:, 0] * 14 + q[:, 2] * 9)
-    e.add(mover(lambda q: np.maximum(lech(q), np.abs(q[:, 1]) - 0.03), y=-0.08), Mat((100, 185, 50), rugoso=0.35, transl=0.3))
-    foto(p, e)
 
+    def pan(q, n):
+        corte = _smooth(0.55, 0.8, n[:, 0] * hx + n[:, 2] * hz)
+        poros = _smooth(0.55, 0.75, ruido(q, 55)) * 0.35
+        miga = lin((240, 226, 190)) * (1 - poros)[:, None]
+        tostado = mezcla(lin((205, 150, 80)), lin((170, 110, 50)), 0.5 + 0.5 * ruido(q, 20))
+        costra = lin((150, 90, 40)) * (0.9 + 0.1 * ruido(q, 30)[:, None])
+        c = mezcla(costra, tostado, _smooth(0.5, 0.8, np.abs(n[:, 1])))
+        return mezcla(c, miga, corte)
+    e.add(mover(capa(0.11), y=0.33), Mat(pan, rugoso=0.75, brillo=0.2))
+    e.add(mover(capa(0.11), y=-0.3), Mat(pan, rugoso=0.75, brillo=0.2))
+    e.add(mover(capa(0.03, 0.04, 0.012, 9), y=0.17), Mat((250, 185, 45), rugoso=0.35, brillo=0.6, transl=0.3))
+    e.add(mover(capa(0.035, 0.02, 0.01, 19), y=0.1), Mat(lambda q, n: lin((225, 125, 120)) * (0.9 + 0.1 * ruido(q, 40)[:, None]), rugoso=0.4, brillo=0.5))
+    for x, z in ((-0.15, -0.2), (0.35, -0.45), (-0.6, 0.3)):
+        e.add(mover(cilindro(0.26, 0.03, 0.02), x, 0.03, z), Mat(lambda q, n: mezcla(lin((210, 40, 30)), lin((240, 120, 90)),
+              _smooth(0.12, 0.05, np.hypot(q[:, 0] - x, q[:, 2] - z)) * 0.6), rugoso=0.2, brillo=0.9, transl=0.4))
+    e.add(mover(lambda q: np.maximum(capa(0.02, 0.07, 0.05, 11)(q), np.abs(q[:, 1] - 0.02 * np.sin(q[:, 0] * 25)) - 0.02), y=-0.1),
+          Mat(lambda q, n: lin((95, 180, 50)) * (0.85 + 0.15 * ruido(q, 25)[:, None]), rugoso=0.35, transl=0.4))
+    foto(p, e)
 
 def pizza(p):
-    e = Escena(yaw=-15, pitch=40)
+    # porción de muzzarella con pepperoni: queso con burbujas y partes doradas, salsa en el borde, borde inflado
+    e = Escena(yaw=-15, pitch=38)
     ang = 0.36
 
-    def porcion(q):
+    def r_a(q):
         x, z = q[:, 0], q[:, 2] + 1.1
-        r = np.hypot(x, z)
-        a = np.abs(np.arctan2(x, z))
-        d2 = (a - ang) * r
-        return np.maximum(np.maximum(d2, r - 2.0), np.abs(q[:, 1]) - 0.06) - 0.02
-    queso = Mat(lambda q, n: mezcla(mezcla(lin((225, 150, 40)), lin((185, 95, 20)), (0.5 + 0.5 * ruido(q, 18)) * 0.8),
-                                             lin((195, 60, 30)), _smooth(0.5, 0.9, ruido(q, 9)) * 0.8) * 0.8,
-                rugoso=0.6, brillo=0.3)
-    e.add(porcion, queso)
-    borde = lambda q: np.maximum(np.abs(np.hypot(q[:, 0], q[:, 2] + 1.1) - 1.98) - 0.0,
-                                 np.abs(np.arctan2(q[:, 0], q[:, 2] + 1.1)) - ang + 0.01)
-    e.add(lambda q: np.maximum(np.hypot(np.hypot(q[:, 0], q[:, 2] + 1.1) - 1.95, q[:, 1] - 0.05) - 0.13,
-                               (np.abs(np.arctan2(q[:, 0], q[:, 2] + 1.1)) - ang) * 2.0),
-          Mat(lambda q, n: lin((215, 140, 60)) * (0.85 + 0.15 * ruido(q, 20)[:, None]), rugoso=0.55))
-    for x, z in ((0.0, 0.55), (-0.22, 0.1), (0.22, 0.12), (0.0, -0.35), (-0.15, -0.6), (0.2, -0.65)):
-        e.add(mover(cilindro(0.13, 0.025, 0.02), x, 0.07, z), Mat(lambda q, n: lin((135, 22, 15)) * (0.8 + 0.25 * ruido(q, 45)[:, None]), rugoso=0.45, brillo=0.45))
-    foto(p, e)
+        return np.hypot(x, z), np.abs(np.arctan2(x, z))
 
+    def porcion(q):
+        r, a = r_a(q)
+        d2 = (a - ang) * r
+        burbujas = 0.012 * np.maximum(0, ruido(q, 16)) + 0.006 * ruido(q, 40)
+        return np.maximum(np.maximum(d2, r - 1.92), np.abs(q[:, 1]) - 0.06) - 0.02 - burbujas
+
+    def queso(q, n):
+        r, a = r_a(q)
+        c = mezcla(lin((225, 160, 55)), lin((235, 190, 95)), 0.5 + 0.5 * ruido(q, 22))
+        c = mezcla(c, lin((180, 100, 30)), _smooth(0.35, 0.8, ruido(q, 11)) * 0.85)                # dorado
+        c = mezcla(c, lin((190, 45, 25)), _smooth(1.72, 1.82, r) * 0.9)                            # salsa en el borde
+        oregano = (_smooth(0.82, 0.86, ruido(q * 3.1, 30))) * 0.8
+        return mezcla(c, lin((60, 90, 30)), oregano)
+    e.add(porcion, Mat(queso, rugoso=0.45, brillo=0.5))
+    e.add(lambda q: np.maximum(np.hypot(r_a(q)[0] - 1.95, q[:, 1] - 0.05) - 0.14 - ruido(q, 12, 0.01),
+                               (r_a(q)[1] - ang) * 2.0),
+          Mat(lambda q, n: mezcla(lin((225, 160, 80)), lin((165, 95, 40)), _smooth(0.3, 0.9, n[:, 1] + 0.3 * ruido(q, 15))), rugoso=0.6))
+    for x, z in ((0.0, 0.55), (-0.22, 0.1), (0.22, 0.12), (0.0, -0.35), (-0.15, -0.6), (0.2, -0.65)):
+        pep = lambda q, x=x, z=z: cilindro(0.13, 0.022, 0.02)(q - np.array([x, 0.075, z])) + \
+            0.012 * (1 - np.clip(np.hypot(q[:, 0] - x, q[:, 2] - z) / 0.13, 0, 1))
+        e.add(pep, Mat(lambda q, n, x=x, z=z: mezcla(lin((150, 30, 20)), lin((95, 15, 10)),
+              _smooth(0.08, 0.13, np.hypot(q[:, 0] - x, q[:, 2] - z))) * (0.85 + 0.2 * ruido(q, 50)[:, None]), rugoso=0.35, brillo=0.6))
+    foto(p, e)
 
 def agua(p):
     e = Escena(yaw=-20, pitch=12)
@@ -183,26 +208,39 @@ def energizante(p):
 
 
 def celular(p):
-    e = Escena(yaw=-22, pitch=8)
-    e.add(caja(0.48, 0.95, 0.06, 0.06), Mat((40, 42, 48), metal=1, rugoso=0.3))
+    # celular con marco de metal, vidrio negro alrededor de la pantalla, la isla, íconos redondeados, el dock y botones
+    e = Escena(yaw=-26, pitch=10)
+    e.add(caja(0.48, 0.96, 0.055, 0.07), Mat((150, 152, 160), metal=1, rugoso=0.25))
+    e.add(mover(caja(0.465, 0.945, 0.01, 0.06), z=0.05), Mat((8, 8, 10), rugoso=0.05, brillo=1.0))
+    for y, h in ((0.55, 0.08), (0.32, 0.11)):
+        e.add(mover(caja(0.012, h, 0.02, 0.01), -0.49, y, 0), Mat((150, 152, 160), metal=1, rugoso=0.25))
+    e.add(mover(caja(0.012, 0.15, 0.02, 0.01), 0.49, 0.45, 0), Mat((150, 152, 160), metal=1, rugoso=0.25))
 
     def pantalla(q, n):
         x, y = q[:, 0], q[:, 1]
-        fondo = mezcla(lin((80, 120, 230)), lin((140, 70, 200)), _smooth(0.8, -0.8, y))
-        gx = (x + 0.38) / 0.19
-        gy = (0.66 - y) / 0.22
+        c = mezcla(lin((255, 140, 90)), lin((90, 60, 190)), _smooth(0.9, -0.9, y + 0.3 * x))
+        c = mezcla(c, lin((40, 120, 200)), _smooth(0.0, 0.8, ruido(q, 3)) * 0.4)
+        gx, gy = (x + 0.36) / 0.18, (0.7 - y) / 0.2
         i, j = np.floor(gx), np.floor(gy)
-        fx, fy = gx - i, gy - j
-        app = (i >= 0) & (i < 4) & (j >= 0) & (j < 6) & (fx > 0.12) & (fx < 0.88) & (fy > 0.12) & (fy < 0.8)
-        tonos = np.array([lin(c) for c in ((70, 200, 90), (250, 250, 250), (255, 170, 40), (60, 150, 250),
+        fx, fy = gx - i - 0.5, gy - j - 0.5
+        cuadro = np.maximum(np.abs(fx) - 0.22, np.abs(fy) - 0.24)
+        redondo = np.hypot(np.maximum(np.abs(fx) - 0.22, 0), np.maximum(np.abs(fy) - 0.24, 0))
+        app = ((i >= 0) & (i < 4) & (j >= 0) & (j < 5) & ((cuadro < 0) | (redondo < 0.12)) & (redondo < 0.12)) * 1.0
+        tonos = np.array([lin(t) for t in ((70, 200, 90), (250, 250, 250), (255, 170, 40), (60, 150, 250),
                                            (240, 70, 70), (250, 210, 60), (150, 110, 250), (40, 190, 200))])
-        c = tonos[((i + j * 3) % 8).astype(int)]
-        r = mezcla(fondo, c, app.astype(float))
-        isla = entre(x, -0.12, 0.12, 0.01) * entre(y, 0.8, 0.86, 0.01)
-        return mezcla(r, lin((5, 5, 6)), isla)
-    e.add(mover(caja(0.44, 0.91, 0.01, 0.01), z=0.058), Mat(pantalla, rugoso=0.05, brillo=1.0))
+        c = mezcla(c, tonos[((i * 3 + j * 5) % 8).astype(int)], app)
+        dock = entre(y, -0.88, -0.66, 0.01) * entre(x, -0.4, 0.4, 0.01)
+        c = mezcla(c, lin((235, 235, 245)), dock * 0.35)
+        gd = (x + 0.36) / 0.18
+        fd = gd - np.floor(gd) - 0.5
+        app_d = dock * (np.abs(fd) < 0.3) * entre(y, -0.85, -0.69, 0.01) * (gd >= 0) * (gd < 4)
+        c = mezcla(c, tonos[(np.floor(gd) % 8).astype(int)], app_d)
+        c = mezcla(c, lin((250, 250, 250)), entre(x, -0.36, -0.22, 0.005) * entre(y, 0.84, 0.87, 0.005))   # la hora
+        isla = (np.hypot(np.maximum(np.abs(x) - 0.08, 0), y - 0.855) < 0.035) * 1.0
+        c = mezcla(c, lin((3, 3, 4)), isla)
+        return c * (1 + 0.35 * entre(x + y * 0.5, 0.05, 0.3, 0.05))[:, None]   # reflejo del vidrio
+    e.add(mover(caja(0.43, 0.91, 0.005, 0.05), z=0.058), Mat(pantalla, rugoso=0.04, brillo=1.0))
     foto(p, e)
-
 
 def tarjeta(p):
     e = Escena(yaw=-18, pitch=35)
@@ -223,20 +261,38 @@ def tarjeta(p):
 
 
 def radio(p):
-    e = Escena(yaw=-25, pitch=14)
-    e.add(caja(0.4, 0.75, 0.2, 0.08), Mat((45, 48, 52), rugoso=0.55))
-    e.add(mover(cilindro(0.06, 0.38, 0.03), 0.22, 1.05, 0), Mat((30, 30, 32), rugoso=0.5))
-    e.add(mover(cilindro(0.08, 0.06, 0.02), -0.18, 0.8, 0), Mat((30, 30, 32), rugoso=0.4))
+    # handy: cuerpo de goma, antena gruesa, perilla con estrías, pantalla con números, teclado, parlante y botón PTT
+    e = Escena(yaw=-28, pitch=14)
+    goma = Mat(lambda q, n: lin((40, 42, 46)) * (0.92 + 0.08 * ruido(q, 80)[:, None]), rugoso=0.65, brillo=0.35)
+    e.add(caja(0.38, 0.72, 0.18, 0.12), goma)
+    e.add(mover(tronco(0.07, 0.045, 0.42, 0.03), 0.2, 1.12, 0), Mat((25, 25, 27), rugoso=0.6))
+    e.add(mover(cilindro(0.09, 0.05, 0.02), 0.2, 0.73, 0), Mat((60, 62, 66), rugoso=0.5))
+    perilla = lambda q: cilindro(0.08, 0.08, 0.02)(q) + 0.008 * (np.sin(angulo(q) * 24) > 0)
+    e.add(mover(perilla, -0.17, 0.8, 0), Mat((30, 30, 32), rugoso=0.4))
+    e.add(mover(caja(0.02, 0.18, 0.08, 0.02), -0.39, 0.3, 0), Mat((25, 25, 27), rugoso=0.5))   # PTT
 
     def frente(q, n):
-        y = q[:, 1]
-        rejilla = (np.sin(y * 70) > 0.3) * entre(y, -0.6, -0.05, 0.005) * entre(q[:, 0], -0.28, 0.28, 0.005)
-        return mezcla(lin((55, 58, 64)), lin((15, 15, 17)), rejilla)
-    e.add(mover(caja(0.34, 0.68, 0.02, 0.03), z=0.19), Mat(frente, rugoso=0.5))
-    e.add(mover(caja(0.26, 0.13, 0.015, 0.02), 0, 0.38, 0.215), Mat((150, 220, 140), rugoso=0.1, brillo=1.0, transl=0.3))
-    e.add(mover(esfera(0.05), 0.24, 0.66, 0.2), Mat((230, 40, 30), rugoso=0.2, brillo=0.9))
-    foto(p, e)
+        x, y = q[:, 0], q[:, 1]
+        c = lin((52, 55, 60))
+        agujeros = ((np.hypot((x * 18) % 1 - 0.5, (y * 18) % 1 - 0.5) < 0.28) * entre(y, -0.66, -0.3, 0.005)
+                    * entre(x, -0.27, 0.27, 0.005))
+        c = mezcla(c, lin((10, 10, 12)), agujeros * 1.0)
+        tx, ty = (x + 0.24) / 0.16, (0.0 - y) / 0.09
+        i, j = np.floor(tx), np.floor(ty)
+        tecla = (i >= 0) & (i < 3) & (j >= 0) & (j < 3) & (tx - i > 0.15) & (tx - i < 0.85) & (ty - j > 0.18) & (ty - j < 0.82)
+        return mezcla(c, lin((120, 124, 132)), tecla * 1.0)
+    e.add(mover(caja(0.33, 0.66, 0.015, 0.04), z=0.185), Mat(frente, rugoso=0.5, brillo=0.4))
 
+    def lcd(q, n):
+        x, y = q[:, 0], q[:, 1] - 0.4
+        c = lin((150, 205, 120))
+        seg = entre(x, -0.2, 0.12, 0.004) * entre(y, 0.0, 0.05, 0.004) + entre(x, -0.2, -0.02, 0.004) * entre(y, -0.06, -0.03, 0.004) \
+            + entre(x, 0.14, 0.2, 0.004) * entre(y, -0.06, 0.05, 0.004) * (np.sin(y * 120) > 0)   # canal, nombre y señal
+        return mezcla(c, lin((25, 45, 25)), np.clip(seg, 0, 1))
+    e.add(mover(caja(0.26, 0.12, 0.012, 0.02), 0, 0.4, 0.2), Mat(lcd, rugoso=0.08, brillo=1.0, transl=0.3))
+    e.add(mover(esfera(0.035), 0.24, 0.62, 0.19), Mat((240, 40, 30), rugoso=0.1, brillo=1.0, transl=0.6))
+    e.add(mover(caja(0.14, 0.03, 0.006, 0.004), -0.12, 0.6, 0.2), Mat((200, 200, 205), rugoso=0.4))   # marca
+    foto(p, e)
 
 def mochila(p):
     # mochila de tela (nylon azul) con fondo negro, cierre de lado a lado por arriba, bolsillo de adelante con
@@ -343,21 +399,29 @@ def frasco(p):
 
 
 def latas(p):
-    e = Escena(yaw=-20, pitch=25)
+    # dos latas usadas: una aplastada parada (con los pliegues de acordeón) y otra acostada y abollada
+    e = Escena(yaw=-20, pitch=26)
 
     def azul(q, n):
-        return mezcla(lin((40, 90, 190)), lin((235, 235, 240)), entre(q[:, 1] - 0.35, -0.15, 0.1, 0.01))
+        return mezcla(lin((35, 85, 180)), lin((235, 235, 240)), entre(q[:, 1] - 0.08 * np.sin(angulo(q) * 2), -0.05, 0.08, 0.01))
 
     def roja(q, n):
-        return mezcla(lin((200, 25, 30)), lin((240, 240, 240)), entre(q[:, 1] - 0.1 * np.sin(angulo(q) * 3), 0.05, 0.2, 0.01))
-    abollada = lambda q: cilindro(0.34, 0.6, 0.05)(q) + 0.04 * np.sin(q[:, 1] * 9) * (np.sin(angulo(q) * 3) > 0)
-    e.add(mover(abollada, 0.4, 0.3, -0.2), Mat(azul, rugoso=0.25, brillo=0.9))
-    e.add(mover(tronco(0.34, 0.27, 0.05, 0.02), 0.4, 0.94, -0.2), METAL)
-    acostada = lambda q: cilindro(0.34, 0.58, 0.05)(q) + 0.05 * np.maximum(0, np.sin(q[:, 1] * 6 + 1))
-    g = rot(0, 0, 80) @ rot(0, 25, 0)
-    e.add(mover(acostada, -0.3, -0.42, 0.25, g), Mat(roja, rugoso=0.25, brillo=0.9))
-    foto(p, e)
+        return mezcla(lin((195, 25, 30)), lin((240, 240, 240)), entre(q[:, 1] - 0.12 * np.sin(angulo(q) * 2), -0.05, 0.08, 0.01))
 
+    def lata(col, h, abollar, x, y, z, giro=None):
+        def cuerpo(q):
+            pliegue = abollar * (0.5 * np.sin(q[:, 1] * 30) + 0.5 * np.sin(angulo(q) * 5 + q[:, 1] * 9)) * \
+                (np.abs(q[:, 1]) < h - 0.06)
+            return cilindro(0.34, h, 0.05)(q) + 0.035 * pliegue
+        e.add(mover(cuerpo, x, y, z, giro), Mat(col, rugoso=0.25, brillo=0.9))
+        e.add(mover(mover(tronco(0.34, 0.27, 0.05, 0.02), y=h + 0.03), x, y, z, giro), METAL)
+        tapa = restar(cilindro(0.26, 0.02, 0.01), mover(cilindro(0.22, 0.04), y=0.025))
+        e.add(mover(mover(tapa, y=h + 0.08), x, y, z, giro), METAL)
+        e.add(mover(mover(caja(0.06, 0.01, 0.12, 0.008), 0, h + 0.09, 0.04), x, y, z, giro), METAL)
+        e.add(mover(mover(tronco(0.27, 0.34, 0.04, 0.02), y=-h - 0.02), x, y, z, giro), METAL)
+    lata(azul, 0.32, 1.0, 0.38, 0.05, -0.15)
+    lata(roja, 0.58, 0.35, -0.28, -0.42, 0.3, rot(0, 0, 82) @ rot(0, 30, 0))
+    foto(p, e)
 
 def botellas(p):
     e = Escena(yaw=-20, pitch=12)
@@ -374,24 +438,37 @@ def botellas(p):
 
 
 def ropa(p):
-    # remera doblada, vista de arriba en diagonal
-    e = Escena(yaw=-15, pitch=42)
-    def tela_col(q, n):
-        x, z = q[:, 0], q[:, 2]
-        r = np.hypot(x / 1.3, (z + 0.85) / 1.0)
-        dentro_cuello = (r < 0.22) * 1.0
-        borde = entre(r, 0.22, 0.29, 0.008)
-        c = lin((50, 100, 185)) * (0.92 + 0.08 * ruido(q, 60)[:, None])
-        c = mezcla(c, lin((22, 45, 95)), dentro_cuello)
-        return mezcla(c, lin((38, 80, 160)), borde)
-    tela = Mat(tela_col, rugoso=0.8, brillo=0.2)
-    cuerpo = con_ruido(caja(0.75, 0.12, 0.85, 0.1), 5, 0.015)
-    e.add(cuerpo, tela)
-    e.add(mover(caja(0.72, 0.03, 0.06, 0.03), 0, 0.12, 0.35), Mat((40, 85, 165), rugoso=0.8, brillo=0.2))
-    for s in (-1, 1):
-        e.add(mover(caja(0.08, 0.04, 0.5, 0.04), s * 0.62, 0.12, -0.15, rot(0, s * 12, 0)), tela)
-    foto(p, e)
+    # ropa usada: una remera arrugada tirada encima de un jean doblado
+    e = Escena(yaw=-18, pitch=48)
+    remera = [(-0.34, -0.5), (0.34, -0.5), (0.34, 0.25), (0.62, 0.05), (0.78, 0.35), (0.42, 0.68), (0.14, 0.72),
+              (0.0, 0.6), (-0.14, 0.72), (-0.42, 0.68), (-0.78, 0.35), (-0.62, 0.05), (-0.34, 0.25)]
 
+    def forma(q):
+        x, z = q[:, 0], -q[:, 2]
+        arrugas = 0.035 * ruido(q, 5) + 0.012 * ruido(q, 13)
+        d = poligono(x, z, remera) + 0.06
+        cuello = np.hypot(x / 1.4, z - 0.62) - 0.13
+        d = np.maximum(d, -cuello)
+        b = np.abs(q[:, 1] - arrugas) - 0.025
+        return np.minimum(np.maximum(d, b), 0) + np.hypot(np.maximum(d, 0), np.maximum(b, 0)) - 0.03
+
+    def tela(q, n):
+        x, z = q[:, 0], -q[:, 2]
+        c = lin((150, 40, 45)) * (0.88 + 0.12 * ruido(q, 70)[:, None]) * (0.95 + 0.05 * np.sin(x * 300)[:, None])
+        c = mezcla(c, lin((175, 120, 115)), _smooth(0.4, 0.9, ruido(q, 4)) * 0.35)    # desteñida
+        c = mezcla(c, lin((120, 30, 35)), entre(np.hypot(x / 1.4, z - 0.62), 0.13, 0.17, 0.006))   # el cuello
+        return c
+    e.add(mover(forma, 0.05, 0.12, 0.05, rot(0, -15, 0)), Mat(tela, rugoso=0.85, brillo=0.15))
+
+    def denim(q, n):
+        x, z = q[:, 0], q[:, 2]
+        sarga = 0.9 + 0.1 * np.sin((x + z) * 260)
+        c = lin((45, 75, 125)) * (sarga * (0.9 + 0.1 * ruido(q, 25)))[:, None]
+        costura = entre(x, 0.58, 0.6, 0.004) + entre(z, 0.38, 0.4, 0.004)
+        return mezcla(c, lin((210, 150, 60)), np.clip(costura, 0, 1))
+    e.add(mover(con_ruido(caja(0.72, 0.09, 0.48, 0.07), 6, 0.01), -0.05, -0.05, -0.05, rot(0, 12, 0)), Mat(denim, rugoso=0.8, brillo=0.2))
+    e.add(mover(cilindro(0.025, 0.01, 0.005), 0.45, 0.045, 0.3), LATON)
+    foto(p, e)
 
 def radio_vieja(p):
     e = Escena(yaw=-25, pitch=14)
