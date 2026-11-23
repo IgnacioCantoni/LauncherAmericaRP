@@ -16,3 +16,16 @@ def celda(icono, elegida=False):
     ic = icono.resize((LADO, LADO), Image.LANCZOS)
     im.alpha_composite(ic, ((W - LADO) // 2, (H - LADO) // 2))
     return im.resize((128, 64), Image.LANCZOS)
+
+
+# Botones del panel del vehículo (tecla 2): el ícono sobre el fondo verde (encendido, abierto) o rojo, en una
+# sola textura. El botón mide 32 x 32 unidades (96 x 77 px en 1920x1080) y el ícono 24 de lado, cuadrado en pantalla.
+VERDE = (0x30, 0xD1, 0x58, 255)      # ESTILO_VERDE
+ROJO = (0xFF, 0x45, 0x3A, 255)       # ESTILO_ROJO
+
+
+def boton(icono, encendido):
+    im = Image.new("RGBA", (96 * 2, 77 * 2), VERDE if encendido else ROJO)
+    ic = icono.resize((144, 144), Image.LANCZOS)
+    im.alpha_composite(ic, ((im.width - 144) // 2, (im.height - 144) // 2))
+    return im.resize((128, 128), Image.LANCZOS)
