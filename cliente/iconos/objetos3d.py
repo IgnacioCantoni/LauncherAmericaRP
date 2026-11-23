@@ -208,13 +208,22 @@ def energizante(p):
 
 
 def celular(p):
-    # celular con marco de metal, vidrio negro alrededor de la pantalla, la isla, íconos redondeados, el dock y botones
+    # iPhone: esquinas muy redondeadas, marco de titanio con los cantos redondos, vidrio negro con borde fino,
+    # la isla dinámica, íconos redondeados, el dock y los botones del costado
     e = Escena(yaw=-26, pitch=10)
-    e.add(caja(0.48, 0.96, 0.055, 0.07), Mat((150, 152, 160), metal=1, rugoso=0.25))
-    e.add(mover(caja(0.465, 0.945, 0.01, 0.06), z=0.05), Mat((8, 8, 10), rugoso=0.05, brillo=1.0))
+
+    def redondo(w, h, r, grosor, canto):
+        def f(q):
+            ax, ay = np.abs(q[:, 0]) - (w - r), np.abs(q[:, 1]) - (h - r)
+            d = np.hypot(np.maximum(ax, 0), np.maximum(ay, 0)) + np.minimum(np.maximum(ax, ay), 0) - r + canto
+            b = np.abs(q[:, 2]) - grosor + canto
+            return np.minimum(np.maximum(d, b), 0) + np.hypot(np.maximum(d, 0), np.maximum(b, 0)) - canto
+        return f
+    e.add(redondo(0.48, 0.98, 0.2, 0.055, 0.04), Mat((165, 160, 150), metal=1, rugoso=0.3))
+    e.add(mover(redondo(0.468, 0.968, 0.19, 0.01, 0.008), z=0.05), Mat((6, 6, 8), rugoso=0.04, brillo=1.0))
     for y, h in ((0.55, 0.08), (0.32, 0.11)):
-        e.add(mover(caja(0.012, h, 0.02, 0.01), -0.49, y, 0), Mat((150, 152, 160), metal=1, rugoso=0.25))
-    e.add(mover(caja(0.012, 0.15, 0.02, 0.01), 0.49, 0.45, 0), Mat((150, 152, 160), metal=1, rugoso=0.25))
+        e.add(mover(caja(0.012, h, 0.02, 0.01), -0.49, y, 0), Mat((165, 160, 150), metal=1, rugoso=0.3))
+    e.add(mover(caja(0.012, 0.15, 0.02, 0.01), 0.49, 0.45, 0), Mat((165, 160, 150), metal=1, rugoso=0.3))
 
     def pantalla(q, n):
         x, y = q[:, 0], q[:, 1]
@@ -229,17 +238,17 @@ def celular(p):
         tonos = np.array([lin(t) for t in ((70, 200, 90), (250, 250, 250), (255, 170, 40), (60, 150, 250),
                                            (240, 70, 70), (250, 210, 60), (150, 110, 250), (40, 190, 200))])
         c = mezcla(c, tonos[((i * 3 + j * 5) % 8).astype(int)], app)
-        dock = entre(y, -0.88, -0.66, 0.01) * entre(x, -0.4, 0.4, 0.01)
+        dock = (np.hypot(np.maximum(np.abs(x) - 0.3, 0), np.maximum(np.abs(y + 0.77) - 0.02, 0)) < 0.09) * 1.0   # vidrio redondeado
         c = mezcla(c, lin((235, 235, 245)), dock * 0.35)
         gd = (x + 0.36) / 0.18
         fd = gd - np.floor(gd) - 0.5
         app_d = dock * (np.abs(fd) < 0.3) * entre(y, -0.85, -0.69, 0.01) * (gd >= 0) * (gd < 4)
         c = mezcla(c, tonos[(np.floor(gd) % 8).astype(int)], app_d)
-        c = mezcla(c, lin((250, 250, 250)), entre(x, -0.36, -0.22, 0.005) * entre(y, 0.84, 0.87, 0.005))   # la hora
-        isla = (np.hypot(np.maximum(np.abs(x) - 0.08, 0), y - 0.855) < 0.035) * 1.0
+        c = mezcla(c, lin((250, 250, 250)), entre(x, -0.33, -0.21, 0.005) * entre(y, 0.835, 0.865, 0.005))   # la hora
+        isla = (np.hypot(np.maximum(np.abs(x) - 0.09, 0), y - 0.85) < 0.042) * 1.0
         c = mezcla(c, lin((3, 3, 4)), isla)
         return c * (1 + 0.35 * entre(x + y * 0.5, 0.05, 0.3, 0.05))[:, None]   # reflejo del vidrio
-    e.add(mover(caja(0.43, 0.91, 0.005, 0.05), z=0.058), Mat(pantalla, rugoso=0.04, brillo=1.0))
+    e.add(mover(redondo(0.44, 0.94, 0.165, 0.004, 0.003), z=0.058), Mat(pantalla, rugoso=0.04, brillo=1.0))
     foto(p, e)
 
 def tarjeta(p):
