@@ -1,5 +1,5 @@
 # Arma americarp.txd: deja tal cual las texturas que ya tiene (el puño) y agrega/reemplaza obj_<id>
-# (objetos y armas), inv_* (celdas del inventario), hud_* (HUD sin CEF), app_* y tel_* (teléfono) y dato_*/pago_* (concesionaria) con los íconos realistas, en el mismo formato que el puño (D3D9, 8888 con alfa, un nivel).
+# (objetos, armas y chalecos), inv_* (celdas del inventario), hud_* (HUD sin CEF), app_* y tel_* (teléfono) y dato_*/pago_* (concesionaria) con los íconos realistas, en el mismo formato que el puño (D3D9, 8888 con alfa, un nivel).
 # Uso: python3 txd.py <carpeta de iconos.py> <txd entrada> <txd salida> <lado>
 import struct, sys
 sys.path.insert(0, sys.argv[1])
@@ -8,6 +8,7 @@ from otros3d import HUD, DATOS, PANEL
 from telefono import GRANDES
 from objetos3d import POR_ID
 from armas3d import POR_ID as ARMAS
+from chaleco3d import POR_ID as CHALECOS
 import iconos
 from multiprocessing import Pool
 from celdas import celda, boton
@@ -68,7 +69,7 @@ def main():
     _, carpeta, entrada, salida, lado = sys.argv
     lado = int(lado)
     viejas = [(n, c) for n, c in leer(entrada) if not n.startswith(("obj_", "inv_", "hud_", "app_", "dato_", "pago_", "tel_", "pv_"))]
-    objetos = {**POR_ID, **ARMAS}
+    objetos = {**POR_ID, **ARMAS, **CHALECOS}
     _fotografiar(list(objetos.values()) + list(HUD.values()) + list(DATOS.values()) + list(OTROS.values()) + list(PANEL.values()))
     nuevas = [(f"obj_{k}", textura(f"obj_{k}", icono(objetos[k], lado))) for k in sorted(objetos)]
     for k in sorted(objetos):
