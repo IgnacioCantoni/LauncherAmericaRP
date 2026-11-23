@@ -239,16 +239,56 @@ def radio(p):
 
 
 def mochila(p):
-    e = Escena(yaw=-25, pitch=12)
-    cuero = lambda base: Mat(lambda q, n: lin(base) * (0.9 + 0.1 * ruido(q, 40)[:, None]), rugoso=0.6, brillo=0.4)
-    e.add(con_ruido(caja(0.62, 0.8, 0.32, 0.28), 6, 0.01), cuero((170, 100, 50)))
-    e.add(mover(caja(0.44, 0.34, 0.12, 0.12), 0, -0.3, 0.3), cuero((150, 85, 40)))
-    e.add(mover(caja(0.62, 0.3, 0.35, 0.28), 0, 0.5, 0.0), cuero((180, 110, 58)))
-    e.add(mover(caja(0.05, 0.22, 0.03, 0.02), -0.25, 0.08, 0.43), cuero((110, 60, 28)))
-    e.add(mover(caja(0.05, 0.22, 0.03, 0.02), 0.25, 0.08, 0.43), cuero((110, 60, 28)))
-    for x in (-0.25, 0.25):
-        e.add(mover(caja(0.07, 0.05, 0.02, 0.01), x, -0.12, 0.45), LATON)
-    e.add(mover(toro(0.2, 0.04), 0, 0.85, 0, rot(90, 0, 0)), cuero((110, 60, 28)))
+    # mochila de tela (nylon azul) con fondo negro, cierre de lado a lado por arriba, bolsillo de adelante con
+    # su cierre y dos correas con hebillas, bolsillos de red a los costados, manija arriba y las tiras de los hombros
+    e = Escena(yaw=-32, pitch=14)
+
+    def tela_col(base):
+        def f(q, n):
+            trama = 0.94 + 0.06 * np.sin(q[:, 0] * 260) * np.sin(q[:, 1] * 260 + q[:, 2] * 200)
+            c = lin(base) * (trama * (0.93 + 0.07 * ruido(q, 30)))[:, None]
+            return mezcla(c, lin((22, 22, 25)) * trama[:, None], _smooth(-0.42, -0.47, q[:, 1]))   # fondo negro
+        return f
+    tela = Mat(tela_col((26, 44, 88)), rugoso=0.7, brillo=0.3)
+    negro = Mat(lambda q, n: lin((25, 25, 28)) * (0.92 + 0.08 * np.sin(q[:, 1] * 240))[:, None], rugoso=0.75, brillo=0.25)
+    cuerpo = suave(0.12, caja(0.6, 0.62, 0.3, 0.24), mover(elipsoide(0.6, 0.4, 0.3), y=0.48))
+    cuerpo = lambda q, c=cuerpo: c(q) - 0.04 * np.clip(1 - (q[:, 0] / 0.6) ** 2, 0, 1) * np.clip(1 - (q[:, 1] / 0.8) ** 2, 0, 1) \
+        * (q[:, 2] > 0) + ruido(q, 7, 0.006)
+    e.add(cuerpo, tela)
+
+    def cierre(puntos, r=0.022):
+        partes = [capsula(a, b, r) for a, b in zip(puntos, puntos[1:])]
+        dientes = Mat(lambda q, n: lin((30, 30, 32)) * (0.7 + 0.3 * (np.sin((q[:, 0] + q[:, 1]) * 220) > 0))[:, None], rugoso=0.4, brillo=0.6)
+        e.add(union(*partes), dientes)
+    # cierre principal: el arco de arriba
+    arco = []
+    for t in np.linspace(-0.97, 0.97, 13):
+        x = 0.6 * t
+        arco.append((x, 0.48 + 0.38 * np.sqrt(max(0.0, 1 - t * t)) - 0.02, 0.17))
+    cierre(arco)
+    e.add(mover(caja(0.025, 0.06, 0.012, 0.01), 0.36, 0.78, 0.2, rot(0, 0, -40)), METAL)   # tirador
+    # bolsillo de adelante
+    bolsillo = mover(caja(0.44, 0.3, 0.1, 0.09), 0, -0.3, 0.31)
+    e.add(bolsillo, Mat(tela_col((23, 39, 78)), rugoso=0.7, brillo=0.3))
+    cierre([(-0.4, -0.02, 0.4), (0.4, -0.02, 0.4)], 0.018)
+    e.add(mover(caja(0.022, 0.05, 0.012, 0.008), 0.22, -0.08, 0.42), METAL)
+    for x in (-0.24, 0.24):   # correas con hebilla
+        e.add(mover(caja(0.045, 0.34, 0.012, 0.008), x, -0.28, 0.415), negro)
+        e.add(mover(caja(0.06, 0.05, 0.02, 0.012), x, -0.42, 0.43), Mat((15, 15, 17), rugoso=0.3, brillo=0.7))
+    e.add(mover(caja(0.09, 0.04, 0.008, 0.006), 0, -0.22, 0.415), Mat((235, 235, 235), rugoso=0.5))   # etiqueta
+    # bolsillos de red a los costados
+    red = Mat(lambda q, n: mezcla(lin((15, 15, 17)), lin((60, 62, 68)),
+                                  ((np.sin(q[:, 1] * 150) > 0.5) | (np.sin(q[:, 2] * 150) > 0.5)) * 1.0), rugoso=0.8, brillo=0.2)
+    for sx in (-1, 1):
+        e.add(mover(caja(0.05, 0.19, 0.2, 0.05), sx * 0.6, -0.36, 0.02), red)
+    # manija y tiras de los hombros (atrás)
+    e.add(mover(cortar(toro(0.13, 0.03), lambda q: -q[:, 1]), 0, 0.86, -0.12, rot(90, 0, 0)), negro)
+    for sx in (-1, 1):
+        x0 = sx * 0.28
+        tira = union(capsula((x0, 0.7, -0.26), (sx * 0.4, 0.15, -0.46), 0.055),
+                     capsula((sx * 0.4, 0.15, -0.46), (sx * 0.42, -0.45, -0.42), 0.055),
+                     capsula((sx * 0.42, -0.45, -0.42), (sx * 0.5, -0.66, -0.3), 0.04))
+        e.add(lambda q, t=tira: t(q * np.array([1, 1, 1])) + 0.0, negro)
     foto(p, e)
 
 
