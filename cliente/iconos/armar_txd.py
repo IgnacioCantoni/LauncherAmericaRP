@@ -3,9 +3,9 @@
 # Uso: python3 txd.py <carpeta de iconos.py> <txd entrada> <txd salida> <lado>
 import struct, sys
 sys.path.insert(0, sys.argv[1])
-from iconos import HUD, OTROS, POR_ID, icono
+from iconos import HUD, OTROS, icono
 from telefono import GRANDES
-from objetos_extra import MAS_POR_ID
+from objetos3d import POR_ID
 from celdas import celda
 
 VER = 0x1803FFFF
@@ -44,7 +44,7 @@ def main():
     _, carpeta, entrada, salida, lado = sys.argv
     lado = int(lado)
     viejas = [(n, c) for n, c in leer(entrada) if not n.startswith(("obj_", "inv_", "hud_", "app_", "dato_", "pago_", "tel_"))]
-    objetos = {**POR_ID, **MAS_POR_ID}
+    objetos = POR_ID
     nuevas = [(f"obj_{k}", textura(f"obj_{k}", icono(objetos[k], lado))) for k in sorted(objetos)]
     for k in sorted(objetos):
         grande = icono(objetos[k], 256)
