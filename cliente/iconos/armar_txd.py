@@ -1,10 +1,12 @@
 # Arma americarp.txd: deja tal cual las texturas que ya tiene (el puño) y agrega/reemplaza obj_<id>
-# (objetos), hud_* (HUD sin CEF), app_* y tel_* (teléfono) y dato_*/pago_* (concesionaria) con los íconos realistas, en el mismo formato que el puño (D3D9, 8888 con alfa, un nivel).
+# (objetos), inv_* (celdas del inventario), hud_* (HUD sin CEF), app_* y tel_* (teléfono) y dato_*/pago_* (concesionaria) con los íconos realistas, en el mismo formato que el puño (D3D9, 8888 con alfa, un nivel).
 # Uso: python3 txd.py <carpeta de iconos.py> <txd entrada> <txd salida> <lado>
 import struct, sys
 sys.path.insert(0, sys.argv[1])
 from iconos import HUD, OTROS, POR_ID, icono
 from telefono import GRANDES
+from objetos_extra import MAS_POR_ID
+from celdas import celda
 
 VER = 0x1803FFFF
 
@@ -41,8 +43,12 @@ def textura(nombre, im):
 def main():
     _, carpeta, entrada, salida, lado = sys.argv
     lado = int(lado)
-    viejas = [(n, c) for n, c in leer(entrada) if not n.startswith(("obj_", "hud_", "app_", "dato_", "pago_", "tel_"))]
-    nuevas = [(f"obj_{k}", textura(f"obj_{k}", icono(POR_ID[k], lado))) for k in sorted(POR_ID)]
+    viejas = [(n, c) for n, c in leer(entrada) if not n.startswith(("obj_", "inv_", "hud_", "app_", "dato_", "pago_", "tel_"))]
+    objetos = {**POR_ID, **MAS_POR_ID}
+    nuevas = [(f"obj_{k}", textura(f"obj_{k}", icono(objetos[k], lado))) for k in sorted(objetos)]
+    for k in sorted(objetos):
+        grande = icono(objetos[k], 256)
+        nuevas += [(f"inv_{k}", textura(f"inv_{k}", celda(grande))), (f"inv_{k}_e", textura(f"inv_{k}_e", celda(grande, True)))]
     nuevas += [(n, textura(n, icono(f, lado))) for n, f in list(HUD.items()) + list(OTROS.items())]
     nuevas += [(n, textura(n, f())) for n, f in GRANDES.items()]
     todas = viejas + nuevas
