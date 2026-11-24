@@ -312,11 +312,52 @@ def silenciador(p):
 
 
 def desert_eagle(p):
-    partes, top = _pistola(CROMO, CROMO, _texturado((30, 30, 32), 120, 0.2), largo=1.15, grande=True)
-    # el cañón triangular con el riel arriba
-    partes.append((perfil([(0.3, top - 0.02), (1.15, top - 0.02), (1.15, top + 0.04), (0.3, top + 0.04)], 0.05, 0.015), CROMO))
-    partes.append((tubo(1.1, 1.17, 0.36, 0.05), Mat((20, 20, 22), rugoso=0.6)))
-    foto(p, armar(partes, az=4, yaw=-16, pitch=14), 2.6)
+    """Desert Eagle: el cañón poligonal fijo arriba adelante con el riel encima, la corredera solo atrás, el
+    armazón largo hasta la boca, martillo a la vista, guardamonte cuadrado con gancho y la empuñadura de goma
+    con dedos. Acero inoxidable satinado: el cañón y la corredera más claros que el armazón."""
+    def cromo(osc, claro, k):
+        # el reflejo del cromo horneado en bandas a lo alto (una cara plana sola refleja un color parejo)
+        def c(q, n):
+            y = q[:, 1]
+            banda = _smooth(0.25, 0.85, 0.5 + 0.5 * np.sin(y * 11.0 + 0.6) + 0.15 * ruido(q, 3.0))
+            col = mezcla(lin(osc), lin(claro), banda)
+            return mezcla(col, lin((250, 251, 253)), canto(n) * k)
+        return Mat(c, metal=1, rugoso=0.2)
+    inox = cromo((70, 73, 82), (236, 238, 243), 0.6)
+    inox_osc = cromo((52, 54, 61), (188, 191, 199), 0.5)
+    boca = 1.4
+    # cañón: la parte ancha de abajo y la de arriba más angosta (la sección triangular), con el riel encima
+    canon = [(perfil([(0.08, 0.24), (boca, 0.24), (boca, 0.44), (0.08, 0.44)], 0.115, 0.03), inox),
+             (perfil([(0.08, 0.42), (boca, 0.42), (boca, 0.53), (0.08, 0.53)], 0.075, 0.03), inox),
+             (restar(perfil([(0.12, 0.52), (boca - 0.03, 0.52), (boca - 0.03, 0.585), (0.12, 0.585)], 0.05, 0.01),
+                     *_rayas(0.2, boca - 0.05, 0.56, 0.6, 0.08, 0.016, 0.06)), inox_osc),
+             (tubo(boca - 0.02, boca + 0.005, 0.34, 0.055), Mat((12, 12, 14), rugoso=0.7)),          # boca
+             (perfil([(boca - 0.16, 0.585), (boca - 0.05, 0.585), (boca - 0.07, 0.64), (boca - 0.14, 0.64)], 0.022, 0.006), inox_osc)]
+    # corredera: atrás, con las estrías, la ventana del expulsor y el seguro redondo
+    corredera = restar(perfil([(-1.0, 0.22), (0.1, 0.22), (0.1, 0.55), (-0.96, 0.55), (-1.0, 0.5)], 0.13, 0.035),
+                       *_rayas(-0.93, -0.6, 0.27, 0.52, 0.042, 0.011, 0.2),
+                       mover(caja(0.17, 0.07, 0.05, 0.01), -0.2, 0.42, 0.13))
+    armazon = restar(perfil([(-0.92, 0.23), (boca - 0.02, 0.23), (boca - 0.02, 0.07), (0.12, 0.05), (-0.05, 0.02),
+                             (-0.55, 0.0), (-0.92, 0.06)], 0.12, 0.03),
+                     *_rayas(0.25, boca - 0.1, 0.06, 0.12, 0.1, 0.022, 0.3))                       # ranuras de abajo
+    empunadura = [(-0.88, 0.1), (-0.52, 0.1), (-0.55, -0.06), (-0.62, -0.2), (-0.58, -0.31), (-0.66, -0.43), (-0.62, -0.55),
+                  (-0.69, -0.67), (-0.67, -0.82), (-0.72, -0.94), (-1.1, -0.94), (-1.13, -0.86), (-1.07, -0.4), (-1.0, -0.04),
+                  (-1.06, 0.07)]
+    partes = canon + [(corredera, inox), (armazon, inox_osc),
+              (perfil(empunadura, 0.14, 0.08), GRANULADO),
+              (perfil([(-1.12, -0.92), (-0.7, -0.92), (-0.68, -1.0), (-1.14, -1.0)], 0.13, 0.03), inox_osc),     # base del cargador
+              (guardamonte(-0.52, 0.14, 0.03, -0.33), inox_osc),
+              (perfil([(0.14, -0.2), (0.2, -0.2), (0.2, -0.3), (0.14, -0.33)], 0.05, 0.01), inox_osc),            # gancho del guardamonte
+              (gatillo(-0.24, -0.01), ACERO),
+              # martillo atrás, con el agujero, y el seguro (palanca redonda) al costado de la corredera
+              (perfil([(-1.0, 0.24), (-1.06, 0.26), (-1.18, 0.4), (-1.13, 0.46), (-1.03, 0.4), (-0.98, 0.32)], 0.045, 0.015,
+                      [[(-1.11, 0.36), (-1.08, 0.36), (-1.08, 0.39), (-1.11, 0.39)]]), ACERO),
+              (mover(cilindro(0.06, 0.018, 0.008), -0.78, 0.44, 0.145, rot(90, 0, 0)), ACERO),
+              costado([(-0.78, 0.425), (-0.6, 0.43), (-0.6, 0.455), (-0.78, 0.46)], 0.15),
+              costado([(-0.46, 0.2), (-0.05, 0.2), (-0.03, 0.235), (-0.16, 0.255), (-0.46, 0.24)], 0.128),   # retén de corredera
+              perno(-0.66, 0.12, 0.126), perno(-0.32, 0.1, 0.126), perno(0.6, 0.15, 0.126),
+              (perfil([(-0.97, 0.55), (-0.84, 0.55), (-0.84, 0.61), (-0.97, 0.61)], 0.06, 0.012), ACERO)]       # mira de atrás
+    foto(p, armar(partes, az=4, yaw=-16, pitch=14), 2.9)
 
 
 # ---------------- escopetas ----------------
