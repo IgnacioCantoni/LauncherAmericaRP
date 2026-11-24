@@ -1,0 +1,3 @@
+# Dirección del server OFICIAL que usa el launcher al tocar JUGAR: "IP:puerto" o "dominio:puerto".
+# Si cambia la IP de la casa, se cambia acá (commit en main) y los launchers la toman al abrirse, sin versión nueva.
+181.105.105.77:7777

@@ -28,15 +28,18 @@ static class Config
 {
     // Lo que cambia de un server a otro. Después de tocarlo, volvé a compilar.
     // Versión de este launcher. Para sacar una nueva, ver "Sacar una versión nueva del launcher" en el README.
-    public const string Version = "1.5.1";
+    public const string Version = "1.5.2";
     // Servidores que se eligen en INICIO: nombre, dirección y puerto. Sin dirección = "Todavía sin IP", no se puede elegir.
+    // La del OFICIAL se pisa con la de ServidorUrl al abrir; esta queda por si no hay internet o GitHub no contesta.
     public static readonly Tuple<string, string, int>[] Servidores =
     {
-        Tuple.Create("OFICIAL", "", 7777),
+        Tuple.Create("OFICIAL", "181.105.105.77", 7777),
         Tuple.Create("DESARROLLO", "127.0.0.1", 7777),
     };
     // Vacío = sin noticias / sin actualizaciones.
     const string Repo = "https://raw.githubusercontent.com/IgnacioCantoni/LauncherAmericaRP/main/";
+    // "dirección:puerto" del OFICIAL (IP o dominio). Se cambia en main sin sacar otra versión. Vacío = queda la de arriba.
+    public const string ServidorUrl = Repo + "servidor.txt";
     public const string ParchesUrl = Repo + "parches.txt";            // cambios del server, mismo formato que las noticias
     public const string NovedadesUrl = Repo + "launcher/novedades.txt"; // qué trae cada versión del launcher
     public const string ManifiestoUrl = Repo + "actualizaciones/manifiesto.txt";
@@ -2073,7 +2076,7 @@ class Ventana : Lienzo
     readonly Timer reloj = new Timer(), cuadros = new Timer();
     readonly Stopwatch tiempo = Stopwatch.StartNew();
     readonly Bitmap fondo = Fondo.Cargar(Ancho, Alto), estrella = Fondo.Imagen("arranque-estrella.png");
-    bool consultando, ocupado, tapada;
+    bool consultando, ocupado, tapada, ipLeida;
     Rectangle menuAncla = Rectangle.Empty;
     List<Tuple<string, string, Action>> menuItems;
     string menuPestana = "";
@@ -2224,6 +2227,16 @@ class Ventana : Lienzo
     {
         if (consultando) return;
         consultando = true;
+        if (!ipLeida && Config.ServidorUrl.Length > 0)
+        {
+            ipLeida = true;
+            try
+            {
+                var ip = await Task.Run(() => Direccion.Leer(Web.Texto(Config.ServidorUrl)));
+                Config.Servidores[0] = Tuple.Create(Config.Servidores[0].Item1, ip.Key, ip.Value);
+            }
+            catch (Exception) { } // sin internet o archivo raro: queda la IP de Config.Servidores
+        }
         // Se consultan todos a la vez, para mostrar en INICIO si cada uno está en línea y su ping.
         estados = await Task.WhenAll(Config.Servidores.Select(s => Task.Run(() => s.Item2.Length == 0 ? new EstadoServidor() : Consulta.Pedir(s.Item2, s.Item3, 2500))));
         serverConsultado = true;
@@ -3502,6 +3515,21 @@ class Arranque : Lienzo
     }
 }
 
+// servidor.txt: una línea "dirección:puerto" (IP o dominio). Las líneas con # se saltean.
+static class Direccion
+{
+    public static KeyValuePair<string, int> Leer(string texto)
+    {
+        string linea = texto.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0 && !l.StartsWith("#")) ?? "";
+        int dos = linea.LastIndexOf(':'), puerto;
+        string host = dos > 0 ? linea.Substring(0, dos) : "";
+        if (!int.TryParse(dos > 0 ? linea.Substring(dos + 1) : "", out puerto) || puerto < 1 || puerto > 65535
+            || host.Length > 253 || !System.Text.RegularExpressions.Regex.IsMatch(host, @"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$"))
+            throw new InvalidDataException("servidor.txt no tiene el formato dirección:puerto.");
+        return new KeyValuePair<string, int>(host, puerto);
+    }
+}
+
 static class Web
 {
     public static string Texto(string url)
@@ -3712,6 +3740,9 @@ static class Prueba
         string sha64 = new string('a', 64);
         var ver = Autoactualizacion.Leer("1.2.0 " + sha64 + "\r\n");
         Ver(ver.Key == new Version(1, 2, 0) && ver.Value == sha64 && new Version("1.10.0") > new Version("1.9.0"), "version.txt: se lee y compara");
+        var dir = Direccion.Leer("# OFICIAL\r\n181.105.105.77:7777\r\n");
+        Ver(dir.Key == "181.105.105.77" && dir.Value == 7777 && Direccion.Leer("rp.ejemplo.com:7778").Value == 7778, "servidor.txt: se lee");
+        Ver(Tira(() => Direccion.Leer("181.105.105.77")) && Tira(() => Direccion.Leer("1.2.3.4:0")) && Tira(() => Direccion.Leer("a b:7777")) && Tira(() => Direccion.Leer("")), "servidor.txt: rechaza formatos raros");
         Ver(Tira(() => Autoactualizacion.Leer("1.2.0")) && Tira(() => Autoactualizacion.Leer("uno " + sha64)) && Tira(() => Autoactualizacion.Leer("1.2.0 " + sha64.ToUpperInvariant())), "version.txt: rechaza formatos raros");
         carpeta = Path.Combine(Path.GetTempPath(), "amrp-exe-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(carpeta);

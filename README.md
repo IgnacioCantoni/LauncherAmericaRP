@@ -42,7 +42,7 @@ Para probar la lógica sin abrir la ventana: `AmericaRP.exe --prueba` (en Linux,
 
 Arriba de `src/Launcher.cs`, en `Config`:
 
-- `Servidores`: los servers que se eligen en INICIO (nombre, IP o dominio y puerto). Hoy DESARROLLO está en `127.0.0.1:7777` (el server de la PC del staff) y OFICIAL todavía no tiene IP: aparece como "Todavía sin IP" y no se puede elegir hasta completarla. El launcher consulta todos cada 15 segundos y muestra si están en línea y su ping; JUGAR entra al elegido.
+- `Servidores`: los servers que se eligen en INICIO (nombre, IP o dominio y puerto). DESARROLLO está en `127.0.0.1:7777` (el server en la misma PC: el staff que lo corre entra por acá, porque desde la red de la casa la IP pública suele no andar). La dirección de OFICIAL sale de `servidor.txt` en main (`IP:puerto` o `dominio:puerto`), que el launcher lee al abrirse: si cambia la IP, se edita ese archivo y no hace falta otra versión. Si no lo puede bajar, usa la que está en `Servidores`. El launcher consulta todos cada 15 segundos y muestra si están en línea y su ping; JUGAR entra al elegido.
 - `Redes`: los links de la tarjeta COMUNIDAD (Discord, YouTube, TikTok e Instagram) y el de Soporte, que se ofrece después de copiar el mensaje en SOPORTE.
 - `ParchesUrl`, `NovedadesUrl`, `ManifiestoUrl` y `EnbUrl`: apuntan a este repo. Si se dejan vacías, esa función se apaga.
 
