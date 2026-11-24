@@ -96,6 +96,17 @@ def perfil(pts, h, r=0.03, huecos=(), z=0.0):
     return acotar(f, (min(xs) - 0.01, min(ys) - 0.01, z - h - 0.01), (max(xs) + 0.01, max(ys) + 0.01, z + h + 0.01))
 
 
+def curva(pts, n=10):
+    """Suaviza un polígono cerrado con una curva Catmull-Rom (n puntos por lado): madera sin facetas."""
+    P = np.array(pts, float)
+    out = []
+    for i in range(len(P)):
+        p0, p1, p2, p3 = P[i - 1], P[i], P[(i + 1) % len(P)], P[(i + 2) % len(P)]
+        for t in np.linspace(0, 1, n, endpoint=False):
+            out.append(0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (3 * p1 - p0 - 3 * p2 + p3) * t ** 3))
+    return [tuple(q) for q in out]
+
+
 def tubo(x0, x1, y, r, rb=0.01, z=0.0):
     """Cilindro acostado a lo largo de x (cañones, tubos)."""
     return mover(cilindro(r, (x1 - x0) / 2, rb), (x0 + x1) / 2, y, z, rot(0, 0, -90))
@@ -147,15 +158,25 @@ def _rayas(x0, x1, y0, y1, paso, ancho, h):
 
 
 def manopla(p):
-    def anillos(q):
-        x, y = q[:, 0], q[:, 1]
-        cx = np.clip(np.round((x + 0.495) / 0.33) * 0.33 - 0.495, -0.495, 0.495)
-        aro = np.abs(np.hypot(x - cx, y - 0.22) - 0.155) - 0.05
-        qx, qy = np.abs(x) - 0.56, np.abs(y + 0.02) - 0.02
-        palma = np.hypot(np.maximum(qx, 0), np.maximum(qy, 0)) + np.minimum(np.maximum(qx, qy), 0) - 0.08
-        return np.minimum(aro, palma)
-    f = lambda q: np.maximum(anillos(q) + 0.04, np.abs(q[:, 2]) - 0.1) - 0.04
-    e = armar([(acotar(f, (-0.9, -0.45, -0.12), (0.9, 0.45, 0.12)), Mat((225, 180, 90), metal=1, rugoso=0.32))], az=0, yaw=-10, pitch=14, incl=-24)
+    """Manopla de bronce: cuatro anillos de canto redondo unidos arriba (los nudillos), el apoyo curvo de la
+    palma abajo y bronce pulido con reflejos y un poco de pátina en los huecos."""
+    anillos = [mover(toro(0.15, 0.06), x, 0.22, 0, rot(90, 0, 0)) for x in (-0.495, -0.165, 0.165, 0.495)]
+    nudillos = [mover(esfera(0.085), x, 0.33, 0.0) for x in (-0.495, -0.165, 0.165, 0.495)]
+    apoyo = [capsula((-0.62, -0.02, 0), (-0.38, -0.2, 0), 0.085), capsula((-0.38, -0.2, 0), (0.38, -0.2, 0), 0.09),
+             capsula((0.38, -0.2, 0), (0.62, -0.02, 0), 0.085)]
+    puentes = [capsula((x, 0.06, 0), (x * 0.92, -0.17, 0), 0.05) for x in (-0.495, -0.165, 0.165, 0.495)]
+    forma = suave(0.05, *anillos, *nudillos, *apoyo, *puentes)
+    # aplastada de adelante para atrás, como una pieza fundida (no un caño)
+    plana = lambda q: forma(q * np.array([1.0, 1.0, 1.35])) / 1.35
+
+    def bronce(q, n):
+        y = q[:, 1]
+        banda = _smooth(0.2, 0.85, 0.5 + 0.5 * np.sin(y * 9.0 + 1.0 + 2.0 * n[:, 0]) + 0.12 * ruido(q, 3.0))
+        col = mezcla(lin((120, 82, 30)), lin((250, 214, 130)), banda)
+        col = mezcla(col, lin((255, 240, 200)), canto(n) * 0.5)
+        return mezcla(col, lin((70, 60, 35)), _smooth(0.55, 0.8, ruido(q, 9.0)) * 0.35)     # pátina
+    e = armar([(acotar(plana, (-0.8, -0.35, -0.12), (0.8, 0.45, 0.12)), Mat(bronce, metal=1, rugoso=0.25))],
+              az=0, yaw=-18, pitch=18, incl=-30)
     foto(p, e, 2.2)
 
 
@@ -306,17 +327,62 @@ def pistola(p):
 
 def silenciador(p):
     partes, top = _pistola(ACERO, NEGRO, GRANULADO)
-    partes.append((restar(tubo(0.9, 2.0, 0.35, 0.13, 0.04), *[mover(caja(0.004, 0.2, 0.2), x, 0.35, 0) for x in (1.0, 1.06, 1.9)]),
-                   gastado((38, 39, 43), (120, 122, 128), 0.7, rug=0.5)))
-    foto(p, armar(partes, az=14, yaw=-16, pitch=14), 3.2)
+    # silenciador grande (largo como la pistola y del alto de la corredera), con los anillos de las puntas
+    mate = gastado((38, 39, 43), (120, 122, 128), 0.7, rug=0.5)
+    partes += [(restar(tubo(0.92, 2.55, 0.35, 0.21, 0.06), *[mover(caja(0.005, 0.3, 0.3), x, 0.35, 0) for x in (1.05, 1.11, 2.36, 2.42)]), mate),
+               (tubo(0.86, 0.95, 0.35, 0.16, 0.02), ACERO),
+               (tubo(2.53, 2.57, 0.35, 0.06, 0.01), Mat((12, 12, 14), rugoso=0.7))]
+    partes = [(mover(f, -0.75, 0.15), m) for f, m in partes]     # centrada: con el silenciador largo se salía de la foto
+    foto(p, armar(partes, az=14, yaw=-16, pitch=14), 3.9)
 
 
 def desert_eagle(p):
-    partes, top = _pistola(CROMO, CROMO, _texturado((30, 30, 32), 120, 0.2), largo=1.15, grande=True)
-    # el cañón triangular con el riel arriba
-    partes.append((perfil([(0.3, top - 0.02), (1.15, top - 0.02), (1.15, top + 0.04), (0.3, top + 0.04)], 0.05, 0.015), CROMO))
-    partes.append((tubo(1.1, 1.17, 0.36, 0.05), Mat((20, 20, 22), rugoso=0.6)))
-    foto(p, armar(partes, az=4, yaw=-16, pitch=14), 2.6)
+    """Desert Eagle: el cañón poligonal fijo arriba adelante con el riel encima, la corredera solo atrás, el
+    armazón largo hasta la boca, martillo a la vista, guardamonte cuadrado con gancho y la empuñadura de goma
+    con dedos. Acero inoxidable satinado: el cañón y la corredera más claros que el armazón."""
+    def cromo(osc, claro, k):
+        # el reflejo del cromo horneado en bandas a lo alto (una cara plana sola refleja un color parejo)
+        def c(q, n):
+            y = q[:, 1]
+            banda = _smooth(0.25, 0.85, 0.5 + 0.5 * np.sin(y * 11.0 + 0.6) + 0.15 * ruido(q, 3.0))
+            col = mezcla(lin(osc), lin(claro), banda)
+            return mezcla(col, lin((250, 251, 253)), canto(n) * k)
+        return Mat(c, metal=1, rugoso=0.2)
+    inox = cromo((70, 73, 82), (236, 238, 243), 0.6)
+    inox_osc = cromo((52, 54, 61), (188, 191, 199), 0.5)
+    boca = 1.4
+    # cañón: la parte ancha de abajo y la de arriba más angosta (la sección triangular), con el riel encima
+    canon = [(perfil([(0.08, 0.24), (boca, 0.24), (boca, 0.44), (0.08, 0.44)], 0.115, 0.03), inox),
+             (perfil([(0.08, 0.42), (boca, 0.42), (boca, 0.53), (0.08, 0.53)], 0.075, 0.03), inox),
+             (restar(perfil([(0.12, 0.52), (boca - 0.03, 0.52), (boca - 0.03, 0.585), (0.12, 0.585)], 0.05, 0.01),
+                     *_rayas(0.2, boca - 0.05, 0.56, 0.6, 0.08, 0.016, 0.06)), inox_osc),
+             (tubo(boca - 0.02, boca + 0.005, 0.34, 0.055), Mat((12, 12, 14), rugoso=0.7)),          # boca
+             (perfil([(boca - 0.16, 0.585), (boca - 0.05, 0.585), (boca - 0.07, 0.64), (boca - 0.14, 0.64)], 0.022, 0.006), inox_osc)]
+    # corredera: atrás, con las estrías, la ventana del expulsor y el seguro redondo
+    corredera = restar(perfil([(-1.0, 0.22), (0.1, 0.22), (0.1, 0.55), (-0.96, 0.55), (-1.0, 0.5)], 0.13, 0.035),
+                       *_rayas(-0.93, -0.6, 0.27, 0.52, 0.042, 0.011, 0.2),
+                       mover(caja(0.17, 0.07, 0.05, 0.01), -0.2, 0.42, 0.13))
+    armazon = restar(perfil([(-0.92, 0.23), (boca - 0.02, 0.23), (boca - 0.02, 0.07), (0.12, 0.05), (-0.05, 0.02),
+                             (-0.55, 0.0), (-0.92, 0.06)], 0.12, 0.03),
+                     *_rayas(0.25, boca - 0.1, 0.06, 0.12, 0.1, 0.022, 0.3))                       # ranuras de abajo
+    empunadura = [(-0.88, 0.1), (-0.52, 0.1), (-0.55, -0.06), (-0.62, -0.2), (-0.58, -0.31), (-0.66, -0.43), (-0.62, -0.55),
+                  (-0.69, -0.67), (-0.67, -0.82), (-0.72, -0.94), (-1.1, -0.94), (-1.13, -0.86), (-1.07, -0.4), (-1.0, -0.04),
+                  (-1.06, 0.07)]
+    partes = canon + [(corredera, inox), (armazon, inox_osc),
+              (perfil(empunadura, 0.14, 0.08), GRANULADO),
+              (perfil([(-1.12, -0.92), (-0.7, -0.92), (-0.68, -1.0), (-1.14, -1.0)], 0.13, 0.03), inox_osc),     # base del cargador
+              (guardamonte(-0.52, 0.14, 0.03, -0.33), inox_osc),
+              (perfil([(0.14, -0.2), (0.2, -0.2), (0.2, -0.3), (0.14, -0.33)], 0.05, 0.01), inox_osc),            # gancho del guardamonte
+              (gatillo(-0.24, -0.01), ACERO),
+              # martillo atrás, con el agujero, y el seguro (palanca redonda) al costado de la corredera
+              (perfil([(-1.0, 0.24), (-1.06, 0.26), (-1.18, 0.4), (-1.13, 0.46), (-1.03, 0.4), (-0.98, 0.32)], 0.045, 0.015,
+                      [[(-1.11, 0.36), (-1.08, 0.36), (-1.08, 0.39), (-1.11, 0.39)]]), ACERO),
+              (mover(cilindro(0.06, 0.018, 0.008), -0.78, 0.44, 0.145, rot(90, 0, 0)), ACERO),
+              costado([(-0.78, 0.425), (-0.6, 0.43), (-0.6, 0.455), (-0.78, 0.46)], 0.15),
+              costado([(-0.46, 0.2), (-0.05, 0.2), (-0.03, 0.235), (-0.16, 0.255), (-0.46, 0.24)], 0.128),   # retén de corredera
+              perno(-0.66, 0.12, 0.126), perno(-0.32, 0.1, 0.126), perno(0.6, 0.15, 0.126),
+              (perfil([(-0.97, 0.55), (-0.84, 0.55), (-0.84, 0.61), (-0.97, 0.61)], 0.06, 0.012), ACERO)]       # mira de atrás
+    foto(p, armar(partes, az=4, yaw=-16, pitch=14), 2.9)
 
 
 # ---------------- escopetas ----------------
@@ -351,13 +417,15 @@ def escopeta(p):
 def recortada(p):
     madera = Mat(_veta((120, 60, 28), (55, 25, 10)), rugoso=0.3, brillo=0.75)
     partes = [
-        (perfil([(-0.36, 0.2), (-0.65, 0.17), (-0.95, 0.06), (-1.0, -0.06), (-0.9, -0.42), (-0.72, -0.48),
-                 (-0.62, -0.34), (-0.58, -0.12), (-0.36, -0.02)], 0.1, 0.05), madera),
-        (perfil([(-0.4, 0.24), (0.05, 0.24), (0.05, -0.02), (-0.4, -0.04)], 0.13, 0.03), ACERO_CLARO),
+        # empuñadura de pistola en curva, con el canto bien redondo (casi cilíndrica en corte)
+        (perfil(curva([(-0.36, 0.2), (-0.65, 0.17), (-0.92, 0.07), (-1.0, -0.08), (-0.94, -0.36), (-0.8, -0.5),
+                       (-0.66, -0.42), (-0.6, -0.2), (-0.5, -0.06), (-0.36, -0.02)]), 0.11, 0.09), madera),
+        (perfil(curva([(-0.4, 0.24), (-0.1, 0.25), (0.05, 0.24), (0.06, 0.1), (0.05, -0.02), (-0.2, -0.04), (-0.42, -0.03), (-0.43, 0.12)], 6),
+                0.13, 0.05), ACERO_CLARO),
         (guardamonte(-0.4, -0.08, -0.02, -0.22), ACERO), (gatillo(-0.22, -0.04), ACERO),
         (tubo(0.0, 0.9, 0.17, 0.07, 0.01, 0.07), ACERO), (tubo(0.0, 0.9, 0.17, 0.07, 0.01, -0.07), ACERO),
         (perfil([(0.0, 0.23), (0.9, 0.23), (0.9, 0.27), (0.0, 0.27)], 0.025, 0.01), ACERO),
-        (perfil([(0.05, 0.11), (0.55, 0.11), (0.5, 0.0), (0.05, -0.01)], 0.08, 0.04), madera),
+        (perfil(curva([(0.05, 0.11), (0.3, 0.115), (0.55, 0.1), (0.57, 0.04), (0.5, -0.01), (0.25, -0.02), (0.05, -0.01)], 6), 0.09, 0.07), madera),
         (mover(capsula((-0.33, 0.25, 0.06), (-0.42, 0.34, 0.06), 0.025), 0, 0, 0), ACERO_CLARO),
         (mover(capsula((-0.33, 0.25, -0.06), (-0.42, 0.34, -0.06), 0.025), 0, 0, 0), ACERO_CLARO),
     ]
