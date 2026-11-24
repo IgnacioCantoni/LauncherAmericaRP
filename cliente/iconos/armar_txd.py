@@ -10,6 +10,7 @@ from objetos3d import POR_ID
 from armas3d import POR_ID as ARMAS
 from chaleco3d import POR_ID as CHALECOS
 from mas3d import MAS
+from interfaz import INTERFAZ
 import iconos
 from multiprocessing import Pool
 from celdas import celda, boton
@@ -69,7 +70,7 @@ def _fotografiar(fns):
 def main():
     _, carpeta, entrada, salida, lado = sys.argv
     lado = int(lado)
-    viejas = [(n, c) for n, c in leer(entrada) if not n.startswith(("obj_", "inv_", "hud_", "app_", "dato_", "pago_", "tel_", "pv_", "aviso_", "caj_", "ico_"))]
+    viejas = [(n, c) for n, c in leer(entrada) if not n.startswith(("obj_", "inv_", "hud_", "app_", "dato_", "pago_", "tel_", "pv_", "aviso_", "caj_", "ico_", "esq_", "vel_", "lado_"))]
     objetos = {**POR_ID, **ARMAS, **CHALECOS}
     _fotografiar(list(objetos.values()) + list(HUD.values()) + list(DATOS.values()) + list(OTROS.values()) + list(PANEL.values()) + list(MAS.values()))
     nuevas = [(f"obj_{k}", textura(f"obj_{k}", icono(objetos[k], lado))) for k in sorted(objetos)]
@@ -77,7 +78,7 @@ def main():
         grande = icono(objetos[k], 256)
         nuevas += [(f"inv_{k}", textura(f"inv_{k}", celda(grande))), (f"inv_{k}_e", textura(f"inv_{k}_e", celda(grande, True)))]
     nuevas += [(n, textura(n, icono(f, lado))) for n, f in list(HUD.items()) + list(DATOS.items()) + list(OTROS.items()) + list(MAS.items())]
-    nuevas += [(n, textura(n, f())) for n, f in GRANDES.items()]
+    nuevas += [(n, textura(n, f())) for n, f in list(GRANDES.items()) + list(INTERFAZ.items())]
     # panel del vehículo: pv_<botón>_1 (verde) y pv_<botón>_0 (rojo); algunos cambian de forma según el estado
     for b in ("motor", "luces", "traba", "capo", "maletero", "aparcar", "baulera"):
         for estado, sufijo in ((1, "_on"), (0, "_off")):
