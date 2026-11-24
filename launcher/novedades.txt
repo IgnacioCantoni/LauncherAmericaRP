@@ -1,6 +1,10 @@
 # Qué trae cada versión del launcher. Se ve en NOTICIAS > LAUNCHER. La más nueva arriba.
 # Formato: "## fecha | Launcher | versión" y abajo los cambios, cada uno con "- ".
 
+## 2026-11-24 | Launcher | 1.5.1
+- Antes de jugar revisa que estén todas las DLL que piden los mods de tu GTA. Si falta Visual C++ o DirectX, lo baja de Microsoft y lo instala solo.
+- Si a un mod le falta un archivo suyo, te dice cuál es y te ofrece sacarlo (sin borrarlo), en vez del cartel de "Error: 126" al abrir el juego.
+
 ## 2026-11-21 | Launcher | 1.5.0
 - Diseño nuevo con el mismo estilo que las pantallas del server: paneles de vidrio sobre la playa y botones en degradé dorado a rosa.
 - Tarjeta COMUNIDAD arriba a la derecha, con el Discord (miembros y conectados) y las redes del server.
