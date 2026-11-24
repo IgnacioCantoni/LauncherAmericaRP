@@ -28,7 +28,7 @@ static class Config
 {
     // Lo que cambia de un server a otro. Después de tocarlo, volvé a compilar.
     // Versión de este launcher. Para sacar una nueva, ver "Sacar una versión nueva del launcher" en el README.
-    public const string Version = "1.5.0";
+    public const string Version = "1.5.1";
     // Servidores que se eligen en INICIO: nombre, dirección y puerto. Sin dirección = "Todavía sin IP", no se puede elegir.
     public static readonly Tuple<string, string, int>[] Servidores =
     {
@@ -1238,7 +1238,8 @@ static class DirectX
         }
     }
 
-    static void Correr(string exe, string argumentos, bool administrador)
+    // tambienBien: códigos de salida que no son error (los de Visual C++ devuelven 1638 si ya hay uno más nuevo y 3010 si piden reiniciar).
+    public static void Correr(string exe, string argumentos, bool administrador, params int[] tambienBien)
     {
         var psi = new ProcessStartInfo(exe, argumentos) { UseShellExecute = true };
         if (administrador) psi.Verb = "runas";
@@ -1247,7 +1248,7 @@ static class DirectX
             using (Process p = Process.Start(psi))
             {
                 p.WaitForExit();
-                if (p.ExitCode != 0) throw new IOException(Path.GetFileName(exe) + " terminó con el código " + p.ExitCode + ".");
+                if (p.ExitCode != 0 && !tambienBien.Contains(p.ExitCode)) throw new IOException(Path.GetFileName(exe) + " terminó con el código " + p.ExitCode + ".");
             }
         }
         catch (System.ComponentModel.Win32Exception ex)
@@ -1255,6 +1256,198 @@ static class DirectX
             if (ex.NativeErrorCode == 1223) throw new IOException("Hace falta el permiso de administrador para instalarlo.");
             throw;
         }
+    }
+}
+
+// Las DLL que piden los mods del GTA (ASI, plugins de CLEO, samp.dll) y no están. Si falta una, el Ultimate ASI Loader
+// avisa "Unable to load ... Error: 126" y el mod no carga. Las de Microsoft se instalan con su paquete oficial (DirectX y
+// Visual C++); las demás vienen con el mod y solo se puede avisar cuál está incompleto.
+static class Dependencias
+{
+    // [nombre, instalador oficial de 32 bits (el GTA es de 32), argumentos para que no pregunte nada, DLL que trae].
+    // Las direcciones son las de la página "Latest supported Visual C++ Redistributable downloads" de Microsoft.
+    public static readonly string[][] Paquetes =
+    {
+        new[] { "Visual C++ 2015-2022", "https://aka.ms/vs/17/release/vc_redist.x86.exe", "/install /quiet /norestart",
+            "vcruntime140.dll msvcp140.dll msvcp140_1.dll msvcp140_2.dll msvcp140_atomic_wait.dll msvcp140_codecvt_ids.dll concrt140.dll vccorlib140.dll vcomp140.dll mfc140.dll mfc140u.dll mfcm140.dll mfcm140u.dll ucrtbase.dll" },
+        new[] { "Visual C++ 2013", "https://aka.ms/highdpimfc2013x86enu", "/install /quiet /norestart",
+            "msvcr120.dll msvcp120.dll vcomp120.dll mfc120.dll mfc120u.dll mfcm120.dll mfcm120u.dll" },
+        new[] { "Visual C++ 2012", "https://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x86.exe", "/install /quiet /norestart",
+            "msvcr110.dll msvcp110.dll vcomp110.dll mfc110.dll mfc110u.dll mfcm110.dll mfcm110u.dll" },
+        new[] { "Visual C++ 2010", "https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x86.exe", "/q /norestart",
+            "msvcr100.dll msvcp100.dll vcomp100.dll mfc100.dll mfc100u.dll mfcm100.dll mfcm100u.dll" },
+        new[] { "Visual C++ 2008", "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x86.exe", "/q",
+            "msvcr90.dll msvcp90.dll msvcm90.dll mfc90.dll mfc90u.dll mfcm90.dll mfcm90u.dll" },
+        new[] { "Visual C++ 2005", "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.EXE", "/q",
+            "msvcr80.dll msvcp80.dll msvcm80.dll mfc80.dll mfc80u.dll mfcm80.dll mfcm80u.dll" },
+    };
+
+    // Las que trae el DirectX de junio de 2010 (y no Windows).
+    static readonly Regex DeDirectX = new Regex(@"^(d3dx9_\d+|d3dx10(_\d+)?|d3dx11_\d+|d3dcompiler_\d+|d3dcsx_\d+|xinput1_[1-3]|x3daudio1_\d+|xaudio2_[0-7]|xactengine\d_\d+)\.dll$", RegexOptions.IgnoreCase);
+    // Las de Visual C++ 2005 y 2008 no van en System32 sino en WinSxS: x86_microsoft.vc90.crt_..., x86_microsoft.vc80.mfc_...
+    static readonly Regex DeWinSxS = new Regex(@"^(msvc[rpm]|mfcm?)(80|90)u?\.dll$", RegexOptions.IgnoreCase);
+
+    public static bool EsDirectX(string dll) { return DeDirectX.IsMatch(dll); }
+
+    public static string[] Paquete(string dll)
+    {
+        string d = dll.ToLowerInvariant();
+        return Paquetes.FirstOrDefault(p => p[3].Split(' ').Contains(d));
+    }
+
+    // DLL que falta -> archivos del GTA que la piden (rutas relativas). sistema = SysWOW64 (o System32 en un Windows de 32).
+    public static SortedDictionary<string, List<string>> Faltan(string carpetaGta, string sistema)
+    {
+        var faltan = new SortedDictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        if (carpetaGta.Length == 0 || !Directory.Exists(carpetaGta)) return faltan;
+        var pendientes = new Queue<string>(Cargados(carpetaGta));
+        var vistos = new HashSet<string>(pendientes, StringComparer.OrdinalIgnoreCase);
+        while (pendientes.Count > 0)
+        {
+            string archivo = pendientes.Dequeue();
+            foreach (string dll in Importa(archivo))
+            {
+                // api-ms-*/ext-ms-* son nombres virtuales que Windows resuelve solo.
+                if (dll.StartsWith("api-ms-", StringComparison.OrdinalIgnoreCase) || dll.StartsWith("ext-ms-", StringComparison.OrdinalIgnoreCase)) continue;
+                // Windows la busca junto al que la pide (el ASI Loader carga con esa opción) y en la carpeta del juego.
+                string local = new[] { Path.GetDirectoryName(archivo), carpetaGta }.Select(c => Path.Combine(c, dll)).FirstOrDefault(File.Exists);
+                if (local != null) { if (vistos.Add(Path.GetFullPath(local))) pendientes.Enqueue(Path.GetFullPath(local)); continue; }
+                if (EnWindows(dll, sistema)) continue;
+                List<string> quien;
+                if (!faltan.TryGetValue(dll, out quien)) faltan[dll] = quien = new List<string>();
+                quien.Add(archivo.Substring(carpetaGta.TrimEnd('\\', '/').Length + 1));
+            }
+        }
+        return faltan;
+    }
+
+    // Lo que el GTA carga: los ASI (raíz, scripts y plugins, como el Ultimate ASI Loader), los plugins de CLEO y las DLL
+    // que el juego o SA-MP abren solos.
+    static IEnumerable<string> Cargados(string carpetaGta)
+    {
+        var lista = new List<string>();
+        foreach (var c in new[] { new[] { "", ".asi" }, new[] { "scripts", ".asi" }, new[] { "plugins", ".asi" }, new[] { "cleo", ".cleo" }, new[] { Path.Combine("cleo", "cleo_plugins"), ".cleo" } })
+        {
+            string dir = Path.Combine(carpetaGta, c[0]);
+            if (Directory.Exists(dir))
+                lista.AddRange(Directory.GetFiles(dir).Where(f => f.EndsWith(c[1], StringComparison.OrdinalIgnoreCase)).OrderBy(f => f, StringComparer.OrdinalIgnoreCase));
+        }
+        lista.AddRange(new[] { "samp.dll", "dinput8.dll", "d3d9.dll" }.Select(d => Path.Combine(carpetaGta, d)).Where(File.Exists));
+        return lista.Select(Path.GetFullPath);
+    }
+
+    static bool EnWindows(string dll, string sistema)
+    {
+        string windows = Path.GetDirectoryName(sistema.TrimEnd('\\', '/')) ?? "";
+        if (File.Exists(Path.Combine(sistema, dll)) || (windows.Length > 0 && File.Exists(Path.Combine(windows, dll)))) return true;
+        Match m = DeWinSxS.Match(dll);
+        if (!m.Success) return false;
+        string sxs = Path.Combine(windows, "WinSxS");
+        string tipo = m.Groups[1].Value.StartsWith("mfc", StringComparison.OrdinalIgnoreCase) ? "mfc" : "crt";
+        try { return Directory.Exists(sxs) && Directory.EnumerateDirectories(sxs, "x86_microsoft.vc" + m.Groups[2].Value + "." + tipo + "_*").Any(); }
+        catch (Exception) { return true; } // sin poder mirar WinSxS no se acusa a nadie
+    }
+
+    // Los nombres de las DLL que importa un ejecutable de 32 bits (PE32). Si el archivo no es eso, ninguna.
+    public static List<string> Importa(string archivo)
+    {
+        var dlls = new List<string>();
+        try
+        {
+            using (var br = new BinaryReader(File.OpenRead(archivo)))
+            {
+                Stream s = br.BaseStream;
+                if (s.Length < 0x40 || br.ReadUInt16() != 0x5A4D) return dlls;
+                s.Position = 0x3C;
+                s.Position = br.ReadUInt32();
+                if (br.ReadUInt32() != 0x4550) return dlls;
+                s.Position += 2;
+                int secciones = br.ReadUInt16();
+                s.Position += 12;
+                int tamOpcional = br.ReadUInt16();
+                s.Position += 2;
+                long opcional = s.Position;
+                if (br.ReadUInt16() != 0x10B) return dlls;
+                s.Position = opcional + 104; // DataDirectory[1] (importaciones) en PE32
+                uint rvaImport = br.ReadUInt32();
+                if (rvaImport == 0) return dlls;
+                s.Position = opcional + tamOpcional;
+                var secs = new List<uint[]>(); // va, tamaño, inicio en el archivo
+                for (int i = 0; i < secciones; i++)
+                {
+                    s.Position += 8;
+                    uint vtam = br.ReadUInt32(), va = br.ReadUInt32(), rtam = br.ReadUInt32(), raw = br.ReadUInt32();
+                    secs.Add(new[] { va, Math.Max(vtam, rtam), raw });
+                    s.Position += 16;
+                }
+                Func<uint, long> enArchivo = rva =>
+                {
+                    uint[] sec = secs.FirstOrDefault(x => rva >= x[0] && rva < x[0] + x[1]);
+                    return sec == null ? -1L : (long)sec[2] + (rva - sec[0]);
+                };
+                long pos = enArchivo(rvaImport);
+                for (int i = 0; pos >= 0 && i < 1024; i++, pos += 20)
+                {
+                    s.Position = pos + 12;
+                    uint rvaNombre = br.ReadUInt32();
+                    if (rvaNombre == 0) break;
+                    long n = enArchivo(rvaNombre);
+                    if (n < 0) continue;
+                    s.Position = n;
+                    var sb = new StringBuilder();
+                    for (int c; sb.Length < 260 && (c = s.ReadByte()) > 0; ) sb.Append((char)c);
+                    if (sb.Length > 0) dlls.Add(sb.ToString());
+                }
+            }
+        }
+        catch (Exception) { } // archivo trabado o roto: no se lo acusa de nada
+        return dlls;
+    }
+
+    public static void Instalar(string[] paquete, Action<string, int> progreso)
+    {
+        string exe = Path.Combine(Path.GetTempPath(), "AmericaRP-vcredist-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".exe");
+        try
+        {
+            Actualizador.Bajar(paquete[1], exe, "Bajando " + paquete[0], progreso);
+            // La dirección de 2015-2022 siempre da la última versión, así que no hay huella fija: se pide la firma de Microsoft.
+            if (!FirmadoPorMicrosoft(exe)) throw new InvalidDataException("El instalador de " + paquete[0] + " que se bajó no está firmado por Microsoft.");
+            progreso("Instalando " + paquete[0] + "...", 100);
+            DirectX.Correr(exe, paquete[2], true, 1638, 3010, 1641);
+        }
+        finally { try { File.Delete(exe); } catch (Exception) { } }
+    }
+
+    // Firma válida para Windows (WinVerifyTrust) y a nombre de Microsoft Corporation.
+    public static bool FirmadoPorMicrosoft(string archivo)
+    {
+        var info = new ConfianzaArchivo { Tamano = Marshal.SizeOf(typeof(ConfianzaArchivo)), Ruta = archivo };
+        IntPtr pInfo = Marshal.AllocHGlobal(info.Tamano);
+        try
+        {
+            Marshal.StructureToPtr(info, pInfo, false);
+            var datos = new ConfianzaDatos { Tamano = Marshal.SizeOf(typeof(ConfianzaDatos)), Interfaz = 2, Eleccion = 1, Archivo = pInfo };
+            if (WinVerifyTrust(new IntPtr(-1), new Guid("00AAC56B-CD44-11d0-8CC2-00C04FC295EE"), ref datos) != 0) return false;
+            var cert = new System.Security.Cryptography.X509Certificates.X509Certificate2(
+                System.Security.Cryptography.X509Certificates.X509Certificate.CreateFromSignedFile(archivo));
+            return cert.Subject.Contains("O=Microsoft Corporation");
+        }
+        catch (Exception) { return false; }
+        finally { Marshal.DestroyStructure(pInfo, typeof(ConfianzaArchivo)); Marshal.FreeHGlobal(pInfo); }
+    }
+
+    [DllImport("wintrust.dll", CharSet = CharSet.Unicode)]
+    static extern int WinVerifyTrust(IntPtr ventana, [MarshalAs(UnmanagedType.LPStruct)] Guid accion, ref ConfianzaDatos datos);
+
+    // WINTRUST_FILE_INFO y WINTRUST_DATA.
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct ConfianzaArchivo { public int Tamano; public string Ruta; public IntPtr Handle, Sujeto; }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct ConfianzaDatos
+    {
+        public int Tamano; public IntPtr Politica, Sip; public int Interfaz, Revocacion, Eleccion; public IntPtr Archivo;
+        public int Estado; public IntPtr EstadoDatos; public string Url; public int Proveedor, Contexto; public IntPtr Firma;
     }
 }
 
@@ -1902,6 +2095,9 @@ class Ventana : Lienzo
     float avance;
     Actualizador.Revision revision;
     List<string> faltantes = new List<string>(), faltaDx = new List<string>();
+    // Paquetes de Visual C++ que piden los mods, y mods a los que les falta una DLL suya (mod -> DLL).
+    List<string[]> faltaVc = new List<string[]>();
+    SortedDictionary<string, List<string>> modsRotos = new SortedDictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
     bool gta10;
 
     public Ventana() : base(Ancho, Alto)
@@ -2004,7 +2200,17 @@ class Ventana : Lienzo
     {
         faltantes = Instalacion.Faltantes(Carpeta());
         gta10 = File.Exists(Path.Combine(Carpeta(), "gta_sa.exe")) && Instalacion.PareceGta10(Carpeta());
-        faltaDx = Config.DirectXUrl.Length == 0 ? new List<string>() : DirectX.Faltan(DirectX.Sistema(), Carpeta(), EnbActivo());
+        var dep = Dependencias.Faltan(Carpeta(), DirectX.Sistema());
+        faltaDx = Config.DirectXUrl.Length == 0 ? new List<string>() :
+            DirectX.Faltan(DirectX.Sistema(), Carpeta(), EnbActivo()).Union(dep.Keys.Where(Dependencias.EsDirectX), StringComparer.OrdinalIgnoreCase).ToList();
+        faltaVc = Dependencias.Paquetes.Where(p => dep.Keys.Any(d => Dependencias.Paquete(d) == p)).ToList();
+        modsRotos = new SortedDictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var d in dep.Where(d => !Dependencias.EsDirectX(d.Key) && Dependencias.Paquete(d.Key) == null))
+            foreach (string mod in d.Value)
+            {
+                if (!modsRotos.ContainsKey(mod)) modsRotos[mod] = new List<string>();
+                modsRotos[mod].Add(d.Key);
+            }
     }
 
     void Avisar(string texto, int porcentaje)
@@ -2262,6 +2468,8 @@ class Ventana : Lienzo
             return false;
         }
         if (faltaDx.Count > 0 && !await OfrecerDirectX()) return false;
+        if (faltaVc.Count > 0 && !await OfrecerVisualC()) return false;
+        if (modsRotos.Count > 0 && !await OfrecerSacarRotos(carpeta)) return false;
         if (EnbActivo())
         {
             try { if (Instalacion.Poner4Gb(Path.Combine(carpeta, "gta_sa.exe"))) Avisar("Listo el parche de 4 GB para el ENB.", 100); }
@@ -2297,6 +2505,56 @@ class Ventana : Lienzo
             return false;
         }
         Avisar("DirectX 9 instalado.", 100);
+        return true;
+    }
+
+    // Igual que DirectX: false si quiso instalarlo y no se pudo; si dice que no, se juega igual.
+    async Task<bool> OfrecerVisualC()
+    {
+        string nombres = string.Join(", ", faltaVc.Select(p => p[0]));
+        if (Mensaje("A tu Windows le falta " + nombres + " (32 bits), que piden mods de tu GTA. Sin eso esos mods no cargan.\n\n" +
+            "¿Instalarlo ahora? Se baja de Microsoft y Windows te va a pedir permiso de administrador.",
+            "Visual C++", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+        {
+            Avisar("Falta " + nombres + ": algunos mods no van a cargar.", 0);
+            return true;
+        }
+        foreach (string[] paquete in faltaVc.ToList())
+        {
+            try { await Task.Run(() => Dependencias.Instalar(paquete, Avisar)); }
+            catch (Exception ex)
+            {
+                Avisar("No se pudo instalar " + paquete[0] + ".", 0);
+                Mensaje("No se pudo instalar " + paquete[0] + ": " + ex.Message, "Visual C++", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+        }
+        RevisarInstalacion();
+        if (faltaVc.Count > 0)
+        {
+            Mensaje("Se instaló pero sigue faltando " + string.Join(", ", faltaVc.Select(p => p[0])) + ".", "Visual C++", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+        Avisar(nombres + " instalado.", 100);
+        return true;
+    }
+
+    // Mods a los que les falta una DLL que venía con ellos: no hay de dónde bajarla, así que se ofrece sacarlos (sin borrar)
+    // para que el GTA no tire el cartel de "Error: 126" en cada arranque. Si dice que no, se juega igual.
+    async Task<bool> OfrecerSacarRotos(string carpeta)
+    {
+        string lista = string.Join("\n", modsRotos.Take(10).Select(m => m.Key + ": le falta " + string.Join(", ", m.Value)));
+        if (Mensaje("Estos mods de tu GTA están incompletos y no van a cargar:\n\n" + lista + "\n\n" +
+            "Volvé a instalarlos completos desde donde los bajaste. ¿Sacarlos del GTA por ahora? No se borran.",
+            "Mods incompletos", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return true;
+        try
+        {
+            var rutas = modsRotos.Keys.Where(m => !Prohibidos.Base.Contains(m.ToLowerInvariant())).ToList(); // samp.dll no se toca
+            string donde = await Task.Run(() => Prohibidos.Sacar(carpeta, rutas));
+            Avisar("Mods incompletos guardados en " + donde, 100);
+        }
+        catch (Exception ex) { Avisar("No se pudieron sacar los mods incompletos: " + ex.Message, 0); }
+        RevisarInstalacion();
         return true;
     }
 
@@ -3091,6 +3349,8 @@ class Ventana : Lienzo
             new[] { "GTA San Andreas 1.0", !hayGta ? "FALTA" : gta10 ? "OK" : "REVISAR", !hayGta ? "mal" : gta10 ? "ok" : "ojo" },
             new[] { "SA-MP 0.3.7", haySamp ? "OK" : "FALTA", haySamp ? "ok" : "mal" },
             new[] { "DirectX 9", faltaDx.Count == 0 ? "OK" : "FALTA", faltaDx.Count == 0 ? "ok" : "mal" },
+            new[] { "Visual C++", faltaVc.Count == 0 ? "OK" : "FALTA", faltaVc.Count == 0 ? "ok" : "mal" },
+            new[] { "Mods del GTA", modsRotos.Count == 0 ? "OK" : modsRotos.Count + (modsRotos.Count == 1 ? " INCOMPLETO" : " INCOMPLETOS"), modsRotos.Count == 0 ? "ok" : "ojo" },
             new[] { "Lugar de la carpeta", !hayGta ? "-" : problema == null ? "OK" : problema[2] == "grave" ? "MOVERLA" : "REVISAR", !hayGta ? "nada" : problema == null ? "ok" : problema[2] == "grave" ? "mal" : "ojo" },
             new[] { "Archivos del server", pend < 0 ? "-" : pend == 0 ? "AL DÍA" : pend + " POR BAJAR", pend < 0 ? "nada" : pend == 0 ? "ok" : "ojo" },
         };
@@ -3476,6 +3736,21 @@ static class Prueba
             File.WriteAllText(Path.Combine(sis, "d3dx9_25.dll"), "x");
             File.WriteAllText(Path.Combine(gtaDx, "d3dx9_43.dll"), "x");
             Ver(DirectX.Faltan(sis, gtaDx, true).Count == 0 && DirectX.Faltan(sis, "", true).SequenceEqual(new[] { "d3dx9_43.dll" }), "DirectX: vale en el sistema o en la carpeta del GTA");
+
+            // El propio .exe es un PE32 que importa mscoree.dll: hace de mod de prueba.
+            Ver(Dependencias.Importa(Application.ExecutablePath).Contains("mscoree.dll", StringComparer.OrdinalIgnoreCase) && Dependencias.Importa(Path.Combine(sis, "d3dx9_25.dll")).Count == 0, "dependencias: lee las DLL que importa un PE32");
+            string sisDep = Path.Combine(carpeta, "Windows", "SysWOW64"), gtaDep = Path.Combine(carpeta, "gtadep");
+            Directory.CreateDirectory(sisDep);
+            Directory.CreateDirectory(Path.Combine(gtaDep, "cleo", "cleo_plugins"));
+            File.Copy(Application.ExecutablePath, Path.Combine(gtaDep, "Mod.ASI"));
+            File.Copy(Application.ExecutablePath, Path.Combine(gtaDep, "cleo", "cleo_plugins", "x.cleo"));
+            File.Copy(Application.ExecutablePath, Path.Combine(gtaDep, "apagado.asi.off"));
+            var dep = Dependencias.Faltan(gtaDep, sisDep);
+            Ver(dep.Count == 1 && dep["mscoree.dll"].Count == 2 && dep["mscoree.dll"].Contains("Mod.ASI"), "dependencias: avisa qué mod pide la DLL que falta (y no mira los apagados)");
+            File.WriteAllText(Path.Combine(sisDep, "mscoree.dll"), "x");
+            Ver(Dependencias.Faltan(gtaDep, sisDep).Count == 0, "dependencias: la del sistema vale");
+            Ver(Dependencias.Paquete("MSVCP140.dll")[0] == "Visual C++ 2015-2022" && Dependencias.Paquete("msvcr100.dll")[0] == "Visual C++ 2010"
+                && Dependencias.Paquete("DllTricks.dll") == null && Dependencias.EsDirectX("d3dx9_43.dll") && !Dependencias.EsDirectX("d3d9.dll"), "dependencias: sabe qué paquete trae cada DLL");
         }
         finally { Directory.Delete(carpeta, true); }
 
