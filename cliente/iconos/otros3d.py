@@ -109,6 +109,14 @@ def hud_chaleco(p):
     foto(p, e)
 
 
+def hud_perla(p):
+    e = Escena(yaw=0, pitch=8)
+    # nácar: blanco crema con un tornasol rosa y celeste según hacia dónde mira la superficie
+    nacar = lambda q, n: lin((232, 218, 200)) * (1 + 0.14 * np.stack([np.sin(4 * n[:, 1]), np.sin(4 * n[:, 0] + 2), np.cos(4 * n[:, 1] + 1)], 1))
+    e.add(esfera(0.8), Mat(nacar, rugoso=0.08, brillo=1.0, transl=0.2))
+    foto(p, e)
+
+
 # ---------------- concesionaria ----------------
 
 
@@ -394,7 +402,8 @@ PANEL = {n: f for n, f in list(globals().items()) if n.startswith("pv_")}
 PANEL = {k: f if k.startswith("pv_luces") else _ajustado(f) for k, f in PANEL.items()}
 
 HUD = {"hud_hambre": hud_hambre, "hud_sed": hud_sed, "hud_cansancio": hud_cansancio, "hud_auto": hud_auto,
-       "hud_nafta": hud_nafta, "hud_vida": hud_vida, "hud_chaleco": hud_chaleco}
+       "hud_nafta": hud_nafta, "hud_vida": hud_vida, "hud_chaleco": hud_chaleco,
+       "hud_perla": hud_perla}
 DATOS = {"dato_velocidad": dato_velocidad, "dato_asientos": dato_asientos, "dato_tanque": dato_tanque,
          "dato_maletero": dato_maletero, "dato_guantera": dato_guantera, "dato_licencia": dato_licencia,
          "pago_efectivo": pago_efectivo}
