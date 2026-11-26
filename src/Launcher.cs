@@ -28,7 +28,7 @@ static class Config
 {
     // Lo que cambia de un server a otro. Después de tocarlo, volvé a compilar.
     // Versión de este launcher. Para sacar una nueva, ver "Sacar una versión nueva del launcher" en el README.
-    public const string Version = "1.5.2";
+    public const string Version = "1.5.3";
     // Servidores que se eligen en INICIO: nombre, dirección y puerto. Sin dirección = "Todavía sin IP", no se puede elegir.
     // La del OFICIAL se pisa con la de ServidorUrl al abrir; esta queda por si no hay internet o GitHub no contesta.
     public static readonly Tuple<string, string, int>[] Servidores =
@@ -1055,6 +1055,23 @@ static class Actualizador
         }
         finally { if (File.Exists(zip)) File.Delete(zip); }
         return true;
+    }
+
+    // Saca las voces de los personajes (lo que dicen al pegarles, caerse, etc.): el índice de audio deja solo el primer banco
+    // de cada archivo de habla SPC_*, igual que NewGamers. Los quejidos (PAIN_A) y los archivos de audio no se tocan.
+    public static void SacarVoces(string carpetaGta)
+    {
+        string config = RutaSegura(carpetaGta, @"audio\CONFIG"), indice = Path.Combine(config, "BankLkup.dat"), paks = Path.Combine(config, "PakFiles.dat");
+        if (!File.Exists(indice) || !File.Exists(paks)) return;
+        byte[] p = File.ReadAllBytes(paks), d = File.ReadAllBytes(indice);
+        var habla = new HashSet<int>();
+        for (int i = 0; i + 52 <= p.Length; i += 52)
+            if (Encoding.ASCII.GetString(p, i, 52).StartsWith("SPC_", StringComparison.OrdinalIgnoreCase)) habla.Add(i / 52);
+        var nuevo = new List<byte>(d.Length);
+        var vistos = new HashSet<int>();
+        for (int i = 0; i + 12 <= d.Length; i += 12)
+            if (!habla.Contains(d[i]) || vistos.Add(d[i])) nuevo.AddRange(new ArraySegment<byte>(d, i, 12));
+        if (nuevo.Count < d.Length) File.WriteAllBytes(indice, nuevo.ToArray());
     }
 
     // Apaga o prende el CEF renombrando cef.asi a cef.asi.off (el cargador de ASI ignora el .off). La carpeta cef/ queda.
@@ -2435,6 +2452,9 @@ class Ventana : Lienzo
             try { await Task.Run(() => { Actualizador.ApagarCef(carpeta, sinCef); if (!sinCef) Actualizador.InstalarCef(carpeta, Avisar); }); }
             catch (Exception ex) { Avisar("No se pudieron instalar las pantallas del server: " + ex.Message, 0); }
         }
+        if (File.Exists(Path.Combine(carpeta, "gta_sa.exe")))
+            try { await Task.Run(() => Actualizador.SacarVoces(carpeta)); }
+            catch (Exception ex) { Avisar("No se pudieron sacar las voces de los personajes: " + ex.Message, 0); }
         if (EnbActivo() && Config.EnbUrl.Length > 0 && File.Exists(Path.Combine(carpeta, "gta_sa.exe")))
         {
             // El ENB es opcional: si falla se avisa y se juega igual.

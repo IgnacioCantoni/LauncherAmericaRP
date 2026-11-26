@@ -1,6 +1,9 @@
 # Qué trae cada versión del launcher. Se ve en NOTICIAS > LAUNCHER. La más nueva arriba.
 # Formato: "## fecha | Launcher | versión" y abajo los cambios, cada uno con "- ".
 
+## 2026-11-26 | Launcher | 1.5.3
+- Los personajes ya no hablan solos cuando les pegás, se caen o los chocás. Los quejidos siguen.
+
 ## 2026-11-24 | Launcher | 1.5.2
 - El server OFICIAL ya tiene IP: elegilo en INICIO y tocá JUGAR para entrar.
 
