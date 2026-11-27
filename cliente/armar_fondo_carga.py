@@ -1,5 +1,5 @@
 # Agrega (o reemplaza) fondo_carga en americarp.txd: el fondo de la pantalla de carga de los interiores del
-# server (gamemode/interfaz/carga.inc). Es la misma imagen de la carga del GTA (cliente/carga.jpg) en 1024x512,
+# server (gamemode/interfaz/carga.inc). Es la playa de la pantalla de conexión (cliente/conexion-fondo.jpg) en 1024x512,
 # oscurecida abajo para que se lea el texto centrado encima. El GTA la estira a la pantalla.
 # Mismo formato que las otras texturas (D3D9, 8888, un nivel).
 # Uso: python cliente/armar_fondo_carga.py   (después, generar-manifiesto.bat)
@@ -16,7 +16,7 @@ def chunk(t, data):
 
 
 def fondo():
-    im = Image.open(os.path.join(raiz, "cliente", "carga.jpg")).convert("RGB")
+    im = Image.open(os.path.join(raiz, "cliente", "conexion-fondo.jpg")).convert("RGB")
     w, h = im.size
     alto = w * 9 // 16
     im = im.crop((0, (h - alto) // 2, w, (h - alto) // 2 + alto)).resize((1024, 512), Image.LANCZOS)
