@@ -583,12 +583,57 @@ static void conexion(void)
 
 // Va en lugar del ultimo call de Render2dStuff: hace lo que hacia y encima dibuja la pantalla de
 // conexion, sobre el HUD y el radar. El chat del SA-MP se dibuja despues, asi que queda arriba.
+// La pantalla de carga de los interiores del server (gamemode/interfaz/carga.inc) muestra un TextDraw
+// "ACN:C" mientras dura: el chat se apaga (como con F7) y vuelve como estaba cuando la marca se va.
+// CChat* de samp.dll 0.3.7-R5 (sampapi) y su modo en +8: 0 apagado, 1 sin sombra, 2 normal.
+#define SAMP_CHAT      0x26EB80
+
+static int hayMarcaChat(DWORD ng)
+{
+    DWORD pools = *(DWORD *)(ng + SAMP_POOLS), tds = pools ? *(DWORD *)(pools + 0x1C) : 0;
+    if (!tds) return 0;
+    for (int i = 0; i < 0x900; i++) {
+        if (!((int *)tds)[i]) continue;
+        const char *t = *(const char **)(tds + 0x2400 + i * 4);
+        if (t && !memcmp(t, "ACN:C", 6)) return 1;
+    }
+    return 0;
+}
+
+static void chatEnCarga(void)
+{
+    static int guardado = -1; // el modo que tenia antes de apagarlo; -1 si no se apago
+    if (sampEstado != 1) return;
+    DWORD ng = *(DWORD *)(samp + SAMP_NETGAME), chat = *(DWORD *)(samp + SAMP_CHAT);
+    if (!chat) return;
+    int *modo = (int *)(chat + 8);
+    // Por si la direccion no fuera la del CChat: renglones (+0, de 10 a 20 con /pagesize) y modo validos.
+    static int malo;
+    if (malo) return;
+    MEMORY_BASIC_INFORMATION mi;
+    if (!VirtualQuery((void *)chat, &mi, sizeof mi) || mi.State != MEM_COMMIT || (mi.Protect & (PAGE_NOACCESS | PAGE_GUARD))
+        || *(int *)chat < 10 || *(int *)chat > 20 || *modo < 0 || *modo > 2) {
+        malo = 1;
+        anotar("no encontre el chat del SA-MP: no se esconde en las cargas");
+        return;
+    }
+    int pide = ng && *(int *)(ng + SAMP_ESTADO) == SAMP_CONECTADO && hayMarcaChat(ng);
+    if (pide && guardado < 0) {
+        guardado = *modo;
+        *modo = 0;
+    } else if (!pide && guardado >= 0) {
+        if (*modo == 0) *modo = guardado; // si en el medio toco F7, se respeta
+        guardado = -1;
+    }
+}
+
 static void dibujar2d(void)
 {
     static int primera = 1;
     ((void (*)(void))Render2dOriginal)();
     if (primera) { primera = 0; anotar("dibujando en el juego"); }
     conexion();
+    chatEnCarga();
 }
 
 BOOL WINAPI DllMain(HINSTANCE h, DWORD motivo, LPVOID r)
